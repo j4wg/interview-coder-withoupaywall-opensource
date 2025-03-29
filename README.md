@@ -135,6 +135,30 @@ chmod +x stealth-run.sh
 
 **IMPORTANT**: The application window will be invisible by default! Use Ctrl+B (or Cmd+B on Mac) to toggle visibility.
 
+### Building Distributable Packages
+
+To create installable packages for distribution:
+
+**For macOS (DMG):**
+```bash
+# Using npm
+npm run package-mac
+
+# Or using yarn
+yarn package-mac
+```
+
+**For Windows (Installer):**
+```bash
+# Using npm
+npm run package-win
+
+# Or using yarn
+yarn package-win
+```
+
+The packaged applications will be available in the `release` directory.
+
 **What the scripts do:**
 - Create necessary directories for the application
 - Clean previous builds to ensure a fresh start
