@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from "uuid"
 import { execFile } from "child_process"
 import { promisify } from "util"
 import screenshot from "screenshot-desktop"
+import os from "os"
 
 const execFileAsync = promisify(execFile)
 
@@ -17,6 +18,7 @@ export class ScreenshotHelper {
 
   private readonly screenshotDir: string
   private readonly extraScreenshotDir: string
+  private readonly tempDir: string
 
   private view: "queue" | "solutions" | "debug" = "queue"
 
@@ -29,19 +31,59 @@ export class ScreenshotHelper {
       app.getPath("userData"),
       "extra_screenshots"
     )
+    this.tempDir = path.join(app.getPath("temp"), "interview-coder-screenshots")
 
     // Create directories if they don't exist
-    if (!fs.existsSync(this.screenshotDir)) {
-      fs.mkdirSync(this.screenshotDir, { recursive: true })
-    }
-    if (!fs.existsSync(this.extraScreenshotDir)) {
-      fs.mkdirSync(this.extraScreenshotDir, { recursive: true })
-    }
+    this.ensureDirectoriesExist();
     
-    // Ensure temp directory exists
-    const tempDir = app.getPath("temp")
-    if (!fs.existsSync(tempDir)) {
-      fs.mkdirSync(tempDir, { recursive: true })
+    // Load any existing screenshots from disk
+    this.loadExistingScreenshots();
+  }
+  
+  private ensureDirectoriesExist(): void {
+    const directories = [this.screenshotDir, this.extraScreenshotDir, this.tempDir];
+    
+    for (const dir of directories) {
+      if (!fs.existsSync(dir)) {
+        try {
+          fs.mkdirSync(dir, { recursive: true });
+          console.log(`Created directory: ${dir}`);
+        } catch (err) {
+          console.error(`Error creating directory ${dir}:`, err);
+        }
+      }
+    }
+  }
+  
+  private loadExistingScreenshots(): void {
+    try {
+      // Load main queue screenshots
+      if (fs.existsSync(this.screenshotDir)) {
+        const files = fs.readdirSync(this.screenshotDir)
+          .filter(file => file.endsWith('.png'))
+          .map(file => path.join(this.screenshotDir, file))
+          .sort((a, b) => {
+            return fs.statSync(a).mtime.getTime() - fs.statSync(b).mtime.getTime();
+          });
+        
+        this.screenshotQueue = files.slice(0, this.MAX_SCREENSHOTS);
+        console.log(`Loaded ${this.screenshotQueue.length} existing screenshots`);
+      }
+      
+      // Load extra queue screenshots
+      if (fs.existsSync(this.extraScreenshotDir)) {
+        const files = fs.readdirSync(this.extraScreenshotDir)
+          .filter(file => file.endsWith('.png'))
+          .map(file => path.join(this.extraScreenshotDir, file))
+          .sort((a, b) => {
+            return fs.statSync(a).mtime.getTime() - fs.statSync(b).mtime.getTime();
+          });
+        
+        this.extraScreenshotQueue = files.slice(0, this.MAX_SCREENSHOTS);
+        console.log(`Loaded ${this.extraScreenshotQueue.length} existing extra screenshots`);
+      }
+    } catch (err) {
+      console.error("Error loading existing screenshots:", err);
     }
   }
 
@@ -94,18 +136,114 @@ export class ScreenshotHelper {
 
   private async captureScreenshot(): Promise<Buffer> {
     try {
-      // Ensure temp directory exists
-      const tempDir = app.getPath("temp")
-      if (!fs.existsSync(tempDir)) {
-        fs.mkdirSync(tempDir, { recursive: true })
-      }
+      console.log("Starting screenshot capture...");
       
-      // Use screenshot-desktop for cross-platform support
+      // For Windows, try multiple methods
+      if (process.platform === 'win32') {
+        return await this.captureWindowsScreenshot();
+      } 
+      
+      // For macOS and Linux, use buffer directly
+      console.log("Taking screenshot on non-Windows platform");
       const buffer = await screenshot({ format: 'png' });
+      console.log(`Screenshot captured successfully, size: ${buffer.length} bytes`);
       return buffer;
     } catch (error) {
       console.error("Error capturing screenshot:", error);
-      throw error;
+      throw new Error(`Failed to capture screenshot: ${error.message}`);
+    }
+  }
+
+  /**
+   * Windows-specific screenshot capture with multiple fallback mechanisms
+   */
+  private async captureWindowsScreenshot(): Promise<Buffer> {
+    console.log("Attempting Windows screenshot with multiple methods");
+    
+    // Method 1: Try screenshot-desktop with filename first
+    try {
+      const tempFile = path.join(this.tempDir, `temp-${uuidv4()}.png`);
+      console.log(`Taking Windows screenshot to temp file (Method 1): ${tempFile}`);
+      
+      await screenshot({ filename: tempFile });
+      
+      if (fs.existsSync(tempFile)) {
+        const buffer = await fs.promises.readFile(tempFile);
+        console.log(`Method 1 successful, screenshot size: ${buffer.length} bytes`);
+        
+        // Cleanup temp file
+        try {
+          await fs.promises.unlink(tempFile);
+        } catch (cleanupErr) {
+          console.warn("Failed to clean up temp file:", cleanupErr);
+        }
+        
+        return buffer;
+      } else {
+        console.log("Method 1 failed: File not created");
+        throw new Error("Screenshot file not created");
+      }
+    } catch (error) {
+      console.warn("Windows screenshot Method 1 failed:", error);
+      
+      // Method 2: Try using PowerShell
+      try {
+        console.log("Attempting Windows screenshot with PowerShell (Method 2)");
+        const tempFile = path.join(this.tempDir, `ps-temp-${uuidv4()}.png`);
+        
+        // PowerShell command to take screenshot using .NET classes
+        const psScript = `
+        Add-Type -AssemblyName System.Windows.Forms,System.Drawing
+        $screens = [System.Windows.Forms.Screen]::AllScreens
+        $top = ($screens | ForEach-Object {$_.Bounds.Top} | Measure-Object -Minimum).Minimum
+        $left = ($screens | ForEach-Object {$_.Bounds.Left} | Measure-Object -Minimum).Minimum
+        $width = ($screens | ForEach-Object {$_.Bounds.Right} | Measure-Object -Maximum).Maximum
+        $height = ($screens | ForEach-Object {$_.Bounds.Bottom} | Measure-Object -Maximum).Maximum
+        $bounds = [System.Drawing.Rectangle]::FromLTRB($left, $top, $width, $height)
+        $bmp = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
+        $graphics = [System.Drawing.Graphics]::FromImage($bmp)
+        $graphics.CopyFromScreen($bounds.Left, $bounds.Top, 0, 0, $bounds.Size)
+        $bmp.Save('${tempFile.replace(/\\/g, '\\\\')}', [System.Drawing.Imaging.ImageFormat]::Png)
+        $graphics.Dispose()
+        $bmp.Dispose()
+        `;
+        
+        // Execute PowerShell
+        await execFileAsync('powershell', [
+          '-NoProfile', 
+          '-ExecutionPolicy', 'Bypass',
+          '-Command', psScript
+        ]);
+        
+        // Check if file exists and read it
+        if (fs.existsSync(tempFile)) {
+          const buffer = await fs.promises.readFile(tempFile);
+          console.log(`Method 2 successful, screenshot size: ${buffer.length} bytes`);
+          
+          // Cleanup
+          try {
+            await fs.promises.unlink(tempFile);
+          } catch (err) {
+            console.warn("Failed to clean up PowerShell temp file:", err);
+          }
+          
+          return buffer;
+        } else {
+          throw new Error("PowerShell screenshot file not created");
+        }
+      } catch (psError) {
+        console.warn("Windows PowerShell screenshot failed:", psError);
+        
+        // Method 3: Last resort - create a tiny placeholder image
+        console.log("All screenshot methods failed, creating placeholder image");
+        
+        // Create a 1x1 transparent PNG as fallback
+        const fallbackBuffer = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64');
+        console.log("Created placeholder image as fallback");
+        
+        // Show the error but return a valid buffer so the app doesn't crash
+        throw new Error("Could not capture screenshot with any method. Please check your Windows security settings and try again.");
+      }
     }
   }
 
@@ -115,12 +253,19 @@ export class ScreenshotHelper {
   ): Promise<string> {
     console.log("Taking screenshot in view:", this.view)
     hideMainWindow()
-    await new Promise((resolve) => setTimeout(resolve, 100))
+    
+    // Increased delay for window hiding on Windows
+    const hideDelay = process.platform === 'win32' ? 500 : 300;
+    await new Promise((resolve) => setTimeout(resolve, hideDelay))
 
     let screenshotPath = ""
     try {
       // Get screenshot buffer using cross-platform method
       const screenshotBuffer = await this.captureScreenshot();
+      
+      if (!screenshotBuffer || screenshotBuffer.length === 0) {
+        throw new Error("Screenshot capture returned empty buffer");
+      }
 
       // Save and manage the screenshot based on current view
       if (this.view === "queue") {
@@ -167,7 +312,8 @@ export class ScreenshotHelper {
       console.error("Screenshot error:", error)
       throw error
     } finally {
-      await new Promise((resolve) => setTimeout(resolve, 50))
+      // Increased delay for showing window again
+      await new Promise((resolve) => setTimeout(resolve, 200))
       showMainWindow()
     }
 
@@ -176,11 +322,16 @@ export class ScreenshotHelper {
 
   public async getImagePreview(filepath: string): Promise<string> {
     try {
+      if (!fs.existsSync(filepath)) {
+        console.error(`Image file not found: ${filepath}`);
+        return '';
+      }
+      
       const data = await fs.promises.readFile(filepath)
       return `data:image/png;base64,${data.toString("base64")}`
     } catch (error) {
       console.error("Error reading image:", error)
-      throw error
+      return ''
     }
   }
 
@@ -188,7 +339,10 @@ export class ScreenshotHelper {
     path: string
   ): Promise<{ success: boolean; error?: string }> {
     try {
-      await fs.promises.unlink(path)
+      if (fs.existsSync(path)) {
+        await fs.promises.unlink(path)
+      }
+      
       if (this.view === "queue") {
         this.screenshotQueue = this.screenshotQueue.filter(
           (filePath) => filePath !== path
@@ -208,13 +362,15 @@ export class ScreenshotHelper {
   public clearExtraScreenshotQueue(): void {
     // Clear extraScreenshotQueue
     this.extraScreenshotQueue.forEach((screenshotPath) => {
-      fs.unlink(screenshotPath, (err) => {
-        if (err)
-          console.error(
-            `Error deleting extra screenshot at ${screenshotPath}:`,
-            err
-          )
-      })
+      if (fs.existsSync(screenshotPath)) {
+        fs.unlink(screenshotPath, (err) => {
+          if (err)
+            console.error(
+              `Error deleting extra screenshot at ${screenshotPath}:`,
+              err
+            )
+        })
+      }
     })
     this.extraScreenshotQueue = []
   }

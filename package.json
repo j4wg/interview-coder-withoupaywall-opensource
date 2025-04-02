@@ -4,13 +4,13 @@
   "main": "./dist-electron/main.js",
   "scripts": {
     "clean": "rimraf dist dist-electron",
-    "dev": "cross-env NODE_ENV=development npm run clean && concurrently \"tsc -w -p tsconfig.electron.json\" \"vite\" \"wait-on -t 30000 http://localhost:54321 && electron ./dist-electron/main.js\"",
-    "start": "cross-env NODE_ENV=development concurrently \"tsc -p tsconfig.electron.json\" \"vite\" \"wait-on -t 30000 http://localhost:54321 && electron ./dist-electron/main.js\"",
-    "build": "cross-env NODE_ENV=production rimraf dist dist-electron && vite build && tsc -p tsconfig.electron.json",
+    "dev": "cross-env NODE_ENV=development bun run clean && concurrently \"tsc -w -p tsconfig.electron.json\" \"bunx --bun vite\" \"wait-on -t 30000 http://localhost:54321 && electron ./dist-electron/main.js\"",
+    "start": "cross-env NODE_ENV=development concurrently \"tsc -p tsconfig.electron.json\" \"bunx --bun vite\" \"wait-on -t 30000 http://localhost:54321 && electron ./dist-electron/main.js\"",
+    "build": "cross-env NODE_ENV=production rimraf dist dist-electron && bunx --bun vite build && tsc -p tsconfig.electron.json",
     "run-prod": "cross-env NODE_ENV=production electron ./dist-electron/main.js",
-    "package": "yarn build && electron-builder build",
-    "package-mac": "yarn build && electron-builder build --mac",
-    "package-win": "yarn build && electron-builder build --win"
+    "package": "bun run build && electron-builder build",
+    "package-mac": "bun run build && electron-builder build --mac",
+    "package-win": "bun run build && electron-builder build --win"
   },
   "build": {
     "appId": "com.chunginlee.interviewcoder",
@@ -121,6 +121,7 @@
     "@radix-ui/react-label": "^2.1.0",
     "@radix-ui/react-slot": "^1.1.0",
     "@radix-ui/react-toast": "^1.2.2",
+    "@supabase/supabase-js": "^2.49.4",
     "@tanstack/react-query": "^5.64.0",
     "axios": "^1.7.7",
     "class-variance-authority": "^0.7.1",
