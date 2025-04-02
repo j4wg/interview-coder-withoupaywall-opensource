@@ -4,13 +4,13 @@
   "main": "./dist-electron/main.js",
   "scripts": {
     "clean": "rimraf dist dist-electron",
-    "dev": "cross-env NODE_ENV=development bun run clean && concurrently \"tsc -w -p tsconfig.electron.json\" \"bunx --bun vite\" \"wait-on -t 30000 http://localhost:54321 && electron ./dist-electron/main.js\"",
-    "start": "cross-env NODE_ENV=development concurrently \"tsc -p tsconfig.electron.json\" \"bunx --bun vite\" \"wait-on -t 30000 http://localhost:54321 && electron ./dist-electron/main.js\"",
-    "build": "cross-env NODE_ENV=production rimraf dist dist-electron && bunx --bun vite build && tsc -p tsconfig.electron.json",
+    "dev": "cross-env NODE_ENV=development npm run clean && concurrently \"tsc -w -p tsconfig.electron.json\" \"vite\" \"wait-on -t 30000 http://localhost:54321 && electron ./dist-electron/main.js\"",
+    "start": "cross-env NODE_ENV=development concurrently \"tsc -p tsconfig.electron.json\" \"vite\" \"wait-on -t 30000 http://localhost:54321 && electron ./dist-electron/main.js\"",
+    "build": "cross-env NODE_ENV=production rimraf dist dist-electron && vite build && tsc -p tsconfig.electron.json",
     "run-prod": "cross-env NODE_ENV=production electron ./dist-electron/main.js",
-    "package": "bun run build && electron-builder build",
-    "package-mac": "bun run build && electron-builder build --mac",
-    "package-win": "bun run build && electron-builder build --win"
+    "package": "npm run build && electron-builder build",
+    "package-mac": "npm run build && electron-builder build --mac",
+    "package-win": "npm run build && electron-builder build --win"
   },
   "build": {
     "appId": "com.chunginlee.interviewcoder",
