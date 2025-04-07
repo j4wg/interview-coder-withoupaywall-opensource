@@ -14,6 +14,17 @@
 > 
 > **Before submitting feature requests or expecting personalized support, please understand this project exists purely as a community resource.** If you value what's been created, the best way to show appreciation is by contributing code, documentation, or helping other users.
 
+> ## 🔑 API KEY INFORMATION - UPDATED
+>
+> We have tested and confirmed that **both Gemini and OpenAI APIs work properly** with the current version. If you are experiencing issues with your API keys:
+>
+> - Try deleting your API key entry from the config file located in your user data directory
+> - Log out and log back in to the application
+> - Check your API key dashboard to verify the key is active and has sufficient credits
+> - Ensure you're using the correct API key format (OpenAI keys start with "sk-")
+>
+> The configuration file is stored at: `C:\Users\[USERNAME]\AppData\Roaming\interview-coder-v1\config.json` (on Windows) or `/Users/[USERNAME]/Library/Application Support/interview-coder-v1/config.json` (on macOS)
+
 ## Free, Open-Source AI-Powered Interview Preparation Tool
 
 This project provides a powerful alternative to premium coding interview platforms. It delivers the core functionality of paid interview preparation tools but in a free, open-source package. Using your own OpenAI API key, you get access to advanced features like AI-powered problem analysis, solution generation, and debugging assistance - all running locally on your machine.
