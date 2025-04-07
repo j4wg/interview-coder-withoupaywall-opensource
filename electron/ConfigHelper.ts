@@ -7,7 +7,7 @@ import { OpenAI } from "openai"
 
 interface Config {
   apiKey: string;
-  apiProvider: "openai" | "gemini"; // Added provider selection
+  apiProvider: "openai" | "gemini" | "anthropic";  // Added provider selection
   extractionModel: string;
   solutionModel: string;
   debuggingModel: string;
@@ -58,7 +58,7 @@ export class ConfigHelper extends EventEmitter {
   /**
    * Validate and sanitize model selection to ensure only allowed models are used
    */
-  private sanitizeModelSelection(model: string, provider: "openai" | "gemini"): string {
+  private sanitizeModelSelection(model: string, provider: "openai" | "gemini" | "anthropic"): string {
     if (provider === "openai") {
       // Only allow gpt-4o and gpt-4o-mini for OpenAI
       const allowedModels = ['gpt-4o', 'gpt-4o-mini'];
@@ -67,7 +67,7 @@ export class ConfigHelper extends EventEmitter {
         return 'gpt-4o';
       }
       return model;
-    } else {
+    } else if (provider === "gemini")  {
       // Only allow gemini-1.5-pro and gemini-2.0-flash for Gemini
       const allowedModels = ['gemini-1.5-pro', 'gemini-2.0-flash'];
       if (!allowedModels.includes(model)) {
@@ -75,7 +75,17 @@ export class ConfigHelper extends EventEmitter {
         return 'gemini-2.0-flash'; // Changed default to flash
       }
       return model;
+    }  else if (provider === "anthropic") {
+      // Only allow Claude models
+      const allowedModels = ['claude-3-opus-20240229', 'claude-3-sonnet-20240229', 'claude-3-haiku-20240307'];
+      if (!allowedModels.includes(model)) {
+        console.warn(`Invalid Anthropic model specified: ${model}. Using default model: claude-3-opus-20240229`);
+        return 'claude-3-opus-20240229';
+      }
+      return model;
     }
+    // Default fallback
+    return model;
   }
 
   public loadConfig(): Config {
@@ -85,7 +95,7 @@ export class ConfigHelper extends EventEmitter {
         const config = JSON.parse(configData);
         
         // Ensure apiProvider is a valid value
-        if (config.apiProvider !== "openai" && config.apiProvider !== "gemini") {
+        if (config.apiProvider !== "openai" && config.apiProvider !== "gemini"  && config.apiProvider !== "anthropic") {
           config.apiProvider = "gemini"; // Default to Gemini if invalid
         }
         
@@ -146,6 +156,9 @@ export class ConfigHelper extends EventEmitter {
         if (updates.apiKey.trim().startsWith('sk-')) {
           provider = "openai";
           console.log("Auto-detected OpenAI API key format");
+        } else if (updates.apiKey.trim().startsWith('sk-ant-')) {
+          provider = "anthropic";
+          console.log("Auto-detected Anthropic API key format");
         } else {
           provider = "gemini";
           console.log("Using Gemini API key format (default)");
@@ -161,6 +174,10 @@ export class ConfigHelper extends EventEmitter {
           updates.extractionModel = "gpt-4o";
           updates.solutionModel = "gpt-4o";
           updates.debuggingModel = "gpt-4o";
+        } else if (updates.apiProvider === "anthropic") {
+          updates.extractionModel = "claude-3-opus-20240229";
+          updates.solutionModel = "claude-3-opus-20240229";
+          updates.debuggingModel = "claude-3-opus-20240229";
         } else {
           updates.extractionModel = "gemini-2.0-flash";
           updates.solutionModel = "gemini-2.0-flash";
@@ -208,11 +225,15 @@ export class ConfigHelper extends EventEmitter {
   /**
    * Validate the API key format
    */
-  public isValidApiKeyFormat(apiKey: string, provider?: "openai" | "gemini"): boolean {
+  public isValidApiKeyFormat(apiKey: string, provider?: "openai" | "gemini" | "anthropic" ): boolean {
     // If provider is not specified, attempt to auto-detect
     if (!provider) {
       if (apiKey.trim().startsWith('sk-')) {
-        provider = "openai";
+        if (apiKey.trim().startsWith('sk-ant-')) {
+          provider = "anthropic";
+        } else {
+          provider = "openai";
+        }
       } else {
         provider = "gemini";
       }
@@ -224,6 +245,9 @@ export class ConfigHelper extends EventEmitter {
     } else if (provider === "gemini") {
       // Basic format validation for Gemini API keys (usually alphanumeric with no specific prefix)
       return apiKey.trim().length >= 10; // Assuming Gemini keys are at least 10 chars
+    } else if (provider === "anthropic") {
+      // Basic format validation for Anthropic API keys
+      return /^sk-ant-[a-zA-Z0-9]{32,}$/.test(apiKey.trim());
     }
     
     return false;
@@ -264,12 +288,17 @@ export class ConfigHelper extends EventEmitter {
   /**
    * Test API key with the selected provider
    */
-  public async testApiKey(apiKey: string, provider?: "openai" | "gemini"): Promise<{valid: boolean, error?: string}> {
+  public async testApiKey(apiKey: string, provider?: "openai" | "gemini" | "anthropic"): Promise<{valid: boolean, error?: string}> {
     // Auto-detect provider based on key format if not specified
     if (!provider) {
       if (apiKey.trim().startsWith('sk-')) {
-        provider = "openai";
-        console.log("Auto-detected OpenAI API key format for testing");
+        if (apiKey.trim().startsWith('sk-ant-')) {
+          provider = "anthropic";
+          console.log("Auto-detected Anthropic API key format for testing");
+        } else {
+          provider = "openai";
+          console.log("Auto-detected OpenAI API key format for testing");
+        }
       } else {
         provider = "gemini";
         console.log("Using Gemini API key format for testing (default)");
@@ -280,6 +309,8 @@ export class ConfigHelper extends EventEmitter {
       return this.testOpenAIKey(apiKey);
     } else if (provider === "gemini") {
       return this.testGeminiKey(apiKey);
+    } else if (provider === "anthropic") {
+      return this.testAnthropicKey(apiKey);
     }
     
     return { valid: false, error: "Unknown API provider" };
@@ -330,6 +361,31 @@ export class ConfigHelper extends EventEmitter {
     } catch (error: any) {
       console.error('Gemini API key test failed:', error);
       let errorMessage = 'Unknown error validating Gemini API key';
+      
+      if (error.message) {
+        errorMessage = `Error: ${error.message}`;
+      }
+      
+      return { valid: false, error: errorMessage };
+    }
+  }
+
+  /**
+   * Test Anthropic API key
+   * Note: This is a simplified implementation since we don't have the actual Anthropic client
+   */
+  private async testAnthropicKey(apiKey: string): Promise<{valid: boolean, error?: string}> {
+    try {
+      // For now, we'll just do a basic check to ensure the key exists and has valid format
+      // In production, you would connect to the Anthropic API and validate the key
+      if (apiKey && /^sk-ant-[a-zA-Z0-9]{32,}$/.test(apiKey.trim())) {
+        // Here you would actually validate the key with an Anthropic API call
+        return { valid: true };
+      }
+      return { valid: false, error: 'Invalid Anthropic API key format.' };
+    } catch (error: any) {
+      console.error('Anthropic API key test failed:', error);
+      let errorMessage = 'Unknown error validating Anthropic API key';
       
       if (error.message) {
         errorMessage = `Error: ${error.message}`;

@@ -109,11 +109,18 @@
       "main": "dist-electron/main.js"
     }
   },
-  "keywords": ["interview", "coding", "interview prep", "technical interview", "tool"],
+  "keywords": [
+    "interview",
+    "coding",
+    "interview prep",
+    "technical interview",
+    "tool"
+  ],
   "author": "Interview Coder Contributors",
   "license": "AGPL-3.0-or-later",
   "description": "An invisible desktop application to help you pass your technical interviews.",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
     "@electron/notarize": "^2.3.0",
     "@emotion/react": "^11.11.0",
     "@emotion/styled": "^11.11.0",
