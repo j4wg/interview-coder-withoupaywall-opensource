@@ -89,12 +89,8 @@ function App() {
       try {
         const hasKey = await window.electronAPI.checkApiKey()
         setHasApiKey(hasKey)
-        
-        // If no API key is found, show the settings dialog after a short delay
         if (!hasKey) {
-          setTimeout(() => {
-            setIsSettingsOpen(true)
-          }, 1000)
+          showToast("API Key Required", "Please set up your API key in settings to use the application.", "neutral")
         }
       } catch (error) {
         console.error("Failed to check API key:", error)
@@ -104,7 +100,7 @@ function App() {
     if (isInitialized) {
       checkApiKey()
     }
-  }, [isInitialized])
+  }, [isInitialized, showToast])
 
   // Initialize dropdown handler
   useEffect(() => {
