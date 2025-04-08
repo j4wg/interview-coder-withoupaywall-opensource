@@ -640,8 +640,22 @@ export class ProcessingHelper {
           const responseText = (response.content[0] as { type: 'text', text: string }).text;
           const jsonText = responseText.replace(/```json|```/g, '').trim();
           problemInfo = JSON.parse(jsonText);
-        } catch (error) {
+        } catch (error: any) {
           console.error("Error using Anthropic API:", error);
+
+          // Add specific handling for Claude's limitations
+          if (error.status === 429) {
+            return {
+              success: false,
+              error: "Claude API rate limit exceeded. Please wait a few minutes before trying again."
+            };
+          } else if (error.status === 413 || (error.message && error.message.includes("token"))) {
+            return {
+              success: false,
+              error: "Your screenshots contain too much information for Claude to process. Switch to OpenAI or Gemini in settings which can handle larger inputs."
+            };
+          }
+
           return {
             success: false,
             error: "Failed to process with Anthropic API. Please check your API key or try again later."
@@ -878,8 +892,22 @@ Your solution should be efficient, well-commented, and handle edge cases.
           });
 
           responseContent = (response.content[0] as { type: 'text', text: string }).text;
-        } catch (error) {
+        } catch (error: any) {
           console.error("Error using Anthropic API for solution:", error);
+
+          // Add specific handling for Claude's limitations
+          if (error.status === 429) {
+            return {
+              success: false,
+              error: "Claude API rate limit exceeded. Please wait a few minutes before trying again."
+            };
+          } else if (error.status === 413 || (error.message && error.message.includes("token"))) {
+            return {
+              success: false,
+              error: "Your screenshots contain too much information for Claude to process. Switch to OpenAI or Gemini in settings which can handle larger inputs."
+            };
+          }
+
           return {
             success: false,
             error: "Failed to generate solution with Anthropic API. Please check your API key or try again later."
@@ -1222,8 +1250,22 @@ If you include code examples, use proper markdown code blocks with language spec
           });
           
           debugContent = (response.content[0] as { type: 'text', text: string }).text;
-        } catch (error) {
+        } catch (error: any) {
           console.error("Error using Anthropic API for debugging:", error);
+          
+          // Add specific handling for Claude's limitations
+          if (error.status === 429) {
+            return {
+              success: false,
+              error: "Claude API rate limit exceeded. Please wait a few minutes before trying again."
+            };
+          } else if (error.status === 413 || (error.message && error.message.includes("token"))) {
+            return {
+              success: false,
+              error: "Your screenshots contain too much information for Claude to process. Switch to OpenAI or Gemini in settings which can handle larger inputs."
+            };
+          }
+          
           return {
             success: false,
             error: "Failed to process debug request with Anthropic API. Please check your API key or try again later."
