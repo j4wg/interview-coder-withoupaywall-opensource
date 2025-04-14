@@ -13,7 +13,7 @@ import { Button } from "../ui/button";
 import { Settings } from "lucide-react";
 import { useToast } from "../../contexts/toast";
 
-type APIProvider = "openai" | "gemini" | "anthropic";
+type APIProvider = "openai" | "gemini" | "anthropic" | "openai-compatible";
 
 type AIModel = {
   id: string;
@@ -181,6 +181,7 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
   const [open, setOpen] = useState(externalOpen || false);
   const [apiKey, setApiKey] = useState("");
   const [apiProvider, setApiProvider] = useState<APIProvider>("openai");
+  const [baseUrl, setBaseUrl] = useState("");
   const [extractionModel, setExtractionModel] = useState("gpt-4o");
   const [solutionModel, setSolutionModel] = useState("gpt-4o");
   const [debuggingModel, setDebuggingModel] = useState("gpt-4o");
@@ -210,6 +211,7 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
       interface Config {
         apiKey?: string;
         apiProvider?: APIProvider;
+        baseUrl?: string;
         extractionModel?: string;
         solutionModel?: string;
         debuggingModel?: string;
@@ -220,6 +222,7 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
         .then((config: Config) => {
           setApiKey(config.apiKey || "");
           setApiProvider(config.apiProvider || "openai");
+          setBaseUrl(config.baseUrl || "");
           setExtractionModel(config.extractionModel || "gpt-4o");
           setSolutionModel(config.solutionModel || "gpt-4o");
           setDebuggingModel(config.debuggingModel || "gpt-4o");
@@ -251,6 +254,11 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
       setExtractionModel("claude-3-7-sonnet-20250219");
       setSolutionModel("claude-3-7-sonnet-20250219");
       setDebuggingModel("claude-3-7-sonnet-20250219");
+    } else if (provider === "openai-compatible") {
+      // For OpenAI-compatible APIs, we'll keep the current models or set defaults
+      if (!extractionModel) setExtractionModel("gpt-3.5-turbo");
+      if (!solutionModel) setSolutionModel("gpt-3.5-turbo");
+      if (!debuggingModel) setDebuggingModel("gpt-3.5-turbo");
     }
   };
 
@@ -260,6 +268,7 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
       const result = await window.electronAPI.updateConfig({
         apiKey,
         apiProvider,
+        baseUrl: apiProvider === "openai-compatible" ? baseUrl : "",
         extractionModel,
         solutionModel,
         debuggingModel,
@@ -325,9 +334,9 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
           {/* API Provider Selection */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-white">API Provider</label>
-            <div className="flex gap-2">
+            <div className="grid grid-cols-2 gap-2 mb-2">
               <div
-                className={`flex-1 p-2 rounded-lg cursor-pointer transition-colors ${
+                className={`p-2 rounded-lg cursor-pointer transition-colors ${
                   apiProvider === "openai"
                     ? "bg-white/10 border border-white/20"
                     : "bg-black/30 border border-white/5 hover:bg-white/5"
@@ -347,7 +356,7 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
                 </div>
               </div>
               <div
-                className={`flex-1 p-2 rounded-lg cursor-pointer transition-colors ${
+                className={`p-2 rounded-lg cursor-pointer transition-colors ${
                   apiProvider === "gemini"
                     ? "bg-white/10 border border-white/20"
                     : "bg-black/30 border border-white/5 hover:bg-white/5"
@@ -367,7 +376,7 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
                 </div>
               </div>
               <div
-                className={`flex-1 p-2 rounded-lg cursor-pointer transition-colors ${
+                className={`p-2 rounded-lg cursor-pointer transition-colors ${
                   apiProvider === "anthropic"
                     ? "bg-white/10 border border-white/20"
                     : "bg-black/30 border border-white/5 hover:bg-white/5"
@@ -386,14 +395,35 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
                   </div>
                 </div>
               </div>
+              <div
+                className={`p-2 rounded-lg cursor-pointer transition-colors ${
+                  apiProvider === "openai-compatible"
+                    ? "bg-white/10 border border-white/20"
+                    : "bg-black/30 border border-white/5 hover:bg-white/5"
+                }`}
+                onClick={() => handleProviderChange("openai-compatible")}
+              >
+                <div className="flex items-center gap-2">
+                  <div
+                    className={`w-3 h-3 rounded-full ${
+                      apiProvider === "openai-compatible" ? "bg-white" : "bg-white/20"
+                    }`}
+                  />
+                  <div className="flex flex-col">
+                    <p className="font-medium text-white text-sm">OpenAI Compatible</p>
+                    <p className="text-xs text-white/60">Open Router, etc.</p>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
           
           <div className="space-y-2">
             <label className="text-sm font-medium text-white" htmlFor="apiKey">
-            {apiProvider === "openai" ? "OpenAI API Key" : 
-             apiProvider === "gemini" ? "Gemini API Key" : 
-             "Anthropic API Key"}
+            {apiProvider === "openai" ? "OpenAI API Key" :
+             apiProvider === "gemini" ? "Gemini API Key" :
+             apiProvider === "anthropic" ? "Anthropic API Key" :
+             "API Key"}
             </label>
             <Input
               id="apiKey"
@@ -401,9 +431,10 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
               placeholder={
-                apiProvider === "openai" ? "sk-..." : 
+                apiProvider === "openai" ? "sk-..." :
                 apiProvider === "gemini" ? "Enter your Gemini API key" :
-                "sk-ant-..."
+                apiProvider === "anthropic" ? "sk-ant-..." :
+                "Enter your API key"
               }
               className="bg-black/50 border-white/10 text-white"
             />
@@ -413,11 +444,36 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
               </p>
             )}
             <p className="text-xs text-white/50">
-              Your API key is stored locally and never sent to any server except {apiProvider === "openai" ? "OpenAI" : "Google"}
+              Your API key is stored locally and never sent to any server except {
+                apiProvider === "openai" ? "OpenAI" :
+                apiProvider === "gemini" ? "Google" :
+                apiProvider === "anthropic" ? "Anthropic" :
+                "the API provider you specified"
+              }
             </p>
+            
+            {apiProvider === "openai-compatible" && (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-white" htmlFor="customApiUrl">
+                    API URL
+                  </label>
+                  <Input
+                    id="baseUrl"
+                    type="text"
+                    value={baseUrl}
+                    onChange={(e) => setBaseUrl(e.target.value)}
+                    placeholder="https://api.openrouter.ai/api/v1"
+                    className="bg-black/50 border-white/10 text-white"
+                  />
+                  <p className="text-xs text-white/50">
+                    Enter the base URL for the OpenAI-compatible API (e.g., Open Router)
+                  </p>
+                </div>
+            )}
+
             <div className="mt-2 p-2 rounded-md bg-white/5 border border-white/10">
               <p className="text-xs text-white/80 mb-1">Don't have an API key?</p>
-              {apiProvider === "openai" ? (
+              {apiProvider === "openai" && (
                 <>
                   <p className="text-xs text-white/60 mb-1">1. Create an account at <button 
                     onClick={() => openExternalLink('https://platform.openai.com/signup')} 
@@ -429,7 +485,8 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
                   </p>
                   <p className="text-xs text-white/60">3. Create a new secret key and paste it here</p>
                 </>
-              ) : apiProvider === "gemini" ?  (
+              )}
+              {apiProvider === "gemini" && (
                 <>
                   <p className="text-xs text-white/60 mb-1">1. Create an account at <button 
                     onClick={() => openExternalLink('https://aistudio.google.com/')} 
@@ -441,7 +498,8 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
                   </p>
                   <p className="text-xs text-white/60">3. Create a new API key and paste it here</p>
                 </>
-              ) : (
+              )}
+              {apiProvider === "anthropic" && (
                 <>
                   <p className="text-xs text-white/60 mb-1">1. Create an account at <button 
                     onClick={() => openExternalLink('https://console.anthropic.com/signup')} 
@@ -449,6 +507,19 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
                   </p>
                   <p className="text-xs text-white/60 mb-1">2. Go to the <button 
                     onClick={() => openExternalLink('https://console.anthropic.com/settings/keys')} 
+                    className="text-blue-400 hover:underline cursor-pointer">API Keys</button> section
+                  </p>
+                  <p className="text-xs text-white/60">3. Create a new API key and paste it here</p>
+                </>
+              )}
+              {apiProvider === "openai-compatible" && (
+                <>
+                  <p className="text-xs text-white/60 mb-1">1. Create an account at <button 
+                    onClick={() => openExternalLink('https://openrouter.ai/')} 
+                    className="text-blue-400 hover:underline cursor-pointer">Open Router</button>
+                  </p>
+                  <p className="text-xs text-white/60 mb-1">2. Go to the <button 
+                    onClick={() => openExternalLink('https://openrouter.ai/dashboard/api-keys')} 
                     className="text-blue-400 hover:underline cursor-pointer">API Keys</button> section
                   </p>
                   <p className="text-xs text-white/60">3. Create a new API key and paste it here</p>
@@ -512,6 +583,18 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
                 apiProvider === "openai" ? category.openaiModels : 
                 apiProvider === "gemini" ? category.geminiModels :
                 category.anthropicModels;
+
+              // Determine which state to use based on category key
+              const currentValue = 
+                category.key === 'extractionModel' ? extractionModel :
+                category.key === 'solutionModel' ? solutionModel :
+                debuggingModel;
+              
+              // Determine which setter function to use
+              const setValue = 
+                category.key === 'extractionModel' ? setExtractionModel :
+                category.key === 'solutionModel' ? setSolutionModel :
+                setDebuggingModel;
               
               return (
                 <div key={category.key} className="mb-4">
@@ -521,19 +604,18 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
                   <p className="text-xs text-white/60 mb-2">{category.description}</p>
                   
                   <div className="space-y-2">
-                    {models.map((m) => {
-                      // Determine which state to use based on category key
-                      const currentValue = 
-                        category.key === 'extractionModel' ? extractionModel :
-                        category.key === 'solutionModel' ? solutionModel :
-                        debuggingModel;
-                      
-                      // Determine which setter function to use
-                      const setValue = 
-                        category.key === 'extractionModel' ? setExtractionModel :
-                        category.key === 'solutionModel' ? setSolutionModel :
-                        setDebuggingModel;
-                        
+                    {apiProvider === "openai-compatible" && (
+                      <Input
+                        id="extractionModelCustom"
+                        type="text"
+                        value={currentValue}
+                        onChange={(e) => setValue(e.target.value)}
+                        placeholder="gpt-3.5-turbo"
+                        className="bg-black/50 border-white/10 text-white"
+                      />
+                    )}
+
+                    {apiProvider !== "openai-compatible" && models.map((m) => {
                       return (
                         <div
                           key={m.id}
