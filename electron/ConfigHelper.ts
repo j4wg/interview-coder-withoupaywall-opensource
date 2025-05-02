@@ -60,11 +60,11 @@ export class ConfigHelper extends EventEmitter {
    */
   private sanitizeModelSelection(model: string, provider: "openai" | "gemini" | "anthropic"): string {
     if (provider === "openai") {
-      // Only allow gpt-4o and gpt-4o-mini for OpenAI
-      const allowedModels = ['gpt-4o', 'gpt-4o-mini'];
+      // Only allow gpt-4.1 and gpt-4o-mini for OpenAI
+      const allowedModels = ['gpt-4.1', 'gpt-4o-mini'];
       if (!allowedModels.includes(model)) {
-        console.warn(`Invalid OpenAI model specified: ${model}. Using default model: gpt-4o`);
-        return 'gpt-4o';
+        console.warn(`Invalid OpenAI model specified: ${model}. Using default model: gpt-4.1`);
+        return 'gpt-4.1';
       }
       return model;
     } else if (provider === "gemini")  {
@@ -171,9 +171,9 @@ export class ConfigHelper extends EventEmitter {
       // If provider is changing, reset models to the default for that provider
       if (updates.apiProvider && updates.apiProvider !== currentConfig.apiProvider) {
         if (updates.apiProvider === "openai") {
-          updates.extractionModel = "gpt-4o";
-          updates.solutionModel = "gpt-4o";
-          updates.debuggingModel = "gpt-4o";
+          updates.extractionModel = "gpt-4.1";
+          updates.solutionModel = "gpt-4.1";
+          updates.debuggingModel = "gpt-4.1";
         } else if (updates.apiProvider === "anthropic") {
           updates.extractionModel = "claude-3-7-sonnet-20250219";
           updates.solutionModel = "claude-3-7-sonnet-20250219";
