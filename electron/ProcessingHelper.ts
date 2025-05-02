@@ -491,15 +491,14 @@ export class ProcessingHelper {
         const messages = [
           {
             role: "system" as const,
-            content:
-              "You are a coding challenge interpreter. Analyze the screenshot of the coding problem and extract all relevant information. Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output. Just return the structured JSON without any other text.",
+            content: `You are a coding challenge interpreter. Your task is to analyze the provided screenshots of a coding problem and extract the following information:\n\n- problem_statement: The full text of the problem statement.\n- constraints: Any explicit constraints or limits mentioned.\n- example_input: The example input(s) provided.\n- example_output: The example output(s) provided.\n\nRespond ONLY with a valid JSON object with these exact fields and no extra text, explanation, or markdown formatting. Do not include any commentary or code block markers. If a field is missing in the screenshots, use an empty string for that field.\n\nPreferred programming language for the solution: ${language}`,
           },
           {
             role: "user" as const,
             content: [
               {
                 type: "text" as const,
-                text: `Extract the coding problem details from these screenshots. Return in JSON format. Preferred coding language we gonna use for this problem is ${language}.`,
+                text: `Extract the coding problem details from these screenshots. Respond only with a valid JSON object with the fields: problem_statement, constraints, example_input, example_output. Do not include any extra text, markdown, or code block markers. If a field is missing, use an empty string. Preferred coding language: ${language}.`,
               },
               ...imageDataList.map((data) => ({
                 type: "image_url" as const,
@@ -548,7 +547,7 @@ export class ProcessingHelper {
               role: "user",
               parts: [
                 {
-                  text: `You are a coding challenge interpreter. Analyze the screenshots of the coding problem and extract all relevant information. Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output. Just return the structured JSON without any other text. Preferred coding language we gonna use for this problem is ${language}.`,
+                  text: `You are a coding challenge interpreter. Your task is to analyze the provided screenshots of a coding problem and extract the following information:\n\n- problem_statement: The full text of the problem statement.\n- constraints: Any explicit constraints or limits mentioned.\n- example_input: The example input(s) provided.\n- example_output: The example output(s) provided.\n\nRespond ONLY with a valid JSON object with these exact fields and no extra text, explanation, or markdown formatting. Do not include any commentary or code block markers. If a field is missing in the screenshots, use an empty string for that field.\n\nPreferred programming language for the solution: ${language}`,
                 },
                 ...imageDataList.map((data) => ({
                   inlineData: {
@@ -613,7 +612,7 @@ export class ProcessingHelper {
               content: [
                 {
                   type: "text" as const,
-                  text: `Extract the coding problem details from these screenshots. Return in JSON format with these fields: problem_statement, constraints, example_input, example_output. Preferred coding language is ${language}.`,
+                  text: `You are a coding challenge interpreter. Your task is to analyze the provided screenshots of a coding problem and extract the following information:\n\n- problem_statement: The full text of the problem statement.\n- constraints: Any explicit constraints or limits mentioned.\n- example_input: The example input(s) provided.\n- example_output: The example output(s) provided.\n\nRespond ONLY with a valid JSON object with these exact fields and no extra text, explanation, or markdown formatting. Do not include any commentary or code block markers. If a field is missing in the screenshots, use an empty string for that field.\n\nPreferred programming language for the solution: ${language}`,
                 },
                 ...imageDataList.map((data) => ({
                   type: "image" as const,
