@@ -37,7 +37,7 @@ function App() {
     open: false,
     title: "",
     description: "",
-    variant: "neutral" as const
+    variant: "neutral" as "neutral" | "success" | "error"
   })
   const [credits, setCredits] = useState<number>(999) // Unlimited credits
   const [currentLanguage, setCurrentLanguage] = useState<string>("python")

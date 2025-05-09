@@ -293,11 +293,19 @@ async function createWindow(): Promise<void> {
   }
   state.mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     console.log("Attempting to open URL:", url)
-    if (url.includes("google.com") || url.includes("supabase.co")) {
-      shell.openExternal(url)
-      return { action: "deny" }
+    try {
+      const parsedURL = new URL(url);
+      const hostname = parsedURL.hostname;
+      const allowedHosts = ["google.com", "supabase.co"];
+      if (allowedHosts.includes(hostname) || hostname.endsWith(".google.com") || hostname.endsWith(".supabase.co")) {
+        shell.openExternal(url);
+        return { action: "deny" }; // Do not open this URL in a new Electron window
+      }
+    } catch (error) {
+      console.error("Invalid URL %d in setWindowOpenHandler: %d" , url , error);
+      return { action: "deny" }; // Deny access as URL string is malformed or invalid
     }
-    return { action: "allow" }
+    return { action: "allow" };
   })
 
   // Enhanced screen capture resistance

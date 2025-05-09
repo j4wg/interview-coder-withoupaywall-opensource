@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react"
+import { createRoot } from "react-dom/client"
 
 import { useToast } from "../../contexts/toast"
 import { LanguageSelector } from "../shared/LanguageSelector"
@@ -22,6 +23,56 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
   const [isTooltipVisible, setIsTooltipVisible] = useState(false)
   const tooltipRef = useRef<HTMLDivElement>(null)
   const { showToast } = useToast()
+
+  // Extract the repeated language selection logic into a separate function
+  const extractLanguagesAndUpdate = (direction?: 'next' | 'prev') => {
+    // Create a hidden instance of LanguageSelector to extract languages
+    const hiddenRenderContainer = document.createElement('div');
+    hiddenRenderContainer.style.position = 'absolute';
+    hiddenRenderContainer.style.left = '-9999px';
+    document.body.appendChild(hiddenRenderContainer);
+    
+    // Create a root and render the LanguageSelector temporarily
+    const root = createRoot(hiddenRenderContainer);
+    root.render(
+      <LanguageSelector 
+        currentLanguage={currentLanguage} 
+        setLanguage={() => {}}
+      />
+    );
+    
+    // Use a small delay to ensure the component has rendered
+    // 50ms is generally enough for React to complete a render cycle
+    setTimeout(() => {
+      // Extract options from the rendered select element
+      const selectElement = hiddenRenderContainer.querySelector('select');
+      if (selectElement) {
+        const options = Array.from(selectElement.options);
+        const values = options.map(opt => opt.value);
+        
+        // Find current language index
+        const currentIndex = values.indexOf(currentLanguage);
+        let newIndex = currentIndex;
+        
+        if (direction === 'prev') {
+          // Go to previous language
+          newIndex = (currentIndex - 1 + values.length) % values.length;
+        } else {
+          // Default to next language
+          newIndex = (currentIndex + 1) % values.length;
+        }
+        
+        if (newIndex !== currentIndex) {
+          setLanguage(values[newIndex]);
+          window.electronAPI.updateConfig({ language: values[newIndex] });
+        }
+      }
+      
+      // Clean up
+      root.unmount();
+      document.body.removeChild(hiddenRenderContainer);
+    }, 50);
+  };
 
   useEffect(() => {
     let tooltipHeight = 0
@@ -164,7 +215,7 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
                 strokeLinejoin="round"
                 className="w-3.5 h-3.5"
               >
-                <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+                <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l-.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
                 <circle cx="12" cy="12" r="3" />
               </svg>
             </div>
@@ -379,10 +430,31 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
 
                     {/* Separator and Log Out */}
                     <div className="pt-3 mt-3 border-t border-white/10">
-                      <LanguageSelector
-                        currentLanguage={currentLanguage}
-                        setLanguage={setLanguage}
-                      />
+                      {/* Simplified Language Selector */}
+                      <div className="mb-3 px-2">
+                        <div 
+                          className="flex items-center justify-between cursor-pointer hover:bg-white/10 rounded px-2 py-1 transition-colors"
+                          onClick={() => extractLanguagesAndUpdate('next')}
+                          tabIndex={0}
+                          onKeyDown={(e) => {
+                            if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+                              extractLanguagesAndUpdate('prev');
+                            } else if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+                              extractLanguagesAndUpdate('next');
+                            }
+                          }}
+                        >
+                          <span className="text-[11px] text-white/70">Language</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] text-white/90">{currentLanguage}</span>
+                            <div className="text-white/40 text-[8px]">
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
+                                <path d="M7 13l5 5 5-5M7 6l5 5 5-5"/>
+                              </svg>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
 
                       {/* API Key Settings */}
                       <div className="mb-3 px-2 space-y-1">

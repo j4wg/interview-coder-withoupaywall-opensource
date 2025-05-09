@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+jobs:
+  build-and-test:
+    name: Build and Test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+        cache: 'npm'
+      
+    - name: Install dependencies
+      run: npm i
+
+    - name: Clearing previous builds
+      run: npm run clean
+      
+    - name: Run Linter
+      run: npm run lint
+      continue-on-error: true
+
+    - name: Type Check
+      run: npx tsc --noEmit
+      continue-on-error: true
+
+    - name: Build
+      run: npm run build
+
+    - name: Run Tests
+      run: npm test
+

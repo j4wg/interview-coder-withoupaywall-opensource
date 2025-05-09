@@ -7,7 +7,6 @@ dist
 **/.DS_Store
 **/.vscode
 **/.idea
-**/package-lock.json
 scripts/
 **/scripts/
 scripts/manual-notarize.js
