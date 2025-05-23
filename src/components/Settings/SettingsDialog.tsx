@@ -14,6 +14,7 @@ import { Settings } from "lucide-react";
 import { useToast } from "../../contexts/toast";
 
 type APIProvider = "openai" | "gemini" | "anthropic";
+type QuestionMode = "coding" | "aptitude";
 
 type AIModel = {
   id: string;
@@ -172,6 +173,11 @@ const modelCategories: ModelCategory[] = [
   }
 ];
 
+const QUESTION_MODES = [
+  { value: "coding", label: "Coding (default)" },
+  { value: "aptitude", label: "Aptitude (math, logic, reasoning)" }
+];
+
 interface SettingsDialogProps {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -184,6 +190,7 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
   const [extractionModel, setExtractionModel] = useState("gpt-4o");
   const [solutionModel, setSolutionModel] = useState("gpt-4o");
   const [debuggingModel, setDebuggingModel] = useState("gpt-4o");
+  const [questionMode, setQuestionMode] = useState<QuestionMode>("coding");
   const [isLoading, setIsLoading] = useState(false);
   const { showToast } = useToast();
 
@@ -213,6 +220,7 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
         extractionModel?: string;
         solutionModel?: string;
         debuggingModel?: string;
+        questionMode?: QuestionMode;
       }
 
       window.electronAPI
@@ -223,6 +231,7 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
           setExtractionModel(config.extractionModel || "gpt-4o");
           setSolutionModel(config.solutionModel || "gpt-4o");
           setDebuggingModel(config.debuggingModel || "gpt-4o");
+          setQuestionMode(config.questionMode || "coding");
         })
         .catch((error: unknown) => {
           console.error("Failed to load config:", error);
@@ -263,6 +272,7 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
         extractionModel,
         solutionModel,
         debuggingModel,
+        questionMode, // <-- Save mode!
       });
       
       if (result) {
@@ -455,6 +465,23 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
                 </>
               )}
             </div>
+          </div>
+
+          {/* Question Mode Section */}
+          <div className="space-y-2 mt-4">
+            <label className="text-sm font-medium text-white">Question Mode</label>
+            <p className="text-xs text-white/60 -mt-3 mb-2">
+              Choose how the AI answers questions: code generation or step-by-step aptitude solutions.
+            </p>
+            <select
+              className="w-full bg-black/50 border border-white/10 text-white rounded-md py-2 px-3"
+              value={questionMode}
+              onChange={e => setQuestionMode(e.target.value as QuestionMode)}
+            >
+              {QUESTION_MODES.map(mode => (
+                <option key={mode.value} value={mode.value}>{mode.label}</option>
+              ))}
+            </select>
           </div>
           
           <div className="space-y-2 mt-4">
