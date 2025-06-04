@@ -269,7 +269,11 @@ async function createWindow(): Promise<void> {
       const indexPath = path.join(__dirname, "../dist/index.html")
       console.log("Falling back to:", indexPath)
       if (fs.existsSync(indexPath)) {
-        state.mainWindow?.loadFile(indexPath)
+        if (state.mainWindow) {
+          state.mainWindow.loadFile(indexPath)
+        } else {
+          console.error("Main window is undefined. Cannot load file:", indexPath)
+        }
       } else {
         console.error("Could not find index.html in dist folder")
       }
