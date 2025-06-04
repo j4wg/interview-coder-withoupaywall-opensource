@@ -149,7 +149,7 @@ const Debug: React.FC<DebugProps> = ({
     const cleanupFunctions = [
       window.electronAPI.onScreenshotTaken(() => refetch()),
       window.electronAPI.onResetView(() => refetch()),
-      window.electronAPI.onDebugSuccess((data) => {
+      window.electronAPI.onDebugSuccess((data: any) => {
         console.log("Debug success event received with data:", data);
         queryClient.setQueryData(["new_solution"], data);
         
@@ -168,8 +168,8 @@ const Debug: React.FC<DebugProps> = ({
           } else if (data.debug_analysis.includes('\n')) {
             // Try to find bullet points or numbered lists
             const lines = data.debug_analysis.split('\n');
-            const bulletPoints = lines.filter(line => 
-              line.trim().match(/^[\d*\-•]+\s/) || 
+            const bulletPoints = lines.filter((line: string) =>
+              line.trim().match(/^[\d*\-•]+\s/) ||
               line.trim().match(/^[A-Z][\d\.\)\:]/) ||
               line.includes(':') && line.length < 100
             );
@@ -333,8 +333,8 @@ const Debug: React.FC<DebugProps> = ({
                   {/* Process the debug analysis text by sections and lines */}
                   {(() => {
                     // First identify key sections based on common patterns in the debug output
-                    const sections = [];
-                    let currentSection = { title: '', content: [] };
+                    const sections: Array<{ title: string; content: string[] }> = [];
+                    let currentSection = { title: '', content: [] as string[] };
                     
                     // Split by possible section headers (### or ##)
                     const mainSections = debugAnalysis.split(/(?=^#{1,3}\s|^\*\*\*|^\s*[A-Z][\w\s]+\s*$)/m);
@@ -362,7 +362,7 @@ const Debug: React.FC<DebugProps> = ({
                     });
                     
                     // Render the processed sections
-                    return sections.map((section, sectionIndex) => (
+                    return sections.map((section: { title: string; content: string[] }, sectionIndex: number) => (
                       <div key={sectionIndex} className="mb-6">
                         {section.title && (
                           <div className="font-bold text-white/90 text-[14px] mb-2 pb-1 border-b border-white/10">
@@ -370,14 +370,14 @@ const Debug: React.FC<DebugProps> = ({
                           </div>
                         )}
                         <div className="pl-1">
-                          {section.content.map((line, lineIndex) => {
+                          {section.content.map((line: string, lineIndex: number) => {
                             // Handle code blocks - detect full code blocks
                             if (line.trim().startsWith('```')) {
                               // If we find the start of a code block, collect all lines until the end
                               if (line.trim() === '```' || line.trim().startsWith('```')) {
                                 // Find end of this code block
                                 const codeBlockEndIndex = section.content.findIndex(
-                                  (l, i) => i > lineIndex && l.trim() === '```'
+                                  (l: string, i: number) => i > lineIndex && l.trim() === '```'
                                 );
                                 
                                 if (codeBlockEndIndex > lineIndex) {
@@ -419,7 +419,7 @@ const Debug: React.FC<DebugProps> = ({
                               const parts = line.split(/(`[^`]+`)/g);
                               return (
                                 <div key={lineIndex} className="my-1.5">
-                                  {parts.map((part, partIndex) => {
+                                  {parts.map((part: string, partIndex: number) => {
                                     if (part.startsWith('`') && part.endsWith('`')) {
                                       return <span key={partIndex} className="font-mono bg-black/30 px-1 py-0.5 rounded">{part.slice(1, -1)}</span>;
                                     }

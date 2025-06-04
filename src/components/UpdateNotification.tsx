@@ -13,14 +13,14 @@ export const UpdateNotification: React.FC = () => {
     console.log("UpdateNotification: Setting up event listeners")
 
     const unsubscribeAvailable = window.electronAPI.onUpdateAvailable(
-      (info) => {
+      (info: any) => {
         console.log("UpdateNotification: Update available received", info)
         setUpdateAvailable(true)
       }
     )
 
     const unsubscribeDownloaded = window.electronAPI.onUpdateDownloaded(
-      (info) => {
+      (info: any) => {
         console.log("UpdateNotification: Update downloaded received", info)
         setUpdateDownloaded(true)
         setIsDownloading(false)

@@ -56,7 +56,11 @@ export class ProcessingHelper {
 
   constructor(deps: IProcessingHelperDeps) {
     this.deps = deps
-    this.screenshotHelper = deps.getScreenshotHelper()
+    const screenshotHelper = deps.getScreenshotHelper()
+    if (!screenshotHelper) {
+      throw new Error("ScreenshotHelper is required but not available")
+    }
+    this.screenshotHelper = screenshotHelper
     
     // Initialize AI client based on config
     this.initializeAIClient();
@@ -280,8 +284,8 @@ export class ProcessingHelper {
         )
 
         // Filter out any nulls from failed screenshots
-        const validScreenshots = screenshots.filter(Boolean);
-        
+        const validScreenshots = screenshots.filter((s): s is { path: string; preview: string; data: string } => s !== null);
+
         if (validScreenshots.length === 0) {
           throw new Error("Failed to load screenshot data");
         }
@@ -392,12 +396,12 @@ export class ProcessingHelper {
         )
         
         // Filter out any nulls from failed screenshots
-        const validScreenshots = screenshots.filter(Boolean);
-        
+        const validScreenshots = screenshots.filter((s): s is { path: string; preview: string; data: string } => s !== null);
+
         if (validScreenshots.length === 0) {
           throw new Error("Failed to load screenshot data for debugging");
         }
-        
+
         console.log(
           "Combined screenshots for processing:",
           validScreenshots.map((s) => s.path)
@@ -505,6 +509,9 @@ export class ProcessingHelper {
         // Parse the response
         try {
           const responseText = extractionResponse.choices[0].message.content;
+          if (!responseText) {
+            throw new Error("Empty response from OpenAI API");
+          }
           // Handle when OpenAI might wrap the JSON in markdown code blocks
           const jsonText = responseText.replace(/```json|```/g, '').trim();
           problemInfo = JSON.parse(jsonText);
@@ -887,11 +894,18 @@ Your solution should be efficient, well-commented, and handle edge cases.
           };
         }
       }
-      
+
+      if (!responseContent) {
+        return {
+          success: false,
+          error: "Empty response from API"
+        };
+      }
+
       // Extract parts from the response
       const codeMatch = responseContent.match(/```(?:\w+)?\s*([\s\S]*?)```/);
       const code = codeMatch ? codeMatch[1].trim() : responseContent;
-      
+
       // Extract thoughts, looking for bullet points or numbered lists
       const thoughtsRegex = /(?:Thoughts:|Key Insights:|Reasoning:|Approach:)([\s\S]*?)(?:Time complexity:|$)/i;
       const thoughtsMatch = responseContent.match(thoughtsRegex);
@@ -1245,8 +1259,14 @@ If you include code examples, use proper markdown code blocks with language spec
           };
         }
       }
-      
-      
+
+      if (!debugContent) {
+        return {
+          success: false,
+          error: "Empty response from debug API"
+        };
+      }
+
       if (mainWindow) {
         mainWindow.webContents.send("processing-status", {
           message: "Debug analysis complete",
@@ -1261,7 +1281,7 @@ If you include code examples, use proper markdown code blocks with language spec
       }
 
       let formattedDebugContent = debugContent;
-      
+
       if (!debugContent.includes('# ') && !debugContent.includes('## ')) {
         formattedDebugContent = debugContent
           .replace(/issues identified|problems found|bugs found/i, '## Issues Identified')

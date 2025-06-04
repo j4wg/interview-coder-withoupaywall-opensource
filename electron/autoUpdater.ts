@@ -98,7 +98,7 @@ export function initAutoUpdater() {
       return { success: true }
     } catch (error) {
       console.error("Failed to start update:", error)
-      return { success: false, error: error.message }
+      return { success: false, error: error instanceof Error ? error.message : String(error) }
     }
   })
 

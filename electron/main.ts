@@ -269,7 +269,7 @@ async function createWindow(): Promise<void> {
       const indexPath = path.join(__dirname, "../dist/index.html")
       console.log("Falling back to:", indexPath)
       if (fs.existsSync(indexPath)) {
-        state.mainWindow.loadFile(indexPath)
+        state.mainWindow?.loadFile(indexPath)
       } else {
         console.error("Could not find index.html in dist folder")
       }
@@ -280,7 +280,7 @@ async function createWindow(): Promise<void> {
     console.log("Loading production build:", indexPath)
     
     if (fs.existsSync(indexPath)) {
-      state.mainWindow.loadFile(indexPath)
+      state.mainWindow?.loadFile(indexPath)
     } else {
       console.error("Could not find index.html in dist folder")
     }
@@ -389,7 +389,7 @@ function handleWindowClosed(): void {
 
 // Window visibility functions
 function hideMainWindow(): void {
-  if (!state.mainWindow?.isDestroyed()) {
+  if (state.mainWindow && !state.mainWindow.isDestroyed()) {
     const bounds = state.mainWindow.getBounds();
     state.windowPosition = { x: bounds.x, y: bounds.y };
     state.windowSize = { width: bounds.width, height: bounds.height };
@@ -401,7 +401,7 @@ function hideMainWindow(): void {
 }
 
 function showMainWindow(): void {
-  if (!state.mainWindow?.isDestroyed()) {
+  if (state.mainWindow && !state.mainWindow.isDestroyed()) {
     if (state.windowPosition && state.windowSize) {
       state.mainWindow.setBounds({
         ...state.windowPosition,
@@ -472,7 +472,7 @@ function moveWindowVertical(updateFn: (y: number) => number): void {
 
 // Window dimension functions
 function setWindowDimensions(width: number, height: number): void {
-  if (!state.mainWindow?.isDestroyed()) {
+  if (state.mainWindow && !state.mainWindow.isDestroyed()) {
     const [currentX, currentY] = state.mainWindow.getPosition()
     const primaryDisplay = screen.getPrimaryDisplay()
     const workArea = primaryDisplay.workAreaSize

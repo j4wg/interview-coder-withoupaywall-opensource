@@ -53,7 +53,7 @@ export function Header({ currentLanguage, setLanguage, onOpenSettings }: HeaderP
     // Also save the language preference to config
     window.electronAPI.updateConfig({
       language: lang
-    }).catch(error => {
+    }).catch((error: any) => {
       console.error('Failed to save language preference:', error);
     });
   };
