@@ -248,6 +248,13 @@ The packaged applications will be available in the `release` directory.
    - Window remains invisible to specified screen sharing applications
    - Start a new problem using [Control or Cmd + R]
 
+6. **Language Selection
+
+   - Easily switch between programming languages with a single click
+   - Use arrow keys for keyboard navigation through available languages
+   - The system dynamically adapts to any languages added or removed from the codebase
+   - Your language preference is saved between sessions
+
 ## Adding More AI Models
 
 This application is built with extensibility in mind. You can easily add support for additional LLMs alongside the existing OpenAI integration:

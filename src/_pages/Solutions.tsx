@@ -114,15 +114,19 @@ export const ComplexitySection = ({
 }) => {
   // Helper to ensure we have proper complexity values
   const formatComplexity = (complexity: string | null): string => {
-    if (!complexity) return "O(n) - Linear time/space complexity";
-    
+    // Default if no complexity returned by LLM
+    if (!complexity || complexity.trim() === "") {
+      return "Complexity not available";
+    }
+
+    const bigORegex = /O\([^)]+\)/i;
     // Return the complexity as is if it already has Big O notation
-    if (complexity.match(/O\([^)]+\)/i)) {
+    if (bigORegex.test(complexity)) {
       return complexity;
     }
     
-    // Otherwise, add a default Big O
-    return `O(n) - ${complexity}`;
+    // Concat Big O notation to the complexity
+    return `O(${complexity})`;
   };
   
   const formattedTimeComplexity = formatComplexity(timeComplexity);

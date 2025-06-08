@@ -7,6 +7,7 @@ import * as axios from "axios"
 import { app, BrowserWindow, dialog } from "electron"
 import { OpenAI } from "openai"
 import { configHelper } from "./ConfigHelper"
+import Anthropic from '@anthropic-ai/sdk';
 
 // Interface for Gemini API requests
 interface GeminiMessage {
@@ -30,12 +31,24 @@ interface GeminiResponse {
     finishReason: string;
   }>;
 }
-
+interface AnthropicMessage {
+  role: 'user' | 'assistant';
+  content: Array<{
+    type: 'text' | 'image';
+    text?: string;
+    source?: {
+      type: 'base64';
+      media_type: string;
+      data: string;
+    };
+  }>;
+}
 export class ProcessingHelper {
   private deps: IProcessingHelperDeps
   private screenshotHelper: ScreenshotHelper
   private openaiClient: OpenAI | null = null
   private geminiApiKey: string | null = null
+  private anthropicClient: Anthropic | null = null
 
   // AbortControllers for API requests
   private currentProcessingAbortController: AbortController | null = null
@@ -69,27 +82,50 @@ export class ProcessingHelper {
             maxRetries: 2   // Retry up to 2 times
           });
           this.geminiApiKey = null;
+          this.anthropicClient = null;
           console.log("OpenAI client initialized successfully");
         } else {
           this.openaiClient = null;
           this.geminiApiKey = null;
+          this.anthropicClient = null;
           console.warn("No API key available, OpenAI client not initialized");
         }
-      } else {
+      } else if (config.apiProvider === "gemini"){
         // Gemini client initialization
         this.openaiClient = null;
+        this.anthropicClient = null;
         if (config.apiKey) {
           this.geminiApiKey = config.apiKey;
           console.log("Gemini API key set successfully");
         } else {
+          this.openaiClient = null;
           this.geminiApiKey = null;
+          this.anthropicClient = null;
           console.warn("No API key available, Gemini client not initialized");
+        }
+      } else if (config.apiProvider === "anthropic") {
+        // Reset other clients
+        this.openaiClient = null;
+        this.geminiApiKey = null;
+        if (config.apiKey) {
+          this.anthropicClient = new Anthropic({
+            apiKey: config.apiKey,
+            timeout: 60000,
+            maxRetries: 2
+          });
+          console.log("Anthropic client initialized successfully");
+        } else {
+          this.openaiClient = null;
+          this.geminiApiKey = null;
+          this.anthropicClient = null;
+          console.warn("No API key available, Anthropic client not initialized");
         }
       }
     } catch (error) {
       console.error("Failed to initialize AI client:", error);
       this.openaiClient = null;
       this.geminiApiKey = null;
+      this.anthropicClient = null;
     }
   }
 
@@ -182,6 +218,17 @@ export class ProcessingHelper {
       
       if (!this.geminiApiKey) {
         console.error("Gemini API key not initialized");
+        mainWindow.webContents.send(
+          this.deps.PROCESSING_EVENTS.API_KEY_INVALID
+        );
+        return;
+      }
+    } else if (config.apiProvider === "anthropic" && !this.anthropicClient) {
+      // Add check for Anthropic client
+      this.initializeAIClient();
+      
+      if (!this.anthropicClient) {
+        console.error("Anthropic client not initialized");
         mainWindow.webContents.send(
           this.deps.PROCESSING_EVENTS.API_KEY_INVALID
         );
@@ -466,7 +513,7 @@ export class ProcessingHelper {
             error: "Failed to parse problem information. Please try again or use clearer screenshots."
           };
         }
-      } else {
+      } else if (config.apiProvider === "gemini")  {
         // Use Gemini API
         if (!this.geminiApiKey) {
           return {
@@ -525,6 +572,66 @@ export class ProcessingHelper {
           return {
             success: false,
             error: "Failed to process with Gemini API. Please check your API key or try again later."
+          };
+        }
+      } else if (config.apiProvider === "anthropic") {
+        if (!this.anthropicClient) {
+          return {
+            success: false,
+            error: "Anthropic API key not configured. Please check your settings."
+          };
+        }
+
+        try {
+          const messages = [
+            {
+              role: "user" as const,
+              content: [
+                {
+                  type: "text" as const,
+                  text: `Extract the coding problem details from these screenshots. Return in JSON format with these fields: problem_statement, constraints, example_input, example_output. Preferred coding language is ${language}.`
+                },
+                ...imageDataList.map(data => ({
+                  type: "image" as const,
+                  source: {
+                    type: "base64" as const,
+                    media_type: "image/png" as const,
+                    data: data
+                  }
+                }))
+              ]
+            }
+          ];
+
+          const response = await this.anthropicClient.messages.create({
+            model: config.extractionModel || "claude-3-7-sonnet-20250219",
+            max_tokens: 4000,
+            messages: messages,
+            temperature: 0.2
+          });
+
+          const responseText = (response.content[0] as { type: 'text', text: string }).text;
+          const jsonText = responseText.replace(/```json|```/g, '').trim();
+          problemInfo = JSON.parse(jsonText);
+        } catch (error: any) {
+          console.error("Error using Anthropic API:", error);
+
+          // Add specific handling for Claude's limitations
+          if (error.status === 429) {
+            return {
+              success: false,
+              error: "Claude API rate limit exceeded. Please wait a few minutes before trying again."
+            };
+          } else if (error.status === 413 || (error.message && error.message.includes("token"))) {
+            return {
+              success: false,
+              error: "Your screenshots contain too much information for Claude to process. Switch to OpenAI or Gemini in settings which can handle larger inputs."
+            };
+          }
+
+          return {
+            success: false,
+            error: "Failed to process with Anthropic API. Please check your API key or try again later."
           };
         }
       }
@@ -702,7 +809,7 @@ Your solution should be efficient, well-commented, and handle edge cases.
         });
 
         responseContent = solutionResponse.choices[0].message.content;
-      } else {
+      } else if (config.apiProvider === "gemini")  {
         // Gemini processing
         if (!this.geminiApiKey) {
           return {
@@ -751,6 +858,58 @@ Your solution should be efficient, well-commented, and handle edge cases.
             error: "Failed to generate solution with Gemini API. Please check your API key or try again later."
           };
         }
+      } else if (config.apiProvider === "anthropic") {
+        // Anthropic processing
+        if (!this.anthropicClient) {
+          return {
+            success: false,
+            error: "Anthropic API key not configured. Please check your settings."
+          };
+        }
+        
+        try {
+          const messages = [
+            {
+              role: "user" as const,
+              content: [
+                {
+                  type: "text" as const,
+                  text: `You are an expert coding interview assistant. Provide a clear, optimal solution with detailed explanations for this problem:\n\n${promptText}`
+                }
+              ]
+            }
+          ];
+
+          // Send to Anthropic API
+          const response = await this.anthropicClient.messages.create({
+            model: config.solutionModel || "claude-3-7-sonnet-20250219",
+            max_tokens: 4000,
+            messages: messages,
+            temperature: 0.2
+          });
+
+          responseContent = (response.content[0] as { type: 'text', text: string }).text;
+        } catch (error: any) {
+          console.error("Error using Anthropic API for solution:", error);
+
+          // Add specific handling for Claude's limitations
+          if (error.status === 429) {
+            return {
+              success: false,
+              error: "Claude API rate limit exceeded. Please wait a few minutes before trying again."
+            };
+          } else if (error.status === 413 || (error.message && error.message.includes("token"))) {
+            return {
+              success: false,
+              error: "Your screenshots contain too much information for Claude to process. Switch to OpenAI or Gemini in settings which can handle larger inputs."
+            };
+          }
+
+          return {
+            success: false,
+            error: "Failed to generate solution with Anthropic API. Please check your API key or try again later."
+          };
+        }
       }
       
       // Extract parts from the response
@@ -772,7 +931,7 @@ Your solution should be efficient, well-commented, and handle edge cases.
         } else {
           // If no bullet points found, split by newlines and filter empty lines
           thoughts = thoughtsMatch[1].split('\n')
-            .map(line => line.trim())
+            .map((line) => line.trim())
             .filter(Boolean);
         }
       }
@@ -965,7 +1124,7 @@ If you include code examples, use proper markdown code blocks with language spec
         });
         
         debugContent = debugResponse.choices[0].message.content;
-      } else {
+      } else if (config.apiProvider === "gemini")  {
         if (!this.geminiApiKey) {
           return {
             success: false,
@@ -1046,7 +1205,97 @@ If you include code examples, use proper markdown code blocks with language spec
             error: "Failed to process debug request with Gemini API. Please check your API key or try again later."
           };
         }
+      } else if (config.apiProvider === "anthropic") {
+        if (!this.anthropicClient) {
+          return {
+            success: false,
+            error: "Anthropic API key not configured. Please check your settings."
+          };
+        }
+        
+        try {
+          const debugPrompt = `
+You are a coding interview assistant helping debug and improve solutions. Analyze these screenshots which include either error messages, incorrect outputs, or test cases, and provide detailed debugging help.
+
+I'm solving this coding problem: "${problemInfo.problem_statement}" in ${language}. I need help with debugging or improving my solution.
+
+YOUR RESPONSE MUST FOLLOW THIS EXACT STRUCTURE WITH THESE SECTION HEADERS:
+### Issues Identified
+- List each issue as a bullet point with clear explanation
+
+### Specific Improvements and Corrections
+- List specific code changes needed as bullet points
+
+### Optimizations
+- List any performance optimizations if applicable
+
+### Explanation of Changes Needed
+Here provide a clear explanation of why the changes are needed
+
+### Key Points
+- Summary bullet points of the most important takeaways
+
+If you include code examples, use proper markdown code blocks with language specification.
+`;
+
+          const messages = [
+            {
+              role: "user" as const,
+              content: [
+                {
+                  type: "text" as const,
+                  text: debugPrompt
+                },
+                ...imageDataList.map(data => ({
+                  type: "image" as const,
+                  source: {
+                    type: "base64" as const,
+                    media_type: "image/png" as const, 
+                    data: data
+                  }
+                }))
+              ]
+            }
+          ];
+
+          if (mainWindow) {
+            mainWindow.webContents.send("processing-status", {
+              message: "Analyzing code and generating debug feedback with Claude...",
+              progress: 60
+            });
+          }
+
+          const response = await this.anthropicClient.messages.create({
+            model: config.debuggingModel || "claude-3-7-sonnet-20250219",
+            max_tokens: 4000,
+            messages: messages,
+            temperature: 0.2
+          });
+          
+          debugContent = (response.content[0] as { type: 'text', text: string }).text;
+        } catch (error: any) {
+          console.error("Error using Anthropic API for debugging:", error);
+          
+          // Add specific handling for Claude's limitations
+          if (error.status === 429) {
+            return {
+              success: false,
+              error: "Claude API rate limit exceeded. Please wait a few minutes before trying again."
+            };
+          } else if (error.status === 413 || (error.message && error.message.includes("token"))) {
+            return {
+              success: false,
+              error: "Your screenshots contain too much information for Claude to process. Switch to OpenAI or Gemini in settings which can handle larger inputs."
+            };
+          }
+          
+          return {
+            success: false,
+            error: "Failed to process debug request with Anthropic API. Please check your API key or try again later."
+          };
+        }
       }
+      
       
       if (mainWindow) {
         mainWindow.webContents.send("processing-status", {
