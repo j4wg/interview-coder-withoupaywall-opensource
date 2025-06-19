@@ -10,6 +10,7 @@ echo - Process Screenshots: Ctrl+Enter
 echo - Move Window: Ctrl+Arrows (Left/Right/Up/Down)
 echo - Adjust Opacity: Ctrl+[ (decrease) / Ctrl+] (increase)
 echo - Reset View: Ctrl+R
+echo - Toggle Mode: Ctrl+M (switch between Coding/General)
 echo - Quit App: Ctrl+Q
 echo.
 echo When you press Ctrl+B, the window will toggle between visible and invisible.
