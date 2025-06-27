@@ -114,4 +114,18 @@ Your contributions make Interview Coder - Unlocked Edition a powerful, community
 
 ## Contribution Changes
 
-Added Grok API support by harshit-patel01
+### Added Grok API Support by harshit-patel01
+
+This contribution integrates support for Grok's AI API alongside the existing OpenAI, Gemini, and Anthropic APIs:
+
+- **API Integration**: Added Grok API client initialization, interface definitions, and proper error handling
+- **Settings UI**: Updated the settings dialog to include Grok as a provider option with model selection
+- **Model Support**: Added support for Grok-1 and Grok-2 models
+- **Core Features**: Implemented Grok API for all key features:
+  - Problem extraction from screenshots
+  - Solution generation with complexity analysis
+  - Code debugging and optimization
+- **Configuration**: Enhanced the configuration system to handle Grok API keys and model selection
+- **Type Safety**: Added proper TypeScript interfaces and type annotations for the Grok API responses
+
+Users can now use their Grok API keys to leverage Grok's models for coding interview assistance.
