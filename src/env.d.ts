@@ -59,6 +59,28 @@ interface ElectronAPI {
   installUpdate: () => void
   onUpdateAvailable: (callback: (info: any) => void) => () => void
   onUpdateDownloaded: (callback: (info: any) => void) => () => void
+  // Config and API key methods
+  getConfig: () => Promise<{
+    apiKey?: string
+    apiProvider?: string
+    extractionModel?: string
+    solutionModel?: string
+    debuggingModel?: string
+    language?: string
+  }>
+  updateConfig: (config: {
+    apiKey?: string
+    apiProvider?: string
+    extractionModel?: string
+    solutionModel?: string
+    debuggingModel?: string
+    language?: string
+  }) => Promise<boolean>
+  checkApiKey: () => Promise<boolean>
+  onApiKeyInvalid: (callback: () => void) => () => void
+  onShowSettings: (callback: () => void) => () => void
+  openLink: (url: string) => void
+  removeListener: (channel: string, callback: (...args: any[]) => void) => void
 }
 
 interface Window {
