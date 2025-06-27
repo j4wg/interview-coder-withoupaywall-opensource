@@ -13,7 +13,7 @@ import { Button } from "../ui/button";
 import { Settings } from "lucide-react";
 import { useToast } from "../../contexts/toast";
 
-type APIProvider = "openai" | "gemini" | "anthropic";
+type APIProvider = "openai" | "gemini" | "anthropic" | "grok";
 
 type AIModel = {
   id: string;
@@ -28,6 +28,7 @@ type ModelCategory = {
   openaiModels: AIModel[];
   geminiModels: AIModel[];
   anthropicModels: AIModel[];
+  grokModels: AIModel[];
 };
 
 // Define available models for each category
@@ -76,6 +77,18 @@ const modelCategories: ModelCategory[] = [
         name: "Claude 3 Opus",
         description: "Top-level intelligence, fluency, and understanding"
       }
+    ],
+    grokModels: [
+      {
+        id: "grok-1",
+        name: "Grok-1",
+        description: "Powerful model for problem extraction"
+      },
+      {
+        id: "grok-2",
+        name: "Grok-2",
+        description: "Latest model with enhanced capabilities"
+      }
     ]
   },
   {
@@ -122,6 +135,18 @@ const modelCategories: ModelCategory[] = [
         name: "Claude 3 Opus",
         description: "Top-level intelligence, fluency, and understanding"
       }
+    ],
+    grokModels: [
+      {
+        id: "grok-1",
+        name: "Grok-1",
+        description: "Powerful model for coding tasks"
+      },
+      {
+        id: "grok-2",
+        name: "Grok-2",
+        description: "Latest model with enhanced coding capabilities"
+      }
     ]
   },
   {
@@ -167,6 +192,18 @@ const modelCategories: ModelCategory[] = [
         id: "claude-3-opus-20240229",
         name: "Claude 3 Opus",
         description: "Top-level intelligence, fluency, and understanding"
+      }
+    ],
+    grokModels: [
+      {
+        id: "grok-1",
+        name: "Grok-1",
+        description: "Powerful model for debugging code"
+      },
+      {
+        id: "grok-2",
+        name: "Grok-2",
+        description: "Latest model with enhanced debugging capabilities"
       }
     ]
   }
@@ -251,6 +288,10 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
       setExtractionModel("claude-3-7-sonnet-20250219");
       setSolutionModel("claude-3-7-sonnet-20250219");
       setDebuggingModel("claude-3-7-sonnet-20250219");
+    } else if (provider === "grok") {
+      setExtractionModel("grok-1");
+      setSolutionModel("grok-1");
+      setDebuggingModel("grok-1");
     }
   };
 
@@ -325,7 +366,7 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
           {/* API Provider Selection */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-white">API Provider</label>
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               <div
                 className={`flex-1 p-2 rounded-lg cursor-pointer transition-colors ${
                   apiProvider === "openai"
@@ -386,6 +427,26 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
                   </div>
                 </div>
               </div>
+              <div
+                className={`flex-1 p-2 rounded-lg cursor-pointer transition-colors ${
+                  apiProvider === "grok"
+                    ? "bg-white/10 border border-white/20"
+                    : "bg-black/30 border border-white/5 hover:bg-white/5"
+                }`}
+                onClick={() => handleProviderChange("grok")}
+              >
+                <div className="flex items-center gap-2">
+                  <div
+                    className={`w-3 h-3 rounded-full ${
+                      apiProvider === "grok" ? "bg-white" : "bg-white/20"
+                    }`}
+                  />
+                  <div className="flex flex-col">
+                    <p className="font-medium text-white text-sm">Grok</p>
+                    <p className="text-xs text-white/60">Grok models</p>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
           
@@ -393,7 +454,7 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
             <label className="text-sm font-medium text-white" htmlFor="apiKey">
             {apiProvider === "openai" ? "OpenAI API Key" : 
              apiProvider === "gemini" ? "Gemini API Key" : 
-             "Anthropic API Key"}
+             apiProvider === "anthropic" ? "Anthropic API Key" : "Grok API Key"}
             </label>
             <Input
               id="apiKey"
@@ -403,7 +464,7 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
               placeholder={
                 apiProvider === "openai" ? "sk-..." : 
                 apiProvider === "gemini" ? "Enter your Gemini API key" :
-                "sk-ant-..."
+                apiProvider === "anthropic" ? "sk-ant-..." : "Enter your Grok API key"
               }
               className="bg-black/50 border-white/10 text-white"
             />
@@ -413,7 +474,7 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
               </p>
             )}
             <p className="text-xs text-white/50">
-              Your API key is stored locally and never sent to any server except {apiProvider === "openai" ? "OpenAI" : "Google"}
+              Your API key is stored locally and never sent to any server except {apiProvider === "openai" ? "OpenAI" : apiProvider === "gemini" ? "Google" : apiProvider === "anthropic" ? "Anthropic" : "Grok"}
             </p>
             <div className="mt-2 p-2 rounded-md bg-white/5 border border-white/10">
               <p className="text-xs text-white/80 mb-1">Don't have an API key?</p>
@@ -441,7 +502,7 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
                   </p>
                   <p className="text-xs text-white/60">3. Create a new API key and paste it here</p>
                 </>
-              ) : (
+              ) : apiProvider === "anthropic" ? (
                 <>
                   <p className="text-xs text-white/60 mb-1">1. Create an account at <button 
                     onClick={() => openExternalLink('https://console.anthropic.com/signup')} 
@@ -449,6 +510,18 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
                   </p>
                   <p className="text-xs text-white/60 mb-1">2. Go to the <button 
                     onClick={() => openExternalLink('https://console.anthropic.com/settings/keys')} 
+                    className="text-blue-400 hover:underline cursor-pointer">API Keys</button> section
+                  </p>
+                  <p className="text-xs text-white/60">3. Create a new API key and paste it here</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-xs text-white/60 mb-1">1. Create an account at <button 
+                    onClick={() => openExternalLink('https://grok.com/signup')} 
+                    className="text-blue-400 hover:underline cursor-pointer">Grok</button>
+                  </p>
+                  <p className="text-xs text-white/60 mb-1">2. Go to the <button 
+                    onClick={() => openExternalLink('https://grok.com/api-keys')} 
                     className="text-blue-400 hover:underline cursor-pointer">API Keys</button> section
                   </p>
                   <p className="text-xs text-white/60">3. Create a new API key and paste it here</p>
@@ -511,7 +584,8 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
               const models = 
                 apiProvider === "openai" ? category.openaiModels : 
                 apiProvider === "gemini" ? category.geminiModels :
-                category.anthropicModels;
+                apiProvider === "anthropic" ? category.anthropicModels :
+                category.grokModels;
               
               return (
                 <div key={category.key} className="mb-4">
@@ -526,13 +600,13 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
                       const currentValue = 
                         category.key === 'extractionModel' ? extractionModel :
                         category.key === 'solutionModel' ? solutionModel :
-                        debuggingModel;
+                        category.key === 'debuggingModel' ? debuggingModel : "";
                       
                       // Determine which setter function to use
                       const setValue = 
                         category.key === 'extractionModel' ? setExtractionModel :
                         category.key === 'solutionModel' ? setSolutionModel :
-                        setDebuggingModel;
+                        category.key === 'debuggingModel' ? setDebuggingModel : () => {};
                         
                       return (
                         <div
