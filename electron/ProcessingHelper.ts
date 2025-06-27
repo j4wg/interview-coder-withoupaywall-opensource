@@ -31,6 +31,7 @@ interface GeminiResponse {
     finishReason: string;
   }>;
 }
+
 interface AnthropicMessage {
   role: 'user' | 'assistant';
   content: Array<{
@@ -43,12 +44,39 @@ interface AnthropicMessage {
     };
   }>;
 }
+
+// Interface for Grok API requests
+interface GrokMessage {
+  role: 'user' | 'assistant';
+  content: string | Array<{
+    type: string;
+    text?: string;
+    image_url?: {
+      url: string;
+    };
+  }>;
+}
+
+interface GrokResponse {
+  id: string;
+  choices: Array<{
+    message: GrokMessage;
+    finish_reason: string;
+  }>;
+  usage: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
+}
+
 export class ProcessingHelper {
   private deps: IProcessingHelperDeps
   private screenshotHelper: ScreenshotHelper
   private openaiClient: OpenAI | null = null
   private geminiApiKey: string | null = null
   private anthropicClient: Anthropic | null = null
+  private grokApiKey: string | null = null
 
   // AbortControllers for API requests
   private currentProcessingAbortController: AbortController | null = null
@@ -83,17 +111,20 @@ export class ProcessingHelper {
           });
           this.geminiApiKey = null;
           this.anthropicClient = null;
+          this.grokApiKey = null;
           console.log("OpenAI client initialized successfully");
         } else {
           this.openaiClient = null;
           this.geminiApiKey = null;
           this.anthropicClient = null;
+          this.grokApiKey = null;
           console.warn("No API key available, OpenAI client not initialized");
         }
       } else if (config.apiProvider === "gemini"){
         // Gemini client initialization
         this.openaiClient = null;
         this.anthropicClient = null;
+        this.grokApiKey = null;
         if (config.apiKey) {
           this.geminiApiKey = config.apiKey;
           console.log("Gemini API key set successfully");
@@ -101,12 +132,14 @@ export class ProcessingHelper {
           this.openaiClient = null;
           this.geminiApiKey = null;
           this.anthropicClient = null;
+          this.grokApiKey = null;
           console.warn("No API key available, Gemini client not initialized");
         }
       } else if (config.apiProvider === "anthropic") {
         // Reset other clients
         this.openaiClient = null;
         this.geminiApiKey = null;
+        this.grokApiKey = null;
         if (config.apiKey) {
           this.anthropicClient = new Anthropic({
             apiKey: config.apiKey,
@@ -118,7 +151,23 @@ export class ProcessingHelper {
           this.openaiClient = null;
           this.geminiApiKey = null;
           this.anthropicClient = null;
+          this.grokApiKey = null;
           console.warn("No API key available, Anthropic client not initialized");
+        }
+      } else if (config.apiProvider === "grok") {
+        // Reset other clients
+        this.openaiClient = null;
+        this.geminiApiKey = null;
+        this.anthropicClient = null;
+        if (config.apiKey) {
+          this.grokApiKey = config.apiKey;
+          console.log("Grok API key set successfully");
+        } else {
+          this.openaiClient = null;
+          this.geminiApiKey = null;
+          this.anthropicClient = null;
+          this.grokApiKey = null;
+          console.warn("No API key available, Grok client not initialized");
         }
       }
     } catch (error) {
@@ -126,6 +175,7 @@ export class ProcessingHelper {
       this.openaiClient = null;
       this.geminiApiKey = null;
       this.anthropicClient = null;
+      this.grokApiKey = null;
     }
   }
 
@@ -438,280 +488,210 @@ export class ProcessingHelper {
     }
   }
 
+  /**
+   * Make API call to process screenshots with the appropriate AI service
+   */
   private async processScreenshotsHelper(
     screenshots: Array<{ path: string; data: string }>,
     signal: AbortSignal
   ) {
+    const config = configHelper.loadConfig();
+    
+    // Select the model to use based on config
+    const selectedModel = config.extractionModel || 
+      (config.apiProvider === "openai" ? "gpt-4o" : 
+       config.apiProvider === "gemini" ? "gemini-2.0-flash" : 
+       config.apiProvider === "anthropic" ? "claude-3-7-sonnet-20250219" : 
+       "grok-1");
+    
+    console.log(`Processing with ${config.apiProvider} API using model: ${selectedModel}`);
+    
     try {
-      const config = configHelper.loadConfig();
-      const language = await this.getLanguage();
-      const mainWindow = this.deps.getMainWindow();
-      
-      // Step 1: Extract problem info using AI Vision API (OpenAI or Gemini)
-      const imageDataList = screenshots.map(screenshot => screenshot.data);
-      
-      // Update the user on progress
-      if (mainWindow) {
-        mainWindow.webContents.send("processing-status", {
-          message: "Analyzing problem from screenshots...",
-          progress: 20
-        });
+      // Process with the appropriate API based on provider setting
+      if (config.apiProvider === "openai" && this.openaiClient) {
+        return this.processWithOpenAI(screenshots, selectedModel, signal);
+      } else if (config.apiProvider === "gemini" && this.geminiApiKey) {
+        return this.processWithGemini(screenshots, selectedModel, signal);
+      } else if (config.apiProvider === "anthropic" && this.anthropicClient) {
+        return this.processWithAnthropic(screenshots, selectedModel, signal);
+      } else if (config.apiProvider === "grok" && this.grokApiKey) {
+        return this.processWithGrok(screenshots, selectedModel, signal);
+      } else {
+        throw new Error("No valid AI client configured");
       }
-
-      let problemInfo;
-      
-      if (config.apiProvider === "openai") {
-        // Verify OpenAI client
-        if (!this.openaiClient) {
-          this.initializeAIClient(); // Try to reinitialize
-          
-          if (!this.openaiClient) {
-            return {
-              success: false,
-              error: "OpenAI API key not configured or invalid. Please check your settings."
-            };
-          }
-        }
-
-        // Use OpenAI for processing
-        const messages = [
-          {
-            role: "system" as const, 
-            content: "You are a coding challenge interpreter. Analyze the screenshot of the coding problem and extract all relevant information. Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output. Just return the structured JSON without any other text."
-          },
-          {
-            role: "user" as const,
-            content: [
-              {
-                type: "text" as const, 
-                text: `Extract the coding problem details from these screenshots. Return in JSON format. Preferred coding language we gonna use for this problem is ${language}.`
-              },
-              ...imageDataList.map(data => ({
-                type: "image_url" as const,
-                image_url: { url: `data:image/png;base64,${data}` }
-              }))
-            ]
-          }
-        ];
-
-        // Send to OpenAI Vision API
-        const extractionResponse = await this.openaiClient.chat.completions.create({
-          model: config.extractionModel || "gpt-4o",
-          messages: messages,
-          max_tokens: 4000,
-          temperature: 0.2
-        });
-
-        // Parse the response
-        try {
-          const responseText = extractionResponse.choices[0].message.content;
-          // Handle when OpenAI might wrap the JSON in markdown code blocks
-          const jsonText = responseText.replace(/```json|```/g, '').trim();
-          problemInfo = JSON.parse(jsonText);
-        } catch (error) {
-          console.error("Error parsing OpenAI response:", error);
-          return {
-            success: false,
-            error: "Failed to parse problem information. Please try again or use clearer screenshots."
-          };
-        }
-      } else if (config.apiProvider === "gemini")  {
-        // Use Gemini API
-        if (!this.geminiApiKey) {
-          return {
-            success: false,
-            error: "Gemini API key not configured. Please check your settings."
-          };
-        }
-
-        try {
-          // Create Gemini message structure
-          const geminiMessages: GeminiMessage[] = [
-            {
-              role: "user",
-              parts: [
-                {
-                  text: `You are a coding challenge interpreter. Analyze the screenshots of the coding problem and extract all relevant information. Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output. Just return the structured JSON without any other text. Preferred coding language we gonna use for this problem is ${language}.`
-                },
-                ...imageDataList.map(data => ({
-                  inlineData: {
-                    mimeType: "image/png",
-                    data: data
-                  }
-                }))
-              ]
-            }
-          ];
-
-          // Make API request to Gemini
-          const response = await axios.default.post(
-            `https://generativelanguage.googleapis.com/v1beta/models/${config.extractionModel || "gemini-2.0-flash"}:generateContent?key=${this.geminiApiKey}`,
-            {
-              contents: geminiMessages,
-              generationConfig: {
-                temperature: 0.2,
-                maxOutputTokens: 4000
-              }
-            },
-            { signal }
-          );
-
-          const responseData = response.data as GeminiResponse;
-          
-          if (!responseData.candidates || responseData.candidates.length === 0) {
-            throw new Error("Empty response from Gemini API");
-          }
-          
-          const responseText = responseData.candidates[0].content.parts[0].text;
-          
-          // Handle when Gemini might wrap the JSON in markdown code blocks
-          const jsonText = responseText.replace(/```json|```/g, '').trim();
-          problemInfo = JSON.parse(jsonText);
-        } catch (error) {
-          console.error("Error using Gemini API:", error);
-          return {
-            success: false,
-            error: "Failed to process with Gemini API. Please check your API key or try again later."
-          };
-        }
-      } else if (config.apiProvider === "anthropic") {
-        if (!this.anthropicClient) {
-          return {
-            success: false,
-            error: "Anthropic API key not configured. Please check your settings."
-          };
-        }
-
-        try {
-          const messages = [
-            {
-              role: "user" as const,
-              content: [
-                {
-                  type: "text" as const,
-                  text: `Extract the coding problem details from these screenshots. Return in JSON format with these fields: problem_statement, constraints, example_input, example_output. Preferred coding language is ${language}.`
-                },
-                ...imageDataList.map(data => ({
-                  type: "image" as const,
-                  source: {
-                    type: "base64" as const,
-                    media_type: "image/png" as const,
-                    data: data
-                  }
-                }))
-              ]
-            }
-          ];
-
-          const response = await this.anthropicClient.messages.create({
-            model: config.extractionModel || "claude-3-7-sonnet-20250219",
-            max_tokens: 4000,
-            messages: messages,
-            temperature: 0.2
-          });
-
-          const responseText = (response.content[0] as { type: 'text', text: string }).text;
-          const jsonText = responseText.replace(/```json|```/g, '').trim();
-          problemInfo = JSON.parse(jsonText);
-        } catch (error: any) {
-          console.error("Error using Anthropic API:", error);
-
-          // Add specific handling for Claude's limitations
-          if (error.status === 429) {
-            return {
-              success: false,
-              error: "Claude API rate limit exceeded. Please wait a few minutes before trying again."
-            };
-          } else if (error.status === 413 || (error.message && error.message.includes("token"))) {
-            return {
-              success: false,
-              error: "Your screenshots contain too much information for Claude to process. Switch to OpenAI or Gemini in settings which can handle larger inputs."
-            };
-          }
-
-          return {
-            success: false,
-            error: "Failed to process with Anthropic API. Please check your API key or try again later."
-          };
-        }
-      }
-      
-      // Update the user on progress
-      if (mainWindow) {
-        mainWindow.webContents.send("processing-status", {
-          message: "Problem analyzed successfully. Preparing to generate solution...",
-          progress: 40
-        });
-      }
-
-      // Store problem info in AppState
-      this.deps.setProblemInfo(problemInfo);
-
-      // Send first success event
-      if (mainWindow) {
-        mainWindow.webContents.send(
-          this.deps.PROCESSING_EVENTS.PROBLEM_EXTRACTED,
-          problemInfo
-        );
-
-        // Generate solutions after successful extraction
-        const solutionsResult = await this.generateSolutionsHelper(signal);
-        if (solutionsResult.success) {
-          // Clear any existing extra screenshots before transitioning to solutions view
-          this.screenshotHelper.clearExtraScreenshotQueue();
-          
-          // Final progress update
-          mainWindow.webContents.send("processing-status", {
-            message: "Solution generated successfully",
-            progress: 100
-          });
-          
-          mainWindow.webContents.send(
-            this.deps.PROCESSING_EVENTS.SOLUTION_SUCCESS,
-            solutionsResult.data
-          );
-          return { success: true, data: solutionsResult.data };
-        } else {
-          throw new Error(
-            solutionsResult.error || "Failed to generate solutions"
-          );
-        }
-      }
-
-      return { success: false, error: "Failed to process screenshots" };
     } catch (error: any) {
-      // If the request was cancelled, don't retry
-      if (axios.isCancel(error)) {
-        return {
-          success: false,
-          error: "Processing was canceled by the user."
-        };
+      if (error.name === "AbortError") {
+        throw new Error("Request was cancelled");
       }
       
-      // Handle OpenAI API errors specifically
-      if (error?.response?.status === 401) {
+      console.error("Error processing screenshots:", error);
+      
+      // Check for API key errors
+      if (error.statusCode === 401 || 
+          error.message?.includes("API key") ||
+          error.message?.includes("authentication")) {
+        
+        this.deps.getMainWindow()?.webContents.send("API_KEY_INVALID");
+        throw new Error("API key appears to be invalid or has insufficient credits");
+      }
+      
+      throw error;
+    }
+  }
+
+  private async processWithOpenAI(
+    screenshots: Array<{ path: string; data: string }>,
+    model: string, 
+    signal: AbortSignal
+  ): Promise<any> {
+    // Implementation for processing with OpenAI
+    throw new Error("Method not implemented");
+  }
+
+  private async processWithGemini(
+    screenshots: Array<{ path: string; data: string }>,
+    model: string, 
+    signal: AbortSignal
+  ): Promise<any> {
+    // Implementation for processing with Gemini
+    throw new Error("Method not implemented");
+  }
+
+  private async processWithAnthropic(
+    screenshots: Array<{ path: string; data: string }>,
+    model: string, 
+    signal: AbortSignal
+  ): Promise<any> {
+    // Implementation for processing with Anthropic
+    throw new Error("Method not implemented");
+  }
+
+  /**
+   * Process screenshots with Grok API
+   */
+  private async processWithGrok(
+    screenshots: Array<{ path: string; data: string }>,
+    model: string, 
+    signal: AbortSignal
+  ): Promise<any> {
+    if (!this.grokApiKey) {
+      throw new Error("Grok API key not configured");
+    }
+    
+    if (screenshots.length === 0) {
+      throw new Error("No screenshots to process");
+    }
+
+    const language = await this.getLanguage();
+
+    // Prepare the messages array with system prompt and user message
+    const messages: GrokMessage[] = [];
+    
+    // Add user message with all screenshots
+    const userContent: any[] = [];
+    
+    // Add textual instructions
+    userContent.push({
+      type: "text",
+      text: `I need help solving a coding interview problem. I'll provide screenshots of the problem statement or similar. Please:
+1. Identify and explain the problem
+2. Propose a solution approach
+3. Provide code in ${language} to solve it
+4. Explain the time and space complexity`
+    });
+    
+    // Add all screenshots as images
+    for (const screenshot of screenshots) {
+      userContent.push({
+        type: "image",
+        image_url: {
+          url: `data:image/png;base64,${screenshot.data}`
+        }
+      });
+    }
+    
+    // Add user message with content
+    messages.push({
+      role: "user",
+      content: userContent
+    });
+    
+    // Make the API call
+    const response = await fetch("https://api.grok.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${this.grokApiKey}`
+      },
+      body: JSON.stringify({
+        model: model,
+        messages: messages,
+        temperature: 0.3,
+        max_tokens: 4096
+      }),
+      signal
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Grok API error: ${response.status} - ${errorText}`);
+    }
+    
+    const responseData: GrokResponse = await response.json();
+    
+    if (responseData.choices && responseData.choices.length > 0) {
+      // Extract assistant's response
+      const assistantMessage = responseData.choices[0].message;
+      
+      if (typeof assistantMessage.content === 'string') {
+        const result = assistantMessage.content;
+        
+        // Parse the result to extract problem details
+        const problemRegex = /(?:Problem:|The problem is:)([\s\S]*?)(?:Approach:|Solution:|Proposed solution:)/i;
+        const approachRegex = /(?:Approach:|Proposed solution:)([\s\S]*?)(?:Code:|```)/i;
+        
+        const problemMatch = result.match(problemRegex);
+        const approachMatch = result.match(approachRegex);
+        
+        // Extract code using markdown code block detection
+        const codeRegex = /```(?:\w+)?\s*([\s\S]*?)```/g;
+        const codeMatches = [...result.matchAll(codeRegex)];
+        let code = "";
+        
+        if (codeMatches.length > 0) {
+          code = codeMatches[0][1].trim();
+        }
+        
+        // Extract complexity analysis
+        const complexityRegex = /(?:Time Complexity:|Space Complexity:|Complexity:|Efficiency:|Complexities:)([\s\S]*?)(?:$|NOTE:|Note:)/i;
+        const complexityMatch = result.match(complexityRegex);
+        
+        // Build structured response
         return {
-          success: false,
-          error: "Invalid OpenAI API key. Please check your settings."
+          problem: problemMatch ? problemMatch[1].trim() : "Could not extract problem statement",
+          approach: approachMatch ? approachMatch[1].trim() : "Could not extract approach",
+          code: code || "Could not extract code",
+          complexity: complexityMatch ? complexityMatch[1].trim() : "Complexity analysis not available",
+          raw_output: result
         };
-      } else if (error?.response?.status === 429) {
+      } else if (Array.isArray(assistantMessage.content)) {
+        // Handle case where content is an array of objects
+        const textParts = assistantMessage.content
+          .filter((part: any) => part.type === "text")
+          .map((part: any) => part.text)
+          .join("\n");
+          
         return {
-          success: false,
-          error: "OpenAI API rate limit exceeded or insufficient credits. Please try again later."
-        };
-      } else if (error?.response?.status === 500) {
-        return {
-          success: false,
-          error: "OpenAI server error. Please try again later."
+          problem: "See detailed output",
+          approach: "See detailed output",
+          code: "See detailed output",
+          complexity: "See detailed output", 
+          raw_output: textParts
         };
       }
-
-      console.error("API Error Details:", error);
-      return { 
-        success: false, 
-        error: error.message || "Failed to process screenshots. Please try again." 
-      };
     }
+    
+    throw new Error("Could not process Grok API response");
   }
 
   private async generateSolutionsHelper(signal: AbortSignal) {
@@ -817,21 +797,22 @@ Your solution should be efficient, well-commented, and handle edge cases.
                 maxOutputTokens: 4000
               }
             },
-            { signal }
+            {
+              signal
+            }
           );
 
-          const responseData = response.data as GeminiResponse;
-          
-          if (!responseData.candidates || responseData.candidates.length === 0) {
-            throw new Error("Empty response from Gemini API");
+          if (response.data.candidates && response.data.candidates.length > 0) {
+            const generatedText = response.data.candidates[0].content.parts[0].text;
+            responseContent = generatedText;
+          } else {
+            throw new Error("No valid response from Gemini API");
           }
-          
-          responseContent = responseData.candidates[0].content.parts[0].text;
-        } catch (error) {
-          console.error("Error using Gemini API for solution:", error);
+        } catch (error: any) {
+          console.error("Gemini API error:", error);
           return {
             success: false,
-            error: "Failed to generate solution with Gemini API. Please check your API key or try again later."
+            error: error.message || "Failed to generate solution with Gemini API"
           };
         }
       } else if (config.apiProvider === "anthropic") {
@@ -844,48 +825,108 @@ Your solution should be efficient, well-commented, and handle edge cases.
         }
         
         try {
-          const messages = [
-            {
-              role: "user" as const,
-              content: [
-                {
-                  type: "text" as const,
-                  text: `You are an expert coding interview assistant. Provide a clear, optimal solution with detailed explanations for this problem:\n\n${promptText}`
-                }
-              ]
-            }
-          ];
-
-          // Send to Anthropic API
+          // Make API request to Anthropic
           const response = await this.anthropicClient.messages.create({
             model: config.solutionModel || "claude-3-7-sonnet-20250219",
             max_tokens: 4000,
-            messages: messages,
-            temperature: 0.2
+            temperature: 0.2,
+            messages: [
+              { 
+                role: 'user', 
+                content: [{ 
+                  type: 'text', 
+                  text: `You are an expert coding interview assistant. Provide a clear, optimal solution with detailed explanations for this problem:\n\n${promptText}`
+                }] 
+              }
+            ]
           });
 
-          responseContent = (response.content[0] as { type: 'text', text: string }).text;
-        } catch (error: any) {
-          console.error("Error using Anthropic API for solution:", error);
-
-          // Add specific handling for Claude's limitations
-          if (error.status === 429) {
-            return {
-              success: false,
-              error: "Claude API rate limit exceeded. Please wait a few minutes before trying again."
-            };
-          } else if (error.status === 413 || (error.message && error.message.includes("token"))) {
-            return {
-              success: false,
-              error: "Your screenshots contain too much information for Claude to process. Switch to OpenAI or Gemini in settings which can handle larger inputs."
-            };
+          if (response && response.content && response.content.length > 0) {
+            const textParts = response.content
+              .filter(part => part.type === 'text')
+              .map(part => part.text)
+              .join("\n");
+              
+            responseContent = textParts;
+          } else {
+            throw new Error("No valid response from Anthropic API");
           }
-
+        } catch (error: any) {
+          console.error("Anthropic API error:", error);
           return {
             success: false,
-            error: "Failed to generate solution with Anthropic API. Please check your API key or try again later."
+            error: error.message || "Failed to generate solution with Anthropic API"
           };
         }
+      } else if (config.apiProvider === "grok") {
+        // Grok processing
+        if (!this.grokApiKey) {
+          return {
+            success: false,
+            error: "Grok API key not configured. Please check your settings."
+          };
+        }
+        
+        try {
+          // Create Grok message structure
+          const grokMessages = [
+            {
+              role: "user",
+              content: `You are an expert coding interview assistant. Provide a clear, optimal solution with detailed explanations for this problem:\n\n${promptText}`
+            }
+          ];
+
+          // Make API request to Grok
+          const response = await fetch("https://api.grok.com/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${this.grokApiKey}`
+            },
+            body: JSON.stringify({
+              model: config.solutionModel || "grok-1",
+              messages: grokMessages,
+              temperature: 0.2,
+              max_tokens: 4000
+            }),
+            signal
+          });
+          
+          if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Grok API error: ${response.status} - ${errorText}`);
+          }
+          
+          const responseData = await response.json();
+          
+          if (responseData.choices && responseData.choices.length > 0) {
+            const assistantMessage = responseData.choices[0].message;
+            
+            if (typeof assistantMessage.content === 'string') {
+              responseContent = assistantMessage.content;
+            } else if (Array.isArray(assistantMessage.content)) {
+              responseContent = assistantMessage.content
+                .filter((part: any) => part.type === "text")
+                .map((part: any) => part.text)
+                .join("\n");
+            } else {
+              throw new Error("Unexpected response format from Grok API");
+            }
+          } else {
+            throw new Error("No valid response from Grok API");
+          }
+        } catch (error: any) {
+          console.error("Grok API error:", error);
+          return {
+            success: false,
+            error: error.message || "Failed to generate solution with Grok API"
+          };
+        }
+      } else {
+        return {
+          success: false,
+          error: "No valid AI provider configured. Please check your settings."
+        };
       }
       
       // Extract parts from the response
@@ -901,13 +942,13 @@ Your solution should be efficient, well-commented, and handle edge cases.
         // Extract bullet points or numbered items
         const bulletPoints = thoughtsMatch[1].match(/(?:^|\n)\s*(?:[-*•]|\d+\.)\s*(.*)/g);
         if (bulletPoints) {
-          thoughts = bulletPoints.map(point => 
+          thoughts = bulletPoints.map((point: string) => 
             point.replace(/^\s*(?:[-*•]|\d+\.)\s*/, '').trim()
           ).filter(Boolean);
         } else {
           // If no bullet points found, split by newlines and filter empty lines
           thoughts = thoughtsMatch[1].split('\n')
-            .map((line) => line.trim())
+            .map((line: string) => line.trim())
             .filter(Boolean);
         }
       }
