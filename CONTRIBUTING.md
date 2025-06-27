@@ -112,6 +112,6 @@ As the primary maintainer, I (Ornithopter-pilot) oversee merges and ensure stabi
 
 Your contributions make Interview Coder - Unlocked Edition a powerful, community-owned tool. Whether it's adding language support, enhancing UI, or fixing bugs, every effort counts. Let's build something amazing together!
 
-## Contibution Changes
+## Contribution Changes
 
 Added Grok API support by harshit-patel01
