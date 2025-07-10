@@ -58,6 +58,11 @@ const modelCategories: ModelCategory[] = [
         id: "gemini-2.0-flash",
         name: "Gemini 2.0 Flash",
         description: "Faster, more cost-effective option"
+      },
+      {
+        id: "gemini-2.5-pro",
+        name: "Gemini 2.5 Pro",
+        description: "Latest and most capable model"
       }
     ],
     anthropicModels: [
@@ -104,6 +109,11 @@ const modelCategories: ModelCategory[] = [
         id: "gemini-2.0-flash",
         name: "Gemini 2.0 Flash",
         description: "Faster, more cost-effective option"
+      },
+      {
+        id: "gemini-2.5-pro",
+        name: "Gemini 2.5 Pro",
+        description: "Latest and most capable model"
       }
     ],
     anthropicModels: [
@@ -150,6 +160,11 @@ const modelCategories: ModelCategory[] = [
         id: "gemini-2.0-flash",
         name: "Gemini 2.0 Flash",
         description: "Faster, more cost-effective option"
+      },
+      {
+        id: "gemini-2.5-pro",
+        name: "Gemini 2.5 Pro",
+        description: "Latest and most capable model"
       }
     ],
     anthropicModels: [

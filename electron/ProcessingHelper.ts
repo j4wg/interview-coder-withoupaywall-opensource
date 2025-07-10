@@ -545,7 +545,7 @@ export class ProcessingHelper {
 
           // Make API request to Gemini
           const response = await axios.default.post(
-            `https://generativelanguage.googleapis.com/v1beta/models/${config.extractionModel || "gemini-2.0-flash"}:generateContent?key=${this.geminiApiKey}`,
+            `https://generativelanguage.googleapis.com/v1beta/models/${config.extractionModel || "gemini-2.5-flash"}:generateContent?key=${this.geminiApiKey}`,
             {
               contents: geminiMessages,
               generationConfig: {
@@ -801,7 +801,7 @@ Your solution should be efficient, well-commented, and handle edge cases.
               role: "user",
               parts: [
                 {
-                  text: `You are an expert coding interview assistant. Provide a clear, optimal solution with detailed explanations for this problem:\n\n${promptText}`
+                  text: `You are an expert coding interview assistant. Provide a clear, optimal solution with detailed explanations for this problem:\n\n${promptText}. Even if it is a non-coding question, provide a solution in the same format as coding problems.`
                 }
               ]
             }
@@ -809,7 +809,7 @@ Your solution should be efficient, well-commented, and handle edge cases.
 
           // Make API request to Gemini
           const response = await axios.default.post(
-            `https://generativelanguage.googleapis.com/v1beta/models/${config.solutionModel || "gemini-2.0-flash"}:generateContent?key=${this.geminiApiKey}`,
+            `https://generativelanguage.googleapis.com/v1beta/models/${config.solutionModel || "gemini-2.5-flash"}:generateContent?key=${this.geminiApiKey}`,
             {
               contents: geminiMessages,
               generationConfig: {
@@ -1130,7 +1130,7 @@ If you include code examples, use proper markdown code blocks with language spec
           }
 
           const response = await axios.default.post(
-            `https://generativelanguage.googleapis.com/v1beta/models/${config.debuggingModel || "gemini-2.0-flash"}:generateContent?key=${this.geminiApiKey}`,
+            `https://generativelanguage.googleapis.com/v1beta/models/${config.debuggingModel || "gemini-2.5-flash"}:generateContent?key=${this.geminiApiKey}`,
             {
               contents: geminiMessages,
               generationConfig: {
