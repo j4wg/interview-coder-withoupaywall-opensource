@@ -106,6 +106,8 @@ Note: The application is **NOT** invisible to:
     - No additional permissions needed
   - On Linux:
     - May require `xhost` access depending on your distribution
+    - If using wayland: install `grim`
+    - If using gnome: install `gnome-screenshot` (if not already installed)
 
 ## Running the Application
 
