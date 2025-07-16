@@ -148,11 +148,17 @@ export class ScreenshotHelper {
   private async captureScreenshot(): Promise<Buffer> {
     try {
       console.log("Starting screenshot capture...");
-      
+
+      // Check if running on Wayland
+      if (process.env.XDG_SESSION_TYPE === 'wayland') {
+        console.log("Detected Wayland session");
+        return await this.captureWaylandScreenshot();
+      }
+
       // For Windows, try multiple methods
       if (process.platform === 'win32') {
         return await this.captureWindowsScreenshot();
-      } 
+      }
       
       // For macOS and Linux, use buffer directly
       console.log("Taking screenshot on non-Windows platform");
@@ -162,6 +168,71 @@ export class ScreenshotHelper {
     } catch (error) {
       console.error("Error capturing screenshot:", error);
       throw new Error(`Failed to capture screenshot: ${error.message}`);
+    }
+  }
+
+  /**
+   * Wayland screenshot capture
+   */
+  private async captureWaylandScreenshot(): Promise<Buffer> {
+    try {
+      const currentDesktop = process.env.XDG_CURRENT_DESKTOP;
+      if (currentDesktop?.toLowerCase().includes('gnome')) {
+        console.log("Detected GNOME on Wayland, using gnome-screenshot instead.");
+        return await this.captureGnomeScreenshot();
+      }
+
+      console.log("Taking screenshot on Wayland with grim");
+      const tempFile = path.join(this.tempDir, `temp-${uuidv4()}.png`);
+      await execFileAsync('grim', ['-g', '0,0 1920x1080', tempFile]);
+
+      if (!fs.existsSync(tempFile)) {
+        throw new Error("Screenshot file not created by grim");
+      }
+
+      const buffer = await fs.promises.readFile(tempFile);
+      console.log(`Screenshot captured successfully, size: ${buffer.length} bytes`);
+
+      try {
+        await fs.promises.unlink(tempFile);
+      } catch (cleanupErr) {
+        console.warn("Failed to clean up temp file:", cleanupErr);
+      }
+
+      return buffer;
+    } catch (error) {
+      console.error("Error capturing Wayland screenshot:", error);
+      throw new Error(`Failed to capture Wayland screenshot: ${error.message}`);
+    }
+  }
+
+  /**
+   * GNOME Wayland screenshot capture using gnome-screenshot
+   */
+  private async captureGnomeScreenshot(): Promise<Buffer> {
+    try {
+      console.log("Taking screenshot on GNOME with gnome-screenshot");
+
+      const tempFile = path.join(this.tempDir, `gnome-temp-${uuidv4()}.png`);
+      await execFileAsync('gnome-screenshot', ['-f', tempFile]);
+
+      if (!fs.existsSync(tempFile)) {
+        throw new Error("Screenshot file not created by gnome-screenshot");
+      }
+
+      const buffer = await fs.promises.readFile(tempFile);
+      console.log(`Screenshot captured successfully, size: ${buffer.length} bytes`);
+
+      try {
+        await fs.promises.unlink(tempFile);
+      } catch (cleanupErr) {
+        console.warn("Failed to clean up temp file:", cleanupErr);
+      }
+
+      return buffer;
+    } catch (error) {
+      console.error("Error capturing GNOME screenshot:", error);
+      throw new Error(`Failed to capture GNOME screenshot: ${error.message}`);
     }
   }
 
