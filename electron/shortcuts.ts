@@ -148,6 +148,14 @@ export class ShortcutsHelper {
         mainWindow.webContents.setZoomLevel(currentZoom + 0.5)
       }
     })
+
+    globalShortcut.register("CommandOrControl+U", () => {
+      console.log("Command/Ctrl + U pressed. Click-through enabled.")
+      const mainWindow = this.deps.getMainWindow()
+      if (mainWindow) {
+        this.deps.toggleClickThrough()
+      }
+    })
     
     // Delete last screenshot shortcut
     globalShortcut.register("CommandOrControl+L", () => {

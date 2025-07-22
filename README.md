@@ -65,6 +65,7 @@ All it takes is modest JavaScript/TypeScript knowledge and understanding of the 
 The application uses unidentifiable global keyboard shortcuts that won't be detected by browsers or other applications:
 
 - Toggle Window Visibility: [Control or Cmd + B]
+- Toggle Window Interactivity: [Control or Cmd + U]
 - Move Window: [Control or Cmd + Arrow keys]
 - Take Screenshot: [Control or Cmd + H]
 - Delete Last Screenshot: [Control or Cmd + L]
@@ -145,6 +146,7 @@ chmod +x stealth-run.sh
 ```
 
 **IMPORTANT**: The application window will be invisible by default! Use Ctrl+B (or Cmd+B on Mac) to toggle visibility.
+               The application window will be non-interactive by default! Use Ctrl+U (or Cmd+U on Mac) to toggle interactivity.
 
 ### Building Distributable Packages
 
@@ -244,6 +246,7 @@ The packaged applications will be available in the `release` directory.
 5. **Window Management**
    - Move window using [Control or Cmd + Arrow keys]
    - Toggle visibility with [Control or Cmd + B]
+   - Toggle interactivity with [Control or Cmd + U]
    - Adjust opacity with [Control or Cmd + [] and [Control or Cmd + ]]
    - Window remains invisible to specified screen sharing applications
    - Start a new problem using [Control or Cmd + R]
