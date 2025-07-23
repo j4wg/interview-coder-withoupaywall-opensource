@@ -8,6 +8,8 @@ import { ShortcutsHelper } from "./shortcuts"
 import { initAutoUpdater } from "./autoUpdater"
 import { configHelper } from "./ConfigHelper"
 import * as dotenv from "dotenv"
+import { safeLogger } from "./SafeLogger"
+
 
 // Constants
 const isDev = process.env.NODE_ENV === "development"
@@ -242,18 +244,18 @@ async function createWindow(): Promise<void> {
 
   // Add more detailed logging for window events
   state.mainWindow.webContents.on("did-finish-load", () => {
-    console.log("Window finished loading")
+    safeLogger.mainLog("Window finished loading")
   })
   state.mainWindow.webContents.on(
     "did-fail-load",
     async (event, errorCode, errorDescription) => {
-      console.error("Window failed to load:", errorCode, errorDescription)
+      safeLogger.mainError("Window failed to load:", errorCode, errorDescription)
       if (isDev) {
         // In development, retry loading after a short delay
-        console.log("Retrying to load development server...")
+        safeLogger.mainLog("Retrying to load development server...")
         setTimeout(() => {
           state.mainWindow?.loadURL("http://localhost:54321").catch((error) => {
-            console.error("Failed to load dev server on retry:", error)
+            safeLogger.mainError("Failed to load dev server on retry:", error)
           })
         }, 1000)
       }
@@ -262,27 +264,27 @@ async function createWindow(): Promise<void> {
 
   if (isDev) {
     // In development, load from the dev server
-    console.log("Loading from development server: http://localhost:54321")
+    safeLogger.mainLog("Loading from development server: http://localhost:54321")
     state.mainWindow.loadURL("http://localhost:54321").catch((error) => {
-      console.error("Failed to load dev server, falling back to local file:", error)
+      safeLogger.mainError("Failed to load dev server, falling back to local file:", error)
       // Fallback to local file if dev server is not available
       const indexPath = path.join(__dirname, "../dist/index.html")
-      console.log("Falling back to:", indexPath)
+      safeLogger.mainLog("Falling back to:", indexPath)
       if (fs.existsSync(indexPath)) {
         state.mainWindow.loadFile(indexPath)
       } else {
-        console.error("Could not find index.html in dist folder")
+        safeLogger.mainError("Could not find index.html in dist folder")
       }
     })
   } else {
     // In production, load from the built files
     const indexPath = path.join(__dirname, "../dist/index.html")
-    console.log("Loading production build:", indexPath)
-    
+    safeLogger.mainLog("Loading production build:", indexPath)
+
     if (fs.existsSync(indexPath)) {
       state.mainWindow.loadFile(indexPath)
     } else {
-      console.error("Could not find index.html in dist folder")
+      safeLogger.mainError("Could not find index.html in dist folder")
     }
   }
 
@@ -292,7 +294,7 @@ async function createWindow(): Promise<void> {
     state.mainWindow.webContents.openDevTools()
   }
   state.mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    console.log("Attempting to open URL:", url)
+    safeLogger.mainLog("Attempting to open URL:", url)
     try {
       const parsedURL = new URL(url);
       const hostname = parsedURL.hostname;
@@ -302,7 +304,7 @@ async function createWindow(): Promise<void> {
         return { action: "deny" }; // Do not open this URL in a new Electron window
       }
     } catch (error) {
-      console.error("Invalid URL %d in setWindowOpenHandler: %d" , url , error);
+      safeLogger.mainError("Invalid URL %d in setWindowOpenHandler: %d" , url , error);
       return { action: "deny" }; // Deny access as URL string is malformed or invalid
     }
     return { action: "allow" };
@@ -346,21 +348,21 @@ async function createWindow(): Promise<void> {
   state.currentX = bounds.x
   state.currentY = bounds.y
   state.isWindowVisible = true
-  
+
   // Set opacity based on user preferences or hide initially
   // Ensure the window is visible for the first launch or if opacity > 0.1
   const savedOpacity = configHelper.getOpacity();
-  console.log(`Initial opacity from config: ${savedOpacity}`);
-  
+  safeLogger.mainLog(`Initial opacity from config: ${savedOpacity}`);
+
   // Always make sure window is shown first
   state.mainWindow.showInactive(); // Use showInactive for consistency
-  
+
   if (savedOpacity <= 0.1) {
-    console.log('Initial opacity too low, setting to 0 and hiding window');
+    safeLogger.mainLog('Initial opacity too low, setting to 0 and hiding window');
     state.mainWindow.setOpacity(0);
     state.isWindowVisible = false;
   } else {
-    console.log(`Setting initial opacity to ${savedOpacity}`);
+    safeLogger.mainLog(`Setting initial opacity to ${savedOpacity}`);
     state.mainWindow.setOpacity(savedOpacity);
     state.isWindowVisible = true;
   }
@@ -396,7 +398,7 @@ function hideMainWindow(): void {
     state.mainWindow.setIgnoreMouseEvents(true, { forward: true });
     state.mainWindow.setOpacity(0);
     state.isWindowVisible = false;
-    console.log('Window hidden, opacity set to 0');
+    safeLogger.mainLog('Window hidden, opacity set to 0');
   }
 }
 
@@ -418,12 +420,12 @@ function showMainWindow(): void {
     state.mainWindow.showInactive(); // Use showInactive instead of show+focus
     state.mainWindow.setOpacity(1); // Then set opacity to 1 after showing
     state.isWindowVisible = true;
-    console.log('Window shown with showInactive(), opacity set to 1');
+    safeLogger.mainLog('Window shown with showInactive(), opacity set to 1');
   }
 }
 
 function toggleMainWindow(): void {
-  console.log(`Toggling window. Current state: ${state.isWindowVisible ? 'visible' : 'hidden'}`);
+  safeLogger.mainLog(`Toggling window. Current state: ${state.isWindowVisible ? 'visible' : 'hidden'}`);
   if (state.isWindowVisible) {
     hideMainWindow();
   } else {
@@ -451,7 +453,7 @@ function moveWindowVertical(updateFn: (y: number) => number): void {
     state.screenHeight + ((state.windowSize?.height || 0) * 2) / 3
 
   // Log the current state and limits
-  console.log({
+  safeLogger.mainLog({
     newY,
     maxUpLimit,
     maxDownLimit,
@@ -490,16 +492,16 @@ function setWindowDimensions(width: number, height: number): void {
 // Environment setup
 function loadEnvVariables() {
   if (isDev) {
-    console.log("Loading env variables from:", path.join(process.cwd(), ".env"))
+    safeLogger.mainLog("Loading env variables from:", path.join(process.cwd(), ".env"))
     dotenv.config({ path: path.join(process.cwd(), ".env") })
   } else {
-    console.log(
+    safeLogger.mainLog(
       "Loading env variables from:",
       path.join(process.resourcesPath, ".env")
     )
     dotenv.config({ path: path.join(process.resourcesPath, ".env") })
   }
-  console.log("Environment variables loaded for open-source version")
+  safeLogger.mainLog("Environment variables loaded for open-source version")
 }
 
 // Initialize application
@@ -510,26 +512,26 @@ async function initializeApp() {
     const sessionPath = path.join(appDataPath, 'session')
     const tempPath = path.join(appDataPath, 'temp')
     const cachePath = path.join(appDataPath, 'cache')
-    
+
     // Create directories if they don't exist
     for (const dir of [appDataPath, sessionPath, tempPath, cachePath]) {
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true })
       }
     }
-    
+
     app.setPath('userData', appDataPath)
-    app.setPath('sessionData', sessionPath)      
+    app.setPath('sessionData', sessionPath)
     app.setPath('temp', tempPath)
     app.setPath('cache', cachePath)
-      
+
     loadEnvVariables()
-    
+
     // Ensure a configuration file exists
     if (!configHelper.hasApiKey()) {
-      console.log("No API key found in configuration. User will need to set up.")
+      safeLogger.mainLog("No API key found in configuration. User will need to set up.")
     }
-    
+
     initializeHelpers()
     initializeIpcHandlers({
       getMainWindow,
@@ -564,27 +566,27 @@ async function initializeApp() {
 
     // Initialize auto-updater regardless of environment
     initAutoUpdater()
-    console.log(
+    safeLogger.mainLog(
       "Auto-updater initialized in",
       isDev ? "development" : "production",
       "mode"
     )
   } catch (error) {
-    console.error("Failed to initialize application:", error)
+    safeLogger.mainError("Failed to initialize application:", error)
     app.quit()
   }
 }
 
 // Auth callback handling removed - no longer needed
 app.on("open-url", (event, url) => {
-  console.log("open-url event received:", url)
+  safeLogger.mainLog("open-url event received:", url)
   event.preventDefault()
 })
 
 // Handle second instance (removed auth callback handling)
 app.on("second-instance", (event, commandLine) => {
-  console.log("second-instance event received:", commandLine)
-  
+  safeLogger.mainLog("second-instance event received:", commandLine)
+
   // Focus or create the main window
   if (!state.mainWindow) {
     createWindow()
