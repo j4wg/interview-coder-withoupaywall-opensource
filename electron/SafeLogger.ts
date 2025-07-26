@@ -37,6 +37,8 @@ class SafeLogger {
 
   private writeToFile(filePath: string, message: string): void {
     try {
+      // Check size limit before writing
+      this.checkAndClearIfOverLimit()
       fs.appendFileSync(filePath, message, 'utf8')
     } catch (error) {
       // Silently fail - we can't use console.log here as it would cause the same issue
@@ -82,20 +84,46 @@ class SafeLogger {
     this.writeToFile(logPath, message)
   }
 
-  // Clean up old logs (optional - call this periodically)
-  cleanupOldLogs(maxAgeDays: number = 7): void {
+    // Check total log directory size
+  private getDirectorySize(): number {
     try {
-      const maxAge = Date.now() - (maxAgeDays * 24 * 60 * 60 * 1000)
+      let totalSize = 0
       const files = fs.readdirSync(this.logDir)
 
       files.forEach(file => {
         const filePath = path.join(this.logDir, file)
         const stats = fs.statSync(filePath)
-
-        if (stats.mtime.getTime() < maxAge) {
-          fs.unlinkSync(filePath)
-        }
+        totalSize += stats.size
       })
+
+      return totalSize
+    } catch (error) {
+      return 0
+    }
+  }
+
+  // Clear all logs if size exceeds 1GB
+  private checkAndClearIfOverLimit(): void {
+    try {
+      const sizeLimit = 1024 * 1024 * 1024 // 1GB in bytes
+      const currentSize = this.getDirectorySize()
+
+      if (currentSize > sizeLimit) {
+        // Clear all log files
+        const files = fs.readdirSync(this.logDir)
+        files.forEach(file => {
+          const filePath = path.join(this.logDir, file)
+          try {
+            fs.unlinkSync(filePath)
+          } catch (error) {
+            // Silently fail for individual file deletion
+          }
+        })
+
+        // Log the cleanup action
+        const message = this.formatLogMessage('INFO', 'SYSTEM', `Log directory cleared due to size limit (${(currentSize / 1024 / 1024).toFixed(2)}MB exceeded 1GB limit)`)
+        this.writeToFile(this.mainLogPath, message)
+      }
     } catch (error) {
       // Silently fail
     }
