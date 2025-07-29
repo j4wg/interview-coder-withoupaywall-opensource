@@ -50,9 +50,9 @@ const modelCategories: ModelCategory[] = [
     ],
     geminiModels: [
       {
-        id: "gemini-1.5-pro",
-        name: "Gemini 1.5 Pro",
-        description: "Best overall performance for problem extraction"
+        id: "gemini-1.5-flash",
+        name: "Gemini 1.5 Flash",
+        description: "Fast and versatile multimodal model"
       },
       {
         id: "gemini-2.0-flash",
@@ -96,9 +96,9 @@ const modelCategories: ModelCategory[] = [
     ],
     geminiModels: [
       {
-        id: "gemini-1.5-pro",
-        name: "Gemini 1.5 Pro",
-        description: "Strong overall performance for coding tasks"
+        id: "gemini-1.5-flash",
+        name: "Gemini 1.5 Flash",
+        description: "Fast and versatile multimodal model"
       },
       {
         id: "gemini-2.0-flash",
@@ -142,9 +142,9 @@ const modelCategories: ModelCategory[] = [
     ],
     geminiModels: [
       {
-        id: "gemini-1.5-pro",
-        name: "Gemini 1.5 Pro",
-        description: "Best for analyzing code and error messages"
+        id: "gemini-1.5-flash",
+        name: "Gemini 1.5 Flash",
+        description: "Fast and versatile multimodal model"
       },
       {
         id: "gemini-2.0-flash",
@@ -244,9 +244,9 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
       setSolutionModel("gpt-4o");
       setDebuggingModel("gpt-4o");
     } else if (provider === "gemini") {
-      setExtractionModel("gemini-1.5-pro");
-      setSolutionModel("gemini-1.5-pro");
-      setDebuggingModel("gemini-1.5-pro");
+      setExtractionModel("gemini-1.5-flash");
+      setSolutionModel("gemini-1.5-flash");
+      setDebuggingModel("gemini-1.5-flash");
     } else if (provider === "anthropic") {
       setExtractionModel("claude-3-7-sonnet-20250219");
       setSolutionModel("claude-3-7-sonnet-20250219");
@@ -413,7 +413,8 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
               </p>
             )}
             <p className="text-xs text-white/50">
-              Your API key is stored locally and never sent to any server except {apiProvider === "openai" ? "OpenAI" : "Google"}
+              Your API key is stored locally and never sent to any server except {apiProvider === "openai" ? "OpenAI" : "Google"}.
+              {apiProvider === 'gemini' && <span> Note: Gemini is a Google product. You will need a Google AI Studio API key.</span>}
             </p>
             <div className="mt-2 p-2 rounded-md bg-white/5 border border-white/10">
               <p className="text-xs text-white/80 mb-1">Don't have an API key?</p>
