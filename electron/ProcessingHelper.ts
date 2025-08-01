@@ -1,4 +1,4 @@
-// ProcessingHelper.ts
+// ProcessingHelper.ts - UPDATED VERSION with Enhanced MCQ Detection
 import fs from "node:fs"
 import path from "node:path"
 import { ScreenshotHelper } from "./ScreenshotHelper"
@@ -477,14 +477,14 @@ export class ProcessingHelper {
         const messages = [
           {
             role: "system" as const, 
-            content: "You are a coding challenge interpreter. Analyze the screenshot of the coding problem and extract all relevant information. Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output. Just return the structured JSON without any other text."
+            content: "You are an intelligent assistant that analyzes screenshots and determines if they contain coding problems or Multiple Choice Questions (MCQs).\n\n**IMPORTANT: Look carefully at the image content, including any code snippets, formatted text, or structured questions.**\n\n**If it's a CODING PROBLEM (like LeetCode, programming challenges):**\nReturn JSON format: {\"problem_statement\": \"...\", \"constraints\": \"...\", \"example_input\": \"...\", \"example_output\": \"...\"}\n\n**If it's an MCQ (Multiple Choice Question) - this includes:**\n- Questions with options A, B, C, D (even if formatted/colored)\n- Code-based MCQs with syntax highlighting\n- Questions asking \"What will be the output?\"\n- Questions about programming concepts, syntax, or theory\n- SQL queries asking \"What will this query do?\"\n- Java code asking \"What is the output?\"\n\nReturn in this EXACT format:\nMCQ_ANSWER: [A/B/C/D]\nEXPLANATION: [Detailed explanation of why this answer is correct, including step-by-step code analysis if applicable]\n\n**If it's neither:**\nReturn: UNSUPPORTED_FORMAT"
           },
           {
             role: "user" as const,
             content: [
               {
                 type: "text" as const, 
-                text: `Extract the coding problem details from these screenshots. Return in JSON format. Preferred coding language we gonna use for this problem is ${language}.`
+                text: `Analyze this screenshot. If it's a coding problem, return JSON format. If it's an MCQ about computer science topics (including code-based questions asking \"What will be the output?\" or \"What will this query do?\"), provide the MCQ answer and explanation as specified.`
               },
               ...imageDataList.map(data => ({
                 type: "image_url" as const,
@@ -505,7 +505,68 @@ export class ProcessingHelper {
         // Parse the response
         try {
           const responseText = extractionResponse.choices[0].message.content;
-          // Handle when OpenAI might wrap the JSON in markdown code blocks
+          
+          // Enhanced MCQ detection function
+          const isMCQResponse = (text: string): boolean => {
+            if (text.includes('MCQ_ANSWER:')) return true;
+            
+            const mcqIndicators = [
+              'what will be the output',
+              'which of the following', 
+              'what is the result',
+              'what will this query do',
+              'what does the following'
+            ];
+            
+            const lowerText = text.toLowerCase();
+            return mcqIndicators.some(indicator => lowerText.includes(indicator));
+          };
+
+          // Check if it's an MCQ response
+          if (isMCQResponse(responseText)) {
+            let answerMatch = responseText.match(/MCQ_ANSWER:\s*([A-D])/i);
+            
+            if (!answerMatch) {
+              answerMatch = responseText.match(/(?:answer\s*(?:is\s*)?):?\s*([A-D])/i);
+            }
+            
+            let explanationMatch = responseText.match(/EXPLANATION:\s*(.*)/is);
+            if (!explanationMatch) {
+              explanationMatch = [null, responseText];
+            }
+            
+            const mcqResult = {
+              isMCQ: true,
+              answer: answerMatch ? answerMatch[1].toUpperCase() : 'Unknown',
+              explanation: explanationMatch ? explanationMatch[1].trim() : responseText.trim(),
+              fullResponse: responseText
+            };
+            
+            // Update progress and send MCQ result to frontend
+            if (mainWindow) {
+              mainWindow.webContents.send("processing-status", {
+                message: "MCQ answered successfully",
+                progress: 100
+              });
+              
+              mainWindow.webContents.send(
+                this.deps.PROCESSING_EVENTS.SOLUTION_SUCCESS,
+                mcqResult
+              );
+            }
+            
+            return { success: true, data: mcqResult };
+          }
+
+          // Handle unsupported format
+          if (responseText.includes('UNSUPPORTED_FORMAT')) {
+            return {
+              success: false,
+              error: "This appears to be neither a coding problem nor a supported MCQ. Please try a clearer screenshot."
+            };
+          }
+          
+          // Handle as coding problem (existing logic)
           const jsonText = responseText.replace(/```json|```/g, '').trim();
           problemInfo = JSON.parse(jsonText);
         } catch (error) {
@@ -525,13 +586,44 @@ export class ProcessingHelper {
         }
 
         try {
-          // Create Gemini message structure
+          // Enhanced Gemini prompt for better code-based MCQ detection
           const geminiMessages: GeminiMessage[] = [
             {
               role: "user",
               parts: [
                 {
-                  text: `You are a coding challenge interpreter. Analyze the screenshots of the coding problem and extract all relevant information. Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output. Just return the structured JSON without any other text. Preferred coding language we gonna use for this problem is ${language}.`
+                  text: `You are an intelligent assistant that analyzes screenshots and determines if they contain coding problems or Multiple Choice Questions (MCQs).
+
+**IMPORTANT: Look carefully at the image content, including any code snippets, formatted text, or structured questions.**
+
+**If it's a CODING PROBLEM (like LeetCode, programming challenges):**
+Return JSON format: {"problem_statement": "...", "constraints": "...", "example_input": "...", "example_output": "..."}
+Preferred coding language: ${language}
+
+**If it's an MCQ (Multiple Choice Question) - this includes:**
+- Questions with options A, B, C, D (even if formatted/colored)
+- Code-based MCQs with syntax highlighting  
+- Questions asking "What will be the output?"
+- Questions about programming concepts, syntax, or theory
+- SQL queries asking "What will this query do?"
+- Java code asking "What is the output?"
+- Any question with lettered options asking about code behavior
+
+Return in this EXACT format:
+MCQ_ANSWER: [A/B/C/D]
+EXPLANATION: [Detailed explanation of why this answer is correct, including step-by-step code analysis if applicable]
+
+**Examples of MCQs to detect:**
+- "What will be the output of this Java code?"
+- "Which SQL query will do X?"  
+- "What will the following SQL query do?"
+- "What is the result of this code snippet?"
+- Any question with lettered options (A, B, C, D)
+
+**If it's neither:**
+Return: UNSUPPORTED_FORMAT
+
+Analyze this screenshot carefully and respond appropriately:`
                 },
                 ...imageDataList.map(data => ({
                   inlineData: {
@@ -563,10 +655,103 @@ export class ProcessingHelper {
           }
           
           const responseText = responseData.candidates[0].content.parts[0].text;
+
+          // Enhanced MCQ detection function
+          // Enhanced MCQ detection function
+const isMCQResponse = (text: string): boolean => {
+  if (text.includes('MCQ_ANSWER:')) return true;
+  
+  const mcqIndicators = [
+    'what will be the output',
+    'which of the following', 
+    'what is the result',
+    'what will this query do',
+    'what does the following',
+    'the correct answer is',
+    'answer is'
+  ];
+  
+  const lowerText = text.toLowerCase();
+  return mcqIndicators.some(indicator => lowerText.includes(indicator));
+};
+
+// Check if it's an MCQ response
+if (isMCQResponse(responseText)) {
+  // Try multiple patterns to extract the answer
+  let answerMatch = responseText.match(/MCQ_ANSWER:\s*([A-D])/i);
+  
+  if (!answerMatch) {
+    // Try "Answer: B" pattern
+    answerMatch = responseText.match(/(?:answer\s*(?:is\s*)?):?\s*([A-D])/i);
+  }
+  
+  if (!answerMatch) {
+    // Try "The answer is B" pattern
+    answerMatch = responseText.match(/(?:the\s+answer\s+is\s+)([A-D])/i);
+  }
+  
+  if (!answerMatch) {
+    // Try "Correct answer: B" pattern
+    answerMatch = responseText.match(/(?:correct\s+answer\s*:?\s*)([A-D])/i);
+  }
+  
+  if (!answerMatch) {
+    // Try standalone letter pattern (look for isolated A, B, C, or D)
+    answerMatch = responseText.match(/\b([A-D])\b/);
+  }
+  
+  // Try multiple explanation patterns
+  let explanationMatch = responseText.match(/EXPLANATION:\s*(.*)/is);
+  if (!explanationMatch) {
+    explanationMatch = responseText.match(/(?:explanation|because|reason):\s*(.*)/is);
+  }
+  if (!explanationMatch) {
+    // If no explicit explanation found, use the full response
+    explanationMatch = [null, responseText];
+  }
+  
+  const mcqResult = {
+    isMCQ: true,
+    answer: answerMatch ? answerMatch[1].toUpperCase() : 'Unknown',
+    explanation: explanationMatch ? explanationMatch[1].trim() : responseText.trim(),
+    fullResponse: responseText
+  };
+
+
+            if (mainWindow) {
+              mainWindow.webContents.send("processing-status", {
+                message: "MCQ answered successfully",
+                progress: 100
+              });
+              
+              mainWindow.webContents.send(
+                this.deps.PROCESSING_EVENTS.SOLUTION_SUCCESS,
+                mcqResult
+              );
+            }
+            
+            return { success: true, data: mcqResult };
+          }
+
+          // Handle unsupported format
+          if (responseText.includes('UNSUPPORTED_FORMAT')) {
+            return {
+              success: false,
+              error: "This appears to be neither a coding problem nor a supported MCQ. Please try a clearer screenshot."
+            };
+          }
           
-          // Handle when Gemini might wrap the JSON in markdown code blocks
-          const jsonText = responseText.replace(/```json|```/g, '').trim();
-          problemInfo = JSON.parse(jsonText);
+          // Handle as coding problem (existing logic)
+          try {
+            const jsonText = responseText.replace(/```json|```/g, '').trim();
+            problemInfo = JSON.parse(jsonText);
+          } catch (parseError) {
+            console.error("Error parsing JSON from Gemini response:", parseError);
+            return {
+              success: false,
+              error: "Failed to parse problem information. Please try again or use clearer screenshots."
+            };
+          }
         } catch (error) {
           console.error("Error using Gemini API:", error);
           return {
