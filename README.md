@@ -1,3 +1,7 @@
+# Changes I have done :
+> - Changed Prompting for solving MCQs of topics related to OS,DBMS,Programming(even Syntax-based too)
+> - Renders based on whether the question is a Coding problem or an MCQ (for MCQ it gives correct answer and explanation too) 
+
 # CodeInterviewAssist
 
 > ## ⚠️ IMPORTANT NOTICE TO THE COMMUNITY ⚠️
