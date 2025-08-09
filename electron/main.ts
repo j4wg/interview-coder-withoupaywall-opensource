@@ -393,10 +393,16 @@ function hideMainWindow(): void {
     const bounds = state.mainWindow.getBounds();
     state.windowPosition = { x: bounds.x, y: bounds.y };
     state.windowSize = { width: bounds.width, height: bounds.height };
+    
+    // Linux-specific fix: Hide the window completely rather than just setting opacity
+    if (process.platform === 'linux') {
+      state.mainWindow.hide();
+    }
+    
     state.mainWindow.setIgnoreMouseEvents(true, { forward: true });
     state.mainWindow.setOpacity(0);
     state.isWindowVisible = false;
-    console.log('Window hidden, opacity set to 0');
+    console.log('Window hidden, opacity set to 0, platform:', process.platform);
   }
 }
 
@@ -408,26 +414,46 @@ function showMainWindow(): void {
         ...state.windowSize
       });
     }
+    
     state.mainWindow.setIgnoreMouseEvents(false);
     state.mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
     state.mainWindow.setVisibleOnAllWorkspaces(true, {
       visibleOnFullScreen: true
     });
     state.mainWindow.setContentProtection(true);
-    state.mainWindow.setOpacity(0); // Set opacity to 0 before showing
-    state.mainWindow.showInactive(); // Use showInactive instead of show+focus
-    state.mainWindow.setOpacity(1); // Then set opacity to 1 after showing
+    
+    // Linux-specific show logic
+    if (process.platform === 'linux') {
+      state.mainWindow.show();
+      state.mainWindow.focus();
+      // Set opacity after showing to ensure the window is visible
+      state.mainWindow.setOpacity(configHelper.getOpacity());
+    } else {
+      // Mac/Windows behavior
+      state.mainWindow.setOpacity(0); // Set opacity to 0 before showing
+      state.mainWindow.showInactive(); // Use showInactive instead of show+focus
+      state.mainWindow.setOpacity(1); // Then set opacity to 1 after showing
+    }
+    
     state.isWindowVisible = true;
-    console.log('Window shown with showInactive(), opacity set to 1');
+    console.log('Window shown, platform:', process.platform);
   }
 }
 
 function toggleMainWindow(): void {
-  console.log(`Toggling window. Current state: ${state.isWindowVisible ? 'visible' : 'hidden'}`);
+  console.log(`Toggling window. Current state: ${state.isWindowVisible ? 'visible' : 'hidden'}, platform: ${process.platform}`);
+  
   if (state.isWindowVisible) {
     hideMainWindow();
   } else {
     showMainWindow();
+  }
+  
+  // Additional logging to verify state
+  if (state.mainWindow && !state.mainWindow.isDestroyed()) {
+    setTimeout(() => {
+      console.log(`After toggle: isVisible=${state.isWindowVisible}, actual opacity=${state.mainWindow?.getOpacity()}`);
+    }, 100);
   }
 }
 

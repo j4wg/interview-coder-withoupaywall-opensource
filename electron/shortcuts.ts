@@ -4,32 +4,56 @@ import { configHelper } from "./ConfigHelper"
 
 export class ShortcutsHelper {
   private deps: IShortcutsHelperDeps
+  // Track opacity locally to avoid getOpacity() inconsistency
+  private currentOpacity: number
 
   constructor(deps: IShortcutsHelperDeps) {
     this.deps = deps
+    // Initialize from stored config
+    this.currentOpacity = configHelper.getOpacity()
   }
 
   private adjustOpacity(delta: number): void {
     const mainWindow = this.deps.getMainWindow();
     if (!mainWindow) return;
     
-    let currentOpacity = mainWindow.getOpacity();
-    let newOpacity = Math.max(0.1, Math.min(1.0, currentOpacity + delta));
-    console.log(`Adjusting opacity from ${currentOpacity} to ${newOpacity}`);
+    // Use our tracked opacity value instead of getOpacity()
+    let newOpacity = Math.max(0.1, Math.min(1.0, this.currentOpacity + delta));
+    console.log(`Adjusting opacity from ${this.currentOpacity} to ${newOpacity}`);
     
+    // Linux-specific handling for opacity changes
+    if (process.platform === 'linux') {
+      // If we're going from visible to invisible, hide the window completely
+      if (this.currentOpacity > 0.1 && newOpacity <= 0.1) {
+        console.log('Linux: Opacity too low, hiding window completely');
+        this.deps.toggleMainWindow(); // This will call hideMainWindow() which hides the window
+        return; // Skip further processing
+      }
+      
+      // If we're already hidden, but increasing opacity to a visible level, show the window
+      if (!this.deps.isVisible() && newOpacity > 0.1) {
+        console.log('Linux: Window hidden but opacity increasing, showing window');
+        this.deps.toggleMainWindow(); // This will call showMainWindow() which shows the window
+        // Don't return, let it also set the opacity below
+      }
+    }
+    
+    // Apply the opacity
     mainWindow.setOpacity(newOpacity);
     
-    // Save the opacity setting to config without re-initializing the client
+    // Update our tracked opacity value
+    this.currentOpacity = newOpacity;
+    
+    // Save the opacity setting to config
     try {
-      const config = configHelper.loadConfig();
-      config.opacity = newOpacity;
-      configHelper.saveConfig(config);
+      configHelper.setOpacity(newOpacity);
     } catch (error) {
       console.error('Error saving opacity to config:', error);
     }
     
     // If we're making the window visible, also make sure it's shown and interaction is enabled
-    if (newOpacity > 0.1 && !this.deps.isVisible()) {
+    // Only do this for non-Linux platforms (Linux handled above)
+    if (process.platform !== 'linux' && newOpacity > 0.1 && !this.deps.isVisible()) {
       this.deps.toggleMainWindow();
     }
   }
