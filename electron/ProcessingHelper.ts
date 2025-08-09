@@ -544,6 +544,10 @@ export class ProcessingHelper {
           ];
 
           // Make API request to Gemini
+          console.log("Gemini extraction request:", {
+            url: `https://generativelanguage.googleapis.com/v1beta/models/${config.extractionModel || "gemini-2.0-flash"}:generateContent`,
+            contents: geminiMessages,
+          });
           const response = await axios.default.post(
             `https://generativelanguage.googleapis.com/v1beta/models/${config.extractionModel || "gemini-2.0-flash"}:generateContent?key=${this.geminiApiKey}`,
             {
@@ -557,6 +561,7 @@ export class ProcessingHelper {
           );
 
           const responseData = response.data as GeminiResponse;
+          console.log("Gemini extraction response:", responseData);
           
           if (!responseData.candidates || responseData.candidates.length === 0) {
             throw new Error("Empty response from Gemini API");
@@ -567,11 +572,19 @@ export class ProcessingHelper {
           // Handle when Gemini might wrap the JSON in markdown code blocks
           const jsonText = responseText.replace(/```json|```/g, '').trim();
           problemInfo = JSON.parse(jsonText);
-        } catch (error) {
+        } catch (error: any) {
           console.error("Error using Gemini API:", error);
+          let errorMessage = "Failed to process with Gemini API. Please check your API key or try again later.";
+          if (error.response) {
+            errorMessage = `Gemini API Error: ${error.response.status} ${error.response.statusText}. ${error.response.data?.error?.message || ''}`;
+          } else if (error.request) {
+            errorMessage = "Gemini API Error: No response received from the server. Please check your network connection.";
+          } else {
+            errorMessage = `Gemini API Error: ${error.message}`;
+          }
           return {
             success: false,
-            error: "Failed to process with Gemini API. Please check your API key or try again later."
+            error: errorMessage
           };
         }
       } else if (config.apiProvider === "anthropic") {
@@ -808,6 +821,10 @@ Your solution should be efficient, well-commented, and handle edge cases.
           ];
 
           // Make API request to Gemini
+          console.log("Gemini solution request:", {
+            url: `https://generativelanguage.googleapis.com/v1beta/models/${config.solutionModel || "gemini-2.0-flash"}:generateContent`,
+            contents: geminiMessages,
+          });
           const response = await axios.default.post(
             `https://generativelanguage.googleapis.com/v1beta/models/${config.solutionModel || "gemini-2.0-flash"}:generateContent?key=${this.geminiApiKey}`,
             {
@@ -821,17 +838,26 @@ Your solution should be efficient, well-commented, and handle edge cases.
           );
 
           const responseData = response.data as GeminiResponse;
+          console.log("Gemini solution response:", responseData);
           
           if (!responseData.candidates || responseData.candidates.length === 0) {
             throw new Error("Empty response from Gemini API");
           }
           
           responseContent = responseData.candidates[0].content.parts[0].text;
-        } catch (error) {
+        } catch (error: any) {
           console.error("Error using Gemini API for solution:", error);
+          let errorMessage = "Failed to generate solution with Gemini API. Please check your API key or try again later.";
+          if (error.response) {
+            errorMessage = `Gemini API Error: ${error.response.status} ${error.response.statusText}. ${error.response.data?.error?.message || ''}`;
+          } else if (error.request) {
+            errorMessage = "Gemini API Error: No response received from the server. Please check your network connection.";
+          } else {
+            errorMessage = `Gemini API Error: ${error.message}`;
+          }
           return {
             success: false,
-            error: "Failed to generate solution with Gemini API. Please check your API key or try again later."
+            error: errorMessage
           };
         }
       } else if (config.apiProvider === "anthropic") {
@@ -1129,6 +1155,10 @@ If you include code examples, use proper markdown code blocks with language spec
             });
           }
 
+          console.log("Gemini debug request:", {
+            url: `https://generativelanguage.googleapis.com/v1beta/models/${config.debuggingModel || "gemini-2.0-flash"}:generateContent`,
+            contents: geminiMessages,
+          });
           const response = await axios.default.post(
             `https://generativelanguage.googleapis.com/v1beta/models/${config.debuggingModel || "gemini-2.0-flash"}:generateContent?key=${this.geminiApiKey}`,
             {
@@ -1142,17 +1172,26 @@ If you include code examples, use proper markdown code blocks with language spec
           );
 
           const responseData = response.data as GeminiResponse;
+          console.log("Gemini debug response:", responseData);
           
           if (!responseData.candidates || responseData.candidates.length === 0) {
             throw new Error("Empty response from Gemini API");
           }
           
           debugContent = responseData.candidates[0].content.parts[0].text;
-        } catch (error) {
+        } catch (error: any) {
           console.error("Error using Gemini API for debugging:", error);
+          let errorMessage = "Failed to process debug request with Gemini API. Please check your API key or try again later.";
+          if (error.response) {
+            errorMessage = `Gemini API Error: ${error.response.status} ${error.response.statusText}. ${error.response.data?.error?.message || ''}`;
+          } else if (error.request) {
+            errorMessage = "Gemini API Error: No response received from the server. Please check your network connection.";
+          } else {
+            errorMessage = `Gemini API Error: ${error.message}`;
+          }
           return {
             success: false,
-            error: "Failed to process debug request with Gemini API. Please check your API key or try again later."
+            error: errorMessage
           };
         }
       } else if (config.apiProvider === "anthropic") {
