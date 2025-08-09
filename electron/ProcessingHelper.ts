@@ -31,6 +31,7 @@ interface GeminiResponse {
     finishReason: string;
   }>;
 }
+
 interface AnthropicMessage {
   role: 'user' | 'assistant';
   content: Array<{
@@ -43,12 +44,39 @@ interface AnthropicMessage {
     };
   }>;
 }
+
+// Interface for Grok API requests
+interface GrokMessage {
+  role: 'user' | 'assistant';
+  content: string | Array<{
+    type: string;
+    text?: string;
+    image_url?: {
+      url: string;
+    };
+  }>;
+}
+
+interface GrokResponse {
+  id: string;
+  choices: Array<{
+    message: GrokMessage;
+    finish_reason: string;
+  }>;
+  usage: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
+}
+
 export class ProcessingHelper {
   private deps: IProcessingHelperDeps
   private screenshotHelper: ScreenshotHelper
   private openaiClient: OpenAI | null = null
   private geminiApiKey: string | null = null
   private anthropicClient: Anthropic | null = null
+  private grokClient: OpenAI | null = null
 
   // AbortControllers for API requests
   private currentProcessingAbortController: AbortController | null = null
@@ -83,17 +111,20 @@ export class ProcessingHelper {
           });
           this.geminiApiKey = null;
           this.anthropicClient = null;
+          this.grokClient = null;
           console.log("OpenAI client initialized successfully");
         } else {
           this.openaiClient = null;
           this.geminiApiKey = null;
           this.anthropicClient = null;
+          this.grokClient = null;
           console.warn("No API key available, OpenAI client not initialized");
         }
       } else if (config.apiProvider === "gemini"){
         // Gemini client initialization
         this.openaiClient = null;
         this.anthropicClient = null;
+        this.grokClient = null;
         if (config.apiKey) {
           this.geminiApiKey = config.apiKey;
           console.log("Gemini API key set successfully");
@@ -101,12 +132,14 @@ export class ProcessingHelper {
           this.openaiClient = null;
           this.geminiApiKey = null;
           this.anthropicClient = null;
+          this.grokClient = null;
           console.warn("No API key available, Gemini client not initialized");
         }
       } else if (config.apiProvider === "anthropic") {
         // Reset other clients
         this.openaiClient = null;
         this.geminiApiKey = null;
+        this.grokClient = null;
         if (config.apiKey) {
           this.anthropicClient = new Anthropic({
             apiKey: config.apiKey,
@@ -118,7 +151,29 @@ export class ProcessingHelper {
           this.openaiClient = null;
           this.geminiApiKey = null;
           this.anthropicClient = null;
+          this.grokClient = null;
           console.warn("No API key available, Anthropic client not initialized");
+        }
+      } else if (config.apiProvider === "grok") {
+        // Reset other clients
+        this.openaiClient = null;
+        this.geminiApiKey = null;
+        this.anthropicClient = null;
+        this.grokClient = null;
+        if (config.apiKey) {
+          this.grokClient = new OpenAI({ 
+            apiKey: config.apiKey,
+            baseURL: "https://api.x.ai/v1",
+            timeout: 60000, // 60 second timeout
+            maxRetries: 2   // Retry up to 2 times
+          });
+          console.log("Grok client initialized successfully");
+        } else {
+          this.openaiClient = null;
+          this.geminiApiKey = null;
+          this.anthropicClient = null;
+          this.grokClient = null;
+          console.warn("No API key available, Grok client not initialized");
         }
       }
     } catch (error) {
@@ -126,6 +181,7 @@ export class ProcessingHelper {
       this.openaiClient = null;
       this.geminiApiKey = null;
       this.anthropicClient = null;
+      this.grokClient = null;
     }
   }
 
@@ -229,6 +285,16 @@ export class ProcessingHelper {
       
       if (!this.anthropicClient) {
         console.error("Anthropic client not initialized");
+        mainWindow.webContents.send(
+          this.deps.PROCESSING_EVENTS.API_KEY_INVALID
+        );
+        return;
+      }
+    } else if (config.apiProvider === "grok" && !this.grokClient) {
+      this.initializeAIClient();
+      
+      if (!this.grokClient) {
+        console.error("Grok client not initialized");
         mainWindow.webContents.send(
           this.deps.PROCESSING_EVENTS.API_KEY_INVALID
         );
@@ -634,6 +700,62 @@ export class ProcessingHelper {
             error: "Failed to process with Anthropic API. Please check your API key or try again later."
           };
         }
+      } else if (config.apiProvider === "grok") {
+        if (!this.grokClient) {
+          return {
+            success: false,
+            error: "Grok API key not configured. Please check your settings."
+          };
+        }
+
+        try {
+          const messages = [
+            {
+              role: "system" as const, 
+              content: "You are a coding challenge interpreter. Analyze the screenshot of the coding problem and extract all relevant information. Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output. Just return the structured JSON without any other text."
+            },
+            {
+              role: "user" as const,
+              content: [
+                {
+                  type: "text" as const, 
+                  text: `Extract the coding problem details from these screenshots. Return in JSON format. Preferred coding language we gonna use for this problem is ${language}.`
+                },
+                ...imageDataList.map(data => ({
+                  type: "image_url" as const,
+                  image_url: { url: `data:image/png;base64,${data}` }
+                }))
+              ]
+            }
+          ];
+
+          const extractionResponse = await this.grokClient.chat.completions.create({
+            model: config.extractionModel || "grok-3",
+            messages: messages,
+            max_tokens: 4000,
+            temperature: 0.2
+          });
+
+          // Parse the response
+          try {
+            const responseText = extractionResponse.choices[0].message.content;
+            // Handle when Grok might wrap the JSON in markdown code blocks
+            const jsonText = responseText.replace(/```json|```/g, '').trim();
+            problemInfo = JSON.parse(jsonText);
+          } catch (error) {
+            console.error("Error parsing Grok response:", error);
+            return {
+              success: false,
+              error: "Failed to parse problem information. Please try again or use clearer screenshots."
+            };
+          }
+        } catch (error) {
+          console.error("Error using Grok API:", error);
+          return {
+            success: false,
+            error: "Failed to process with Grok API. Please check your API key or try again later."
+          };
+        }
       }
       
       // Update the user on progress
@@ -886,6 +1008,27 @@ Your solution should be efficient, well-commented, and handle edge cases.
             error: "Failed to generate solution with Anthropic API. Please check your API key or try again later."
           };
         }
+      } else if (config.apiProvider === "grok") {
+        // Grok processing
+        if (!this.grokClient) {
+          return {
+            success: false,
+            error: "Grok API key not configured. Please check your settings."
+          };
+        }
+        
+        // Send to Grok API
+        const solutionResponse = await this.grokClient.chat.completions.create({
+          model: config.solutionModel || "grok-3",
+          messages: [
+            { role: "system", content: "You are an expert coding interview assistant. Provide clear, optimal solutions with detailed explanations." },
+            { role: "user", content: promptText }
+          ],
+          max_tokens: 4000,
+          temperature: 0.2
+        });
+
+        responseContent = solutionResponse.choices[0].message.content;
       }
       
       // Extract parts from the response
@@ -1244,6 +1387,71 @@ If you include code examples, use proper markdown code blocks with language spec
             error: "Failed to process debug request with Anthropic API. Please check your API key or try again later."
           };
         }
+      } else if (config.apiProvider === "grok") {
+        if (!this.grokClient) {
+          return {
+            success: false,
+            error: "Grok API key not configured. Please check your settings."
+          };
+        }
+        
+        const messages = [
+          {
+            role: "system" as const, 
+            content: `You are a coding interview assistant helping debug and improve solutions. Analyze these screenshots which include either error messages, incorrect outputs, or test cases, and provide detailed debugging help.
+
+Your response MUST follow this exact structure with these section headers (use ### for headers):
+### Issues Identified
+- List each issue as a bullet point with clear explanation
+
+### Specific Improvements and Corrections
+- List specific code changes needed as bullet points
+
+### Optimizations
+- List any performance optimizations if applicable
+
+### Explanation of Changes Needed
+Here provide a clear explanation of why the changes are needed
+
+### Key Points
+- Summary bullet points of the most important takeaways
+
+If you include code examples, use proper markdown code blocks with language specification (e.g. \`\`\`java).`
+          },
+          {
+            role: "user" as const,
+            content: [
+              {
+                type: "text" as const, 
+                text: `I'm solving this coding problem: "${problemInfo.problem_statement}" in ${language}. I need help with debugging or improving my solution. Here are screenshots of my code, the errors or test cases. Please provide a detailed analysis with:
+1. What issues you found in my code
+2. Specific improvements and corrections
+3. Any optimizations that would make the solution better
+4. A clear explanation of the changes needed` 
+              },
+              ...imageDataList.map(data => ({
+                type: "image_url" as const,
+                image_url: { url: `data:image/png;base64,${data}` }
+              }))
+            ]
+          }
+        ];
+
+        if (mainWindow) {
+          mainWindow.webContents.send("processing-status", {
+            message: "Analyzing code and generating debug feedback...",
+            progress: 60
+          });
+        }
+
+        const debugResponse = await this.grokClient.chat.completions.create({
+          model: config.debuggingModel || "grok-3",
+          messages: messages,
+          max_tokens: 4000,
+          temperature: 0.2
+        });
+        
+        debugContent = debugResponse.choices[0].message.content;
       }
       
       

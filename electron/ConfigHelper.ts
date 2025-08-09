@@ -7,7 +7,7 @@ import { OpenAI } from "openai"
 
 interface Config {
   apiKey: string;
-  apiProvider: "openai" | "gemini" | "anthropic";  // Added provider selection
+  apiProvider: "openai" | "gemini" | "anthropic" | "grok";
   extractionModel: string;
   solutionModel: string;
   debuggingModel: string;
@@ -58,7 +58,7 @@ export class ConfigHelper extends EventEmitter {
   /**
    * Validate and sanitize model selection to ensure only allowed models are used
    */
-  private sanitizeModelSelection(model: string, provider: "openai" | "gemini" | "anthropic"): string {
+  private sanitizeModelSelection(model: string, provider: "openai" | "gemini" | "anthropic" | "grok"): string {
     if (provider === "openai") {
       // Only allow gpt-4o and gpt-4o-mini for OpenAI
       const allowedModels = ['gpt-4o', 'gpt-4o-mini'];
@@ -75,12 +75,20 @@ export class ConfigHelper extends EventEmitter {
         return 'gemini-2.0-flash'; // Changed default to flash
       }
       return model;
-    }  else if (provider === "anthropic") {
+    } else if (provider === "anthropic") {
       // Only allow Claude models
       const allowedModels = ['claude-3-7-sonnet-20250219', 'claude-3-5-sonnet-20241022', 'claude-3-opus-20240229'];
       if (!allowedModels.includes(model)) {
         console.warn(`Invalid Anthropic model specified: ${model}. Using default model: claude-3-7-sonnet-20250219`);
         return 'claude-3-7-sonnet-20250219';
+      }
+      return model;
+    } else if (provider === "grok") {
+      // Only allow Grok models
+      const allowedModels = ['grok-1', 'grok-2'];
+      if (!allowedModels.includes(model)) {
+        console.warn(`Invalid Grok model specified: ${model}. Using default model: grok-1`);
+        return 'grok-1';
       }
       return model;
     }
@@ -95,7 +103,7 @@ export class ConfigHelper extends EventEmitter {
         const config = JSON.parse(configData);
         
         // Ensure apiProvider is a valid value
-        if (config.apiProvider !== "openai" && config.apiProvider !== "gemini"  && config.apiProvider !== "anthropic") {
+        if (config.apiProvider !== "openai" && config.apiProvider !== "gemini" && config.apiProvider !== "anthropic" && config.apiProvider !== "grok") {
           config.apiProvider = "gemini"; // Default to Gemini if invalid
         }
         
@@ -154,11 +162,16 @@ export class ConfigHelper extends EventEmitter {
       if (updates.apiKey && !updates.apiProvider) {
         // If API key starts with "sk-", it's likely an OpenAI key
         if (updates.apiKey.trim().startsWith('sk-')) {
-          provider = "openai";
-          console.log("Auto-detected OpenAI API key format");
-        } else if (updates.apiKey.trim().startsWith('sk-ant-')) {
-          provider = "anthropic";
-          console.log("Auto-detected Anthropic API key format");
+          if (updates.apiKey.trim().startsWith('sk-ant-')) {
+            provider = "anthropic";
+            console.log("Auto-detected Anthropic API key format");
+          } else {
+            provider = "openai";
+            console.log("Auto-detected OpenAI API key format");
+          }
+        } else if (updates.apiKey.trim().startsWith('grok-')) {
+          provider = "grok";
+          console.log("Auto-detected Grok API key format");
         } else {
           provider = "gemini";
           console.log("Using Gemini API key format (default)");
@@ -178,6 +191,10 @@ export class ConfigHelper extends EventEmitter {
           updates.extractionModel = "claude-3-7-sonnet-20250219";
           updates.solutionModel = "claude-3-7-sonnet-20250219";
           updates.debuggingModel = "claude-3-7-sonnet-20250219";
+        } else if (updates.apiProvider === "grok") {
+          updates.extractionModel = "grok-1";
+          updates.solutionModel = "grok-1";
+          updates.debuggingModel = "grok-1";
         } else {
           updates.extractionModel = "gemini-2.0-flash";
           updates.solutionModel = "gemini-2.0-flash";
@@ -225,7 +242,7 @@ export class ConfigHelper extends EventEmitter {
   /**
    * Validate the API key format
    */
-  public isValidApiKeyFormat(apiKey: string, provider?: "openai" | "gemini" | "anthropic" ): boolean {
+  public isValidApiKeyFormat(apiKey: string, provider?: "openai" | "gemini" | "anthropic" | "grok"): boolean {
     // If provider is not specified, attempt to auto-detect
     if (!provider) {
       if (apiKey.trim().startsWith('sk-')) {
@@ -234,6 +251,8 @@ export class ConfigHelper extends EventEmitter {
         } else {
           provider = "openai";
         }
+      } else if (apiKey.trim().startsWith('grok-')) {
+        provider = "grok";
       } else {
         provider = "gemini";
       }
@@ -248,6 +267,9 @@ export class ConfigHelper extends EventEmitter {
     } else if (provider === "anthropic") {
       // Basic format validation for Anthropic API keys
       return /^sk-ant-[a-zA-Z0-9]{32,}$/.test(apiKey.trim());
+    } else if (provider === "grok") {
+      // Basic format validation for Grok API keys
+      return /^grok-[1-2]$/.test(apiKey.trim());
     }
     
     return false;
@@ -288,7 +310,7 @@ export class ConfigHelper extends EventEmitter {
   /**
    * Test API key with the selected provider
    */
-  public async testApiKey(apiKey: string, provider?: "openai" | "gemini" | "anthropic"): Promise<{valid: boolean, error?: string}> {
+  public async testApiKey(apiKey: string, provider?: "openai" | "gemini" | "anthropic" | "grok"): Promise<{valid: boolean, error?: string}> {
     // Auto-detect provider based on key format if not specified
     if (!provider) {
       if (apiKey.trim().startsWith('sk-')) {
@@ -299,6 +321,9 @@ export class ConfigHelper extends EventEmitter {
           provider = "openai";
           console.log("Auto-detected OpenAI API key format for testing");
         }
+      } else if (apiKey.trim().startsWith('grok-')) {
+        provider = "grok";
+        console.log("Auto-detected Grok API key format for testing");
       } else {
         provider = "gemini";
         console.log("Using Gemini API key format for testing (default)");
@@ -311,6 +336,8 @@ export class ConfigHelper extends EventEmitter {
       return this.testGeminiKey(apiKey);
     } else if (provider === "anthropic") {
       return this.testAnthropicKey(apiKey);
+    } else if (provider === "grok") {
+      return this.testGrokKey(apiKey);
     }
     
     return { valid: false, error: "Unknown API provider" };
@@ -386,6 +413,49 @@ export class ConfigHelper extends EventEmitter {
     } catch (error: any) {
       console.error('Anthropic API key test failed:', error);
       let errorMessage = 'Unknown error validating Anthropic API key';
+      
+      if (error.message) {
+        errorMessage = `Error: ${error.message}`;
+      }
+      
+      return { valid: false, error: errorMessage };
+    }
+  }
+
+  /**
+   * Test Grok API key
+   * Note: This is a simplified implementation since we don't have the actual Grok client
+   */
+  private async testGrokKey(apiKey: string): Promise<{valid: boolean, error?: string}> {
+    try {
+      // Make a simple call to the Grok API to check if the key is valid
+      const response = await fetch('https://api.grok.com/v1/models', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      // Check if the request was successful
+      if (response.ok) {
+        return { valid: true };
+      } else {
+        const errorText = await response.text();
+        let errorMessage = 'Invalid Grok API key.';
+        
+        if (response.status === 401 || response.status === 403) {
+          errorMessage = 'Authentication failed. Please check your Grok API key.';
+        } else if (response.status === 429) {
+          errorMessage = 'Grok API rate limit exceeded. Please try again later.';
+        }
+        
+        console.error(`Grok API key test failed: ${response.status} - ${errorText}`);
+        return { valid: false, error: errorMessage };
+      }
+    } catch (error: any) {
+      console.error('Grok API key test failed:', error);
+      let errorMessage = 'Unknown error validating Grok API key';
       
       if (error.message) {
         errorMessage = `Error: ${error.message}`;

@@ -19,6 +19,7 @@ const LANGUAGES = [
   { value: 'go', label: 'Go' },
   { value: 'rust', label: 'Rust' },
   { value: 'typescript', label: 'TypeScript' },
+  { value: 'c', label: 'c' }
 ];
 
 export function Header({ currentLanguage, setLanguage, onOpenSettings }: HeaderProps) {
@@ -53,7 +54,7 @@ export function Header({ currentLanguage, setLanguage, onOpenSettings }: HeaderP
     // Also save the language preference to config
     window.electronAPI.updateConfig({
       language: lang
-    }).catch(error => {
+    }).catch((error: Error) => {
       console.error('Failed to save language preference:', error);
     });
   };
