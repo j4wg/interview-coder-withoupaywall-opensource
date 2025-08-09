@@ -74,12 +74,13 @@ export class ProcessingHelper {
     try {
       const config = configHelper.loadConfig();
       
-      if (config.apiProvider === "openai") {
+      if (config.apiProvider === "openai" || config.apiProvider === "openai-compatible") {
         if (config.apiKey) {
           this.openaiClient = new OpenAI({ 
             apiKey: config.apiKey,
             timeout: 60000, // 60 second timeout
-            maxRetries: 2   // Retry up to 2 times
+            maxRetries: 2,   // Retry up to 2 times
+            baseURL: config.apiProvider === "openai-compatible" ? config.baseUrl : undefined,
           });
           this.geminiApiKey = null;
           this.anthropicClient = null;
@@ -460,7 +461,7 @@ export class ProcessingHelper {
 
       let problemInfo;
       
-      if (config.apiProvider === "openai") {
+      if (config.apiProvider === "openai" || config.apiProvider === "openai-compatible") {
         // Verify OpenAI client
         if (!this.openaiClient) {
           this.initializeAIClient(); // Try to reinitialize
@@ -506,8 +507,11 @@ export class ProcessingHelper {
         try {
           const responseText = extractionResponse.choices[0].message.content;
           // Handle when OpenAI might wrap the JSON in markdown code blocks
-          const jsonText = responseText.replace(/```json|```/g, '').trim();
-          problemInfo = JSON.parse(jsonText);
+          const jsonRegex = /```json\n([\s\S]*?)\n```/;
+          const match = responseText.match(jsonRegex);
+          if (match && match[1]) {
+            problemInfo = JSON.parse(match[1]);
+          }
         } catch (error) {
           console.error("Error parsing OpenAI response:", error);
           return {
@@ -764,7 +768,7 @@ Your solution should be efficient, well-commented, and handle edge cases.
 
       let responseContent;
       
-      if (config.apiProvider === "openai") {
+      if (config.apiProvider === "openai" || config.apiProvider === "openai-compatible") {
         // OpenAI processing
         if (!this.openaiClient) {
           return {

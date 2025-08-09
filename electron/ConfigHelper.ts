@@ -7,7 +7,8 @@ import { OpenAI } from "openai"
 
 interface Config {
   apiKey: string;
-  apiProvider: "openai" | "gemini" | "anthropic";  // Added provider selection
+  apiProvider: "openai" | "gemini" | "anthropic" | "openai-compatible";  // Added provider selection
+  baseUrl?: string; // Optional custom API URL
   extractionModel: string;
   solutionModel: string;
   debuggingModel: string;
@@ -20,6 +21,7 @@ export class ConfigHelper extends EventEmitter {
   private defaultConfig: Config = {
     apiKey: "",
     apiProvider: "gemini", // Default to Gemini
+    baseUrl: "", // Optional custom API URL
     extractionModel: "gemini-2.0-flash", // Default to Flash for faster responses
     solutionModel: "gemini-2.0-flash",
     debuggingModel: "gemini-2.0-flash",
@@ -58,7 +60,7 @@ export class ConfigHelper extends EventEmitter {
   /**
    * Validate and sanitize model selection to ensure only allowed models are used
    */
-  private sanitizeModelSelection(model: string, provider: "openai" | "gemini" | "anthropic"): string {
+  private sanitizeModelSelection(model: string, provider: "openai" | "gemini" | "anthropic" | "openai-compatible"): string {
     if (provider === "openai") {
       // Only allow gpt-4o and gpt-4o-mini for OpenAI
       const allowedModels = ['gpt-4o', 'gpt-4o-mini'];
@@ -95,7 +97,7 @@ export class ConfigHelper extends EventEmitter {
         const config = JSON.parse(configData);
         
         // Ensure apiProvider is a valid value
-        if (config.apiProvider !== "openai" && config.apiProvider !== "gemini"  && config.apiProvider !== "anthropic") {
+        if (config.apiProvider !== "openai" && config.apiProvider !== "gemini"  && config.apiProvider !== "anthropic" && config.apiProvider !== "openai-compatible") {
           config.apiProvider = "gemini"; // Default to Gemini if invalid
         }
         
@@ -175,6 +177,10 @@ export class ConfigHelper extends EventEmitter {
           updates.solutionModel = "gpt-4o";
           updates.debuggingModel = "gpt-4o";
         } else if (updates.apiProvider === "anthropic") {
+          updates.extractionModel = "Claude#claude-3-7-sonnet-20250219";
+          updates.solutionModel = "Claude#claude-3-7-sonnet-20250219";
+          updates.debuggingModel = "Claude#claude-3-7-sonnet-20250219";
+        } else if (updates.apiProvider === "openai-compatible") {
           updates.extractionModel = "claude-3-7-sonnet-20250219";
           updates.solutionModel = "claude-3-7-sonnet-20250219";
           updates.debuggingModel = "claude-3-7-sonnet-20250219";
@@ -311,6 +317,8 @@ export class ConfigHelper extends EventEmitter {
       return this.testGeminiKey(apiKey);
     } else if (provider === "anthropic") {
       return this.testAnthropicKey(apiKey);
+    } else if (provider === "openai-compatible") {
+      return this.testOpenAIKey(apiKey);
     }
     
     return { valid: false, error: "Unknown API provider" };
@@ -395,6 +403,7 @@ export class ConfigHelper extends EventEmitter {
     }
   }
 }
+
 
 // Export a singleton instance
 export const configHelper = new ConfigHelper();
