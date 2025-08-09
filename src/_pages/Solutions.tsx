@@ -12,6 +12,24 @@ import Debug from "./Debug"
 import { useToast } from "../contexts/toast"
 import { COMMAND_KEY } from "../utils/platform"
 
+// Define proper types for solution data
+interface MCQSolutionData {
+  isMCQ: true
+  answer: string
+  explanation: string
+  fullResponse: string
+}
+
+interface CodeSolutionData {
+  isMCQ: false | undefined
+  code: string
+  thoughts: string[]
+  time_complexity: string
+  space_complexity: string
+}
+
+type SolutionData = MCQSolutionData | CodeSolutionData | null
+
 export const ContentSection = ({
   title,
   content,
@@ -38,6 +56,7 @@ export const ContentSection = ({
     )}
   </div>
 )
+
 const SolutionSection = ({
   title,
   content,
@@ -171,6 +190,7 @@ export interface SolutionsProps {
   currentLanguage: string
   setLanguage: (language: string) => void
 }
+
 const Solutions: React.FC<SolutionsProps> = ({
   setView,
   credits,
@@ -183,14 +203,13 @@ const Solutions: React.FC<SolutionsProps> = ({
   const [debugProcessing, setDebugProcessing] = useState(false)
   const [problemStatementData, setProblemStatementData] =
     useState<ProblemStatementData | null>(null)
-  const [solutionData, setSolutionData] = useState<string | null>(null)
+  
+  // Fix the type definition for solutionData
+  const [solutionData, setSolutionData] = useState<SolutionData>(null)
+  
   const [thoughtsData, setThoughtsData] = useState<string[] | null>(null)
-  const [timeComplexityData, setTimeComplexityData] = useState<string | null>(
-    null
-  )
-  const [spaceComplexityData, setSpaceComplexityData] = useState<string | null>(
-    null
-  )
+  const [timeComplexityData, setTimeComplexityData] = useState<string | null>(null)
+  const [spaceComplexityData, setSpaceComplexityData] = useState<string | null>(null)
 
   const [isTooltipVisible, setIsTooltipVisible] = useState(false)
   const [tooltipHeight, setTooltipHeight] = useState(0)
@@ -307,16 +326,11 @@ const Solutions: React.FC<SolutionsProps> = ({
       window.electronAPI.onSolutionError((error: string) => {
         showToast("Processing Failed", error, "error")
         // Reset solutions in the cache (even though this shouldn't ever happen) and complexities to previous states
-        const solution = queryClient.getQueryData(["solution"]) as {
-          code: string
-          thoughts: string[]
-          time_complexity: string
-          space_complexity: string
-        } | null
+        const solution = queryClient.getQueryData(["solution"]) as CodeSolutionData | null
         if (!solution) {
           setView("queue")
         }
-        setSolutionData(solution?.code || null)
+        setSolutionData(solution)
         setThoughtsData(solution?.thoughts || null)
         setTimeComplexityData(solution?.time_complexity || null)
         setSpaceComplexityData(solution?.space_complexity || null)
@@ -329,19 +343,39 @@ const Solutions: React.FC<SolutionsProps> = ({
           return
         }
         console.log({ data })
-        const solutionData = {
-          code: data.code,
-          thoughts: data.thoughts,
-          time_complexity: data.time_complexity,
-          space_complexity: data.space_complexity
+      
+        // Check if it's an MCQ result
+        if (data.isMCQ) {
+          // Handle MCQ data
+          const mcqData: MCQSolutionData = {
+            isMCQ: true,
+            answer: data.answer,
+            explanation: data.explanation,
+            fullResponse: data.fullResponse
+          }
+          
+          queryClient.setQueryData(["solution"], mcqData)
+          setSolutionData(mcqData)
+          setThoughtsData(null)
+          setTimeComplexityData(null)
+          setSpaceComplexityData(null)
+        } else {
+          // Handle regular coding solution data
+          const codeSolutionData: CodeSolutionData = {
+            isMCQ: false,
+            code: data.code,
+            thoughts: data.thoughts,
+            time_complexity: data.time_complexity,
+            space_complexity: data.space_complexity
+          }
+      
+          queryClient.setQueryData(["solution"], codeSolutionData)
+          setSolutionData(codeSolutionData)
+          setThoughtsData(codeSolutionData.thoughts || null)
+          setTimeComplexityData(codeSolutionData.time_complexity || null)
+          setSpaceComplexityData(codeSolutionData.space_complexity || null)
         }
-
-        queryClient.setQueryData(["solution"], solutionData)
-        setSolutionData(solutionData.code || null)
-        setThoughtsData(solutionData.thoughts || null)
-        setTimeComplexityData(solutionData.time_complexity || null)
-        setSpaceComplexityData(solutionData.space_complexity || null)
-
+      
         // Fetch latest screenshots when solution is successful
         const fetchScreenshots = async () => {
           try {
@@ -412,17 +446,22 @@ const Solutions: React.FC<SolutionsProps> = ({
         )
       }
       if (event?.query.queryKey[0] === "solution") {
-        const solution = queryClient.getQueryData(["solution"]) as {
-          code: string
-          thoughts: string[]
-          time_complexity: string
-          space_complexity: string
-        } | null
+        const solution = queryClient.getQueryData(["solution"]) as SolutionData
 
-        setSolutionData(solution?.code ?? null)
-        setThoughtsData(solution?.thoughts ?? null)
-        setTimeComplexityData(solution?.time_complexity ?? null)
-        setSpaceComplexityData(solution?.space_complexity ?? null)
+        if (solution && !solution.isMCQ) {
+          // Only update these for code solutions
+          const codeSolution = solution as CodeSolutionData
+          setSolutionData(solution)
+          setThoughtsData(codeSolution.thoughts ?? null)
+          setTimeComplexityData(codeSolution.time_complexity ?? null)
+          setSpaceComplexityData(codeSolution.space_complexity ?? null)
+        } else {
+          // For MCQ solutions, just set the solution data
+          setSolutionData(solution)
+          setThoughtsData(null)
+          setTimeComplexityData(null)
+          setSpaceComplexityData(null)
+        }
       }
     })
     return () => unsubscribe()
@@ -461,6 +500,16 @@ const Solutions: React.FC<SolutionsProps> = ({
       console.error("Error deleting extra screenshot:", error)
       showToast("Error", "Failed to delete the screenshot", "error")
     }
+  }
+
+  // Helper function to check if solutionData is MCQ
+  const isMCQSolution = (data: SolutionData): data is MCQSolutionData => {
+    return data !== null && data.isMCQ === true
+  }
+
+  // Helper function to check if solutionData is Code solution
+  const isCodeSolution = (data: SolutionData): data is CodeSolutionData => {
+    return data !== null && !data.isMCQ
   }
 
   return (
@@ -523,40 +572,62 @@ const Solutions: React.FC<SolutionsProps> = ({
 
                 {solutionData && (
                   <>
-                    <ContentSection
-                      title={`My Thoughts (${COMMAND_KEY} + Arrow keys to scroll)`}
-                      content={
-                        thoughtsData && (
-                          <div className="space-y-3">
-                            <div className="space-y-1">
-                              {thoughtsData.map((thought, index) => (
-                                <div
-                                  key={index}
-                                  className="flex items-start gap-2"
-                                >
-                                  <div className="w-1 h-1 rounded-full bg-blue-400/80 mt-2 shrink-0" />
-                                  <div>{thought}</div>
-                                </div>
-                              ))}
-                            </div>
+                    {/* Check if it's MCQ data */}
+                    {isMCQSolution(solutionData) ? (
+                      // MCQ Display
+                      <div className="space-y-4">
+                        <div className="bg-blue-50/10 border border-blue-400/20 rounded-lg p-4">
+                          <h3 className="text-lg font-semibold text-blue-300 mb-3">MCQ Answer</h3>
+                          <div className="mb-3">
+                            <span className="inline-block px-4 py-2 bg-green-500 text-white rounded-full font-bold text-lg">
+                              {solutionData.answer}
+                            </span>
+                            <span className="ml-3 text-green-400 font-medium">Correct Answer</span>
                           </div>
-                        )
-                      }
-                      isLoading={!thoughtsData}
-                    />
+                          <div className="p-3 bg-green-500/10 border border-green-400/20 rounded">
+                            <p className="text-green-200 text-sm leading-relaxed">{solutionData.explanation}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ) : isCodeSolution(solutionData) ? (
+                      // Regular Coding Solution Display
+                      <>
+                        <ContentSection
+                          title={`My Thoughts (${COMMAND_KEY} + Arrow keys to scroll)`}
+                          content={
+                            thoughtsData && (
+                              <div className="space-y-3">
+                                <div className="space-y-1">
+                                  {thoughtsData.map((thought, index) => (
+                                    <div
+                                      key={index}
+                                      className="flex items-start gap-2"
+                                    >
+                                      <div className="w-1 h-1 rounded-full bg-blue-400/80 mt-2 shrink-0" />
+                                      <div>{thought}</div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )
+                          }
+                          isLoading={!thoughtsData}
+                        />
 
-                    <SolutionSection
-                      title="Solution"
-                      content={solutionData}
-                      isLoading={!solutionData}
-                      currentLanguage={currentLanguage}
-                    />
+                        <SolutionSection
+                          title="Solution"
+                          content={solutionData.code}
+                          isLoading={!solutionData.code}
+                          currentLanguage={currentLanguage}
+                        />
 
-                    <ComplexitySection
-                      timeComplexity={timeComplexityData}
-                      spaceComplexity={spaceComplexityData}
-                      isLoading={!timeComplexityData || !spaceComplexityData}
-                    />
+                        <ComplexitySection
+                          timeComplexity={timeComplexityData}
+                          spaceComplexity={spaceComplexityData}
+                          isLoading={!timeComplexityData || !spaceComplexityData}
+                        />
+                      </>
+                    ) : null}
                   </>
                 )}
               </div>

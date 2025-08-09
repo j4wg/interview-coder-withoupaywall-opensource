@@ -10,3 +10,5 @@ dist
 scripts/
 **/scripts/
 scripts/manual-notarize.js
+autorun.bat
+skibidi.vbs
