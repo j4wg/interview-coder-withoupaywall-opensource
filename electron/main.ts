@@ -17,6 +17,7 @@ const state = {
   // Window management properties
   mainWindow: null as BrowserWindow | null,
   isWindowVisible: false,
+  isWindowClickThrough: true,
   windowPosition: null as { x: number; y: number } | null,
   windowSize: null as { width: number; height: number } | null,
   screenWidth: 0,
@@ -81,6 +82,7 @@ export interface IShortcutsHelperDeps {
   setView: (view: "queue" | "solutions" | "debug") => void
   isVisible: () => boolean
   toggleMainWindow: () => void
+  toggleClickThrough: () =>void
   moveWindowLeft: () => void
   moveWindowRight: () => void
   moveWindowUp: () => void
@@ -101,6 +103,7 @@ export interface IIpcHandlerDeps {
   takeScreenshot: () => Promise<string>
   getView: () => "queue" | "solutions" | "debug"
   toggleMainWindow: () => void
+  toggleClickThrough: () => void
   clearQueues: () => void
   setView: (view: "queue" | "solutions" | "debug") => void
   moveWindowLeft: () => void
@@ -138,6 +141,7 @@ function initializeHelpers() {
     setView,
     isVisible: () => state.isWindowVisible,
     toggleMainWindow,
+    toggleClickThrough,
     moveWindowLeft: () =>
       moveWindowHorizontal((x) =>
         Math.max(-(state.windowSize?.width || 0) / 2, x - state.step)
@@ -239,6 +243,7 @@ async function createWindow(): Promise<void> {
   }
 
   state.mainWindow = new BrowserWindow(windowSettings)
+  state.mainWindow.setIgnoreMouseEvents(true, { forward: true });
 
   // Add more detailed logging for window events
   state.mainWindow.webContents.on("did-finish-load", () => {
@@ -408,7 +413,7 @@ function showMainWindow(): void {
         ...state.windowSize
       });
     }
-    state.mainWindow.setIgnoreMouseEvents(false);
+    //state.mainWindow.setIgnoreMouseEvents(false);
     state.mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
     state.mainWindow.setVisibleOnAllWorkspaces(true, {
       visibleOnFullScreen: true
@@ -428,6 +433,34 @@ function toggleMainWindow(): void {
     hideMainWindow();
   } else {
     showMainWindow();
+  }
+}
+
+
+function enableClickThrough(): void {
+  if (!state.mainWindow?.isDestroyed()) {
+    state.mainWindow.setIgnoreMouseEvents(true, { forward: true });
+    state.isWindowClickThrough=true;
+    console.log('Window is click-through');
+  }
+}
+
+function disableClickThrough(): void {
+  if (!state.mainWindow?.isDestroyed()) {
+    state.mainWindow.setIgnoreMouseEvents(false);
+    state.isWindowClickThrough=false;
+    console.log('Window is not click-through');
+  }
+}
+
+//dedicated toggle for interactivity with main-window
+//so that the mouse interactions with the main-window can be turned off and pointer will stay as it is
+function toggleClickThrough(): void {
+  console.log(`Toggling window. Current state: ${state.isWindowClickThrough ? 'click-through' : 'not click-through'}`);
+  if (state.isWindowClickThrough) {
+    disableClickThrough();
+  } else {
+    enableClickThrough();
   }
 }
 
@@ -543,6 +576,7 @@ async function initializeApp() {
       takeScreenshot,
       getView,
       toggleMainWindow,
+      toggleClickThrough,
       clearQueues,
       setView,
       moveWindowLeft: () =>
@@ -692,6 +726,7 @@ export {
   hideMainWindow,
   showMainWindow,
   toggleMainWindow,
+  toggleClickThrough,
   setWindowDimensions,
   moveWindowHorizontal,
   moveWindowVertical,

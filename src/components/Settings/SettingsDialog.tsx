@@ -463,6 +463,9 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
               <div className="grid grid-cols-2 gap-y-2 text-xs">
                 <div className="text-white/70">Toggle Visibility</div>
                 <div className="text-white/90 font-mono">Ctrl+B / Cmd+B</div>
+
+                <div className="text-white/70">Toggle Interactivity</div>
+                <div className="text-white/90 font-mono">Ctrl+U / Cmd+U</div>
                 
                 <div className="text-white/70">Take Screenshot</div>
                 <div className="text-white/90 font-mono">Ctrl+H / Cmd+H</div>
