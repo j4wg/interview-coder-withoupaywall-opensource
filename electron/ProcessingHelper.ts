@@ -728,14 +728,14 @@ export class ProcessingHelper {
       // Update progress status
       if (mainWindow) {
         mainWindow.webContents.send("processing-status", {
-          message: "Creating optimal solution with detailed explanations...",
+          message: "Creating brute-force better-approach & optimal solution with detailed explanations...",
           progress: 60
         });
       }
 
       // Create prompt for solution generation
       const promptText = `
-Generate a detailed solution for the following coding problem:
+Generate brute-force better approach and optimal solution for the following coding problem:
 
 PROBLEM STATEMENT:
 ${problemInfo.problem_statement}
@@ -777,7 +777,7 @@ Your solution should be efficient, well-commented, and handle edge cases.
         const solutionResponse = await this.openaiClient.chat.completions.create({
           model: config.solutionModel || "gpt-4o",
           messages: [
-            { role: "system", content: "You are an expert coding interview assistant. Provide clear, optimal solutions with detailed explanations." },
+            { role: "system", content: "You are an expert coding interview assistant.Provide Brute-Force Better Approach & Optimal solutions with detailed explanations." },
             { role: "user", content: promptText }
           ],
           max_tokens: 4000,
@@ -801,7 +801,7 @@ Your solution should be efficient, well-commented, and handle edge cases.
               role: "user",
               parts: [
                 {
-                  text: `You are an expert coding interview assistant. Provide a clear, optimal solution with detailed explanations for this problem:\n\n${promptText}`
+                  text: `You are an expert coding interview assistant. Provide Brute-Force Approach Better Approach & Optimal solution with detailed explanations for this problem:\n\n${promptText}`
                 }
               ]
             }
