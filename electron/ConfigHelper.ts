@@ -328,20 +328,16 @@ export class ConfigHelper extends EventEmitter {
     } catch (error: any) {
       console.error('OpenAI API key test failed:', error);
       
-      // Determine the specific error type for better error messages
-      let errorMessage = 'Unknown error validating OpenAI API key';
-      
+      // Return error without showing dialog
       if (error.status === 401) {
-        errorMessage = 'Invalid API key. Please check your OpenAI key and try again.';
+        return { valid: false, error: 'Invalid API key' };
       } else if (error.status === 429) {
-        errorMessage = 'Rate limit exceeded. Your OpenAI API key has reached its request limit or has insufficient quota.';
+        return { valid: false, error: 'Rate limit exceeded' };
       } else if (error.status === 500) {
-        errorMessage = 'OpenAI server error. Please try again later.';
-      } else if (error.message) {
-        errorMessage = `Error: ${error.message}`;
+        return { valid: false, error: 'OpenAI server error' };
+      } else {
+        return { valid: false, error: error.message || 'Unknown error' };
       }
-      
-      return { valid: false, error: errorMessage };
     }
   }
   

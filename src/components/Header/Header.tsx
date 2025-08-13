@@ -13,6 +13,8 @@ interface HeaderProps {
 const LANGUAGES = [
   { value: 'python', label: 'Python' },
   { value: 'javascript', label: 'JavaScript' },
+  { value: 'react', label: 'React.js' },
+  { value: 'auto', label: 'Auto (Detect from Screen)' },
   { value: 'java', label: 'Java' },
   { value: 'cpp', label: 'C++' },
   { value: 'csharp', label: 'C#' },

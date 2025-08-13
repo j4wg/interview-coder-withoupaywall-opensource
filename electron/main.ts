@@ -408,7 +408,7 @@ function showMainWindow(): void {
         ...state.windowSize
       });
     }
-    state.mainWindow.setIgnoreMouseEvents(false);
+    state.mainWindow.setIgnoreMouseEvents(true, { forward: true });
     state.mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
     state.mainWindow.setVisibleOnAllWorkspaces(true, {
       visibleOnFullScreen: true

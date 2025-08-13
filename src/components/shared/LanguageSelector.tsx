@@ -42,6 +42,8 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
         >
           <option value="python" className="bg-black text-white">Python</option>
           <option value="javascript" className="bg-black text-white">JavaScript</option>
+          <option value="react" className="bg-black text-white">React.js</option>
+          <option value="auto" className="bg-black text-white">Auto (Detect from Screen)</option>
           <option value="java" className="bg-black text-white">Java</option>
           <option value="golang" className="bg-black text-white">Go</option>
           <option value="cpp" className="bg-black text-white">C++</option>

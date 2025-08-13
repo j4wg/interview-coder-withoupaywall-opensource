@@ -293,6 +293,9 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
     window.electronAPI.openLink(url);
   };
 
+  // Return null if not explicitly opened
+  if (!open) return null;
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent 
