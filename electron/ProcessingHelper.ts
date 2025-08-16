@@ -1,13 +1,12 @@
 // ProcessingHelper.ts
-import fs from "node:fs"
-import path from "node:path"
-import { ScreenshotHelper } from "./ScreenshotHelper"
-import { IProcessingHelperDeps } from "./main"
+import Anthropic from '@anthropic-ai/sdk'
 import * as axios from "axios"
-import { app, BrowserWindow, dialog } from "electron"
+import { BrowserWindow } from "electron"
+import fs from "node:fs"
 import { OpenAI } from "openai"
 import { configHelper } from "./ConfigHelper"
-import Anthropic from '@anthropic-ai/sdk';
+import { ScreenshotHelper } from "./ScreenshotHelper"
+import { IProcessingHelperDeps } from "./main"
 
 // Interface for Gemini API requests
 interface GeminiMessage {
@@ -545,7 +544,7 @@ export class ProcessingHelper {
 
           // Make API request to Gemini
           const response = await axios.default.post(
-            `https://generativelanguage.googleapis.com/v1beta/models/${config.extractionModel || "gemini-2.0-flash"}:generateContent?key=${this.geminiApiKey}`,
+            `https://generativelanguage.googleapis.com/v1beta/models/${config.extractionModel || "gemini-2.5-flash"}:generateContent?key=${this.geminiApiKey}`,
             {
               contents: geminiMessages,
               generationConfig: {
@@ -604,7 +603,7 @@ export class ProcessingHelper {
           ];
 
           const response = await this.anthropicClient.messages.create({
-            model: config.extractionModel || "claude-3-7-sonnet-20250219",
+            model: config.extractionModel || "claude-sonnet-4-20250514",
             max_tokens: 4000,
             messages: messages,
             temperature: 0.2
@@ -677,7 +676,7 @@ export class ProcessingHelper {
           );
         }
       }
-
+      
       return { success: false, error: "Failed to process screenshots" };
     } catch (error: any) {
       // If the request was cancelled, don't retry
@@ -809,7 +808,7 @@ Your solution should be efficient, well-commented, and handle edge cases.
 
           // Make API request to Gemini
           const response = await axios.default.post(
-            `https://generativelanguage.googleapis.com/v1beta/models/${config.solutionModel || "gemini-2.0-flash"}:generateContent?key=${this.geminiApiKey}`,
+            `https://generativelanguage.googleapis.com/v1beta/models/${config.solutionModel || "gemini-2.5-flash"}:generateContent?key=${this.geminiApiKey}`,
             {
               contents: geminiMessages,
               generationConfig: {
@@ -858,7 +857,7 @@ Your solution should be efficient, well-commented, and handle edge cases.
 
           // Send to Anthropic API
           const response = await this.anthropicClient.messages.create({
-            model: config.solutionModel || "claude-3-7-sonnet-20250219",
+            model: config.solutionModel || "claude-sonnet-4-20250514",
             max_tokens: 4000,
             messages: messages,
             temperature: 0.2
@@ -1130,7 +1129,7 @@ If you include code examples, use proper markdown code blocks with language spec
           }
 
           const response = await axios.default.post(
-            `https://generativelanguage.googleapis.com/v1beta/models/${config.debuggingModel || "gemini-2.0-flash"}:generateContent?key=${this.geminiApiKey}`,
+            `https://generativelanguage.googleapis.com/v1beta/models/${config.debuggingModel || "gemini-2.5-flash"}:generateContent?key=${this.geminiApiKey}`,
             {
               contents: geminiMessages,
               generationConfig: {
@@ -1216,7 +1215,7 @@ If you include code examples, use proper markdown code blocks with language spec
           }
 
           const response = await this.anthropicClient.messages.create({
-            model: config.debuggingModel || "claude-3-7-sonnet-20250219",
+            model: config.debuggingModel || "claude-sonnet-4-20250514",
             max_tokens: 4000,
             messages: messages,
             temperature: 0.2
