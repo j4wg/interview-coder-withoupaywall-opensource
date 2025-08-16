@@ -1,17 +1,15 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
+import { useToast } from "../../contexts/toast";
+import { Button } from "../ui/button";
 import {
   Dialog,
-  DialogTrigger,
   DialogContent,
   DialogDescription,
-  DialogHeader,
-  DialogTitle,
   DialogFooter,
+  DialogHeader,
+  DialogTitle
 } from "../ui/dialog";
 import { Input } from "../ui/input";
-import { Button } from "../ui/button";
-import { Settings } from "lucide-react";
-import { useToast } from "../../contexts/toast";
 
 type APIProvider = "openai" | "gemini" | "anthropic";
 
@@ -50,30 +48,30 @@ const modelCategories: ModelCategory[] = [
     ],
     geminiModels: [
       {
-        id: "gemini-1.5-pro",
-        name: "Gemini 1.5 Pro",
+        id: "gemini-2.5-pro",
+        name: "Gemini 2.5 Pro",
         description: "Best overall performance for problem extraction"
       },
       {
-        id: "gemini-2.0-flash",
-        name: "Gemini 2.0 Flash",
+        id: "gemini-2.5-flash",
+        name: "Gemini 2.5 Flash",
         description: "Faster, more cost-effective option"
       }
     ],
     anthropicModels: [
       {
-        id: "claude-3-7-sonnet-20250219",
-        name: "Claude 3.7 Sonnet",
+        id: "claude-sonnet-4-20250514",
+        name: "Claude Sonnet 4",
         description: "Best overall performance for problem extraction"
       },
       {
-        id: "claude-3-5-sonnet-20241022",
-        name: "Claude 3.5 Sonnet",
+        id: "claude-3-7-sonnet-20240814",
+        name: "Claude 3.7 Sonnet",
         description: "Balanced performance and speed"
       },
       {
-        id: "claude-3-opus-20240229",
-        name: "Claude 3 Opus",
+        id: "claude-opus-4-20250514",
+        name: "Claude Opus 4",
         description: "Top-level intelligence, fluency, and understanding"
       }
     ]
@@ -96,30 +94,30 @@ const modelCategories: ModelCategory[] = [
     ],
     geminiModels: [
       {
-        id: "gemini-1.5-pro",
-        name: "Gemini 1.5 Pro",
+        id: "gemini-2.5-pro",
+        name: "Gemini 2.5 Pro",
         description: "Strong overall performance for coding tasks"
       },
       {
-        id: "gemini-2.0-flash",
-        name: "Gemini 2.0 Flash",
+        id: "gemini-2.5-flash",
+        name: "Gemini 2.5 Flash",
         description: "Faster, more cost-effective option"
       }
     ],
     anthropicModels: [
       {
-        id: "claude-3-7-sonnet-20250219",
-        name: "Claude 3.7 Sonnet",
+        id: "claude-sonnet-4-20250514",
+        name: "Claude Sonnet 4",
         description: "Strong overall performance for coding tasks"
       },
       {
-        id: "claude-3-5-sonnet-20241022",
-        name: "Claude 3.5 Sonnet",
+        id: "claude-3-7-sonnet-20250219",
+        name: "Claude 3.7 Sonnet",
         description: "Balanced performance and speed"
       },
       {
-        id: "claude-3-opus-20240229",
-        name: "Claude 3 Opus",
+        id: "claude-4-opus-20250514",
+        name: "Claude 4 Opus",
         description: "Top-level intelligence, fluency, and understanding"
       }
     ]
@@ -142,30 +140,30 @@ const modelCategories: ModelCategory[] = [
     ],
     geminiModels: [
       {
-        id: "gemini-1.5-pro",
-        name: "Gemini 1.5 Pro",
+        id: "gemini-2.5-pro",
+        name: "Gemini 2.5 Pro",
         description: "Best for analyzing code and error messages"
       },
       {
-        id: "gemini-2.0-flash",
-        name: "Gemini 2.0 Flash",
+        id: "gemini-2.5-flash",
+        name: "Gemini 2.5 Flash",
         description: "Faster, more cost-effective option"
       }
     ],
     anthropicModels: [
       {
-        id: "claude-3-7-sonnet-20250219",
-        name: "Claude 3.7 Sonnet",
+        id: "claude-sonnet-4-20250514",
+        name: "Claude Sonnet 4",
         description: "Best for analyzing code and error messages"
       },
       {
-        id: "claude-3-5-sonnet-20241022",
-        name: "Claude 3.5 Sonnet",
+        id: "claude-3-7-sonnet-20250219",
+        name: "Claude 3.7 Sonnet",
         description: "Balanced performance and speed"
       },
       {
-        id: "claude-3-opus-20240229",
-        name: "Claude 3 Opus",
+        id: "claude-4-opus-20250514",
+        name: "Claude 4 Opus",
         description: "Top-level intelligence, fluency, and understanding"
       }
     ]
@@ -244,9 +242,9 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
       setSolutionModel("gpt-4o");
       setDebuggingModel("gpt-4o");
     } else if (provider === "gemini") {
-      setExtractionModel("gemini-1.5-pro");
-      setSolutionModel("gemini-1.5-pro");
-      setDebuggingModel("gemini-1.5-pro");
+      setExtractionModel("gemini-2.5-pro");
+      setSolutionModel("gemini-2.5-pro");
+      setDebuggingModel("gemini-2.5-pro");
     } else if (provider === "anthropic") {
       setExtractionModel("claude-3-7-sonnet-20250219");
       setSolutionModel("claude-3-7-sonnet-20250219");
@@ -362,7 +360,7 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
                   />
                   <div className="flex flex-col">
                     <p className="font-medium text-white text-sm">Gemini</p>
-                    <p className="text-xs text-white/60">Gemini 1.5 models</p>
+                    <p className="text-xs text-white/60">Gemini 2.5 models</p>
                   </div>
                 </div>
               </div>
@@ -382,7 +380,7 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
                   />
                   <div className="flex flex-col">
                     <p className="font-medium text-white text-sm">Claude</p>
-                    <p className="text-xs text-white/60">Claude 3 models</p>
+                    <p className="text-xs text-white/60">Claude 4 models</p>
                   </div>
                 </div>
               </div>
