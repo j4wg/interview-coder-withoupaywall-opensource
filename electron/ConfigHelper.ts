@@ -1,8 +1,8 @@
 // ConfigHelper.ts
-import fs from "node:fs"
-import path from "node:path"
 import { app } from "electron"
 import { EventEmitter } from "events"
+import fs from "node:fs"
+import path from "node:path"
 import { OpenAI } from "openai"
 
 interface Config {
@@ -20,9 +20,9 @@ export class ConfigHelper extends EventEmitter {
   private defaultConfig: Config = {
     apiKey: "",
     apiProvider: "gemini", // Default to Gemini
-    extractionModel: "gemini-2.0-flash", // Default to Flash for faster responses
-    solutionModel: "gemini-2.0-flash",
-    debuggingModel: "gemini-2.0-flash",
+    extractionModel: "gemini-2.5-flash", // Default to Flash for faster responses
+    solutionModel: "gemini-2.5-flash",
+    debuggingModel: "gemini-2.5-flash",
     language: "python",
     opacity: 1.0
   };
@@ -68,19 +68,19 @@ export class ConfigHelper extends EventEmitter {
       }
       return model;
     } else if (provider === "gemini")  {
-      // Only allow gemini-1.5-pro and gemini-2.0-flash for Gemini
-      const allowedModels = ['gemini-1.5-pro', 'gemini-2.0-flash'];
+      // Only allow gemini-2.5-pro and gemini-2.5-flash for Gemini
+      const allowedModels = ['gemini-2.5-pro', 'gemini-2.5-flash'];
       if (!allowedModels.includes(model)) {
-        console.warn(`Invalid Gemini model specified: ${model}. Using default model: gemini-2.0-flash`);
-        return 'gemini-2.0-flash'; // Changed default to flash
+        console.warn(`Invalid Gemini model specified: ${model}. Using default model: gemini-2.5-flash`);
+        return 'gemini-2.5-flash'; // Changed default to flash
       }
       return model;
     }  else if (provider === "anthropic") {
       // Only allow Claude models
-      const allowedModels = ['claude-3-7-sonnet-20250219', 'claude-3-5-sonnet-20241022', 'claude-3-opus-20240229'];
+      const allowedModels = ['claude-sonnet-4-20250514', 'claude-3-7-sonnet-20250219', 'claude-4-opus-20250514'];
       if (!allowedModels.includes(model)) {
-        console.warn(`Invalid Anthropic model specified: ${model}. Using default model: claude-3-7-sonnet-20250219`);
-        return 'claude-3-7-sonnet-20250219';
+        console.warn(`Invalid Anthropic model specified: ${model}. Using default model: claude-sonnet-4-20250514`);
+        return 'claude-sonnet-4-20250514';
       }
       return model;
     }
@@ -175,13 +175,13 @@ export class ConfigHelper extends EventEmitter {
           updates.solutionModel = "gpt-4o";
           updates.debuggingModel = "gpt-4o";
         } else if (updates.apiProvider === "anthropic") {
-          updates.extractionModel = "claude-3-7-sonnet-20250219";
-          updates.solutionModel = "claude-3-7-sonnet-20250219";
-          updates.debuggingModel = "claude-3-7-sonnet-20250219";
+          updates.extractionModel = "claude-sonnet-4-20250514";
+          updates.solutionModel = "claude-sonnet-4-20250514";
+          updates.debuggingModel = "claude-sonnet-4-20250514";
         } else {
-          updates.extractionModel = "gemini-2.0-flash";
-          updates.solutionModel = "gemini-2.0-flash";
-          updates.debuggingModel = "gemini-2.0-flash";
+          updates.extractionModel = "gemini-2.5-flash";
+          updates.solutionModel = "gemini-2.5-flash";
+          updates.debuggingModel = "gemini-2.5-flash";
         }
       }
       
