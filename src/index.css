@@ -2,10 +2,34 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Expandable overlay window */
+html,
+body {
+  background: transparent;
+  overflow: hidden;
+}
+
+#root {
+  background: transparent;
+  min-height: 100vh;
+}
+
+/* Overlay content container */
+.overlay-content {
+  min-height: 100vh;
+  padding-bottom: 20px;
+}
+
 /* Custom animations for UI elements */
 @keyframes fadeIn {
-  from { opacity: 0; transform: translate(-50%, -48%); }
-  to { opacity: 0.98; transform: translate(-50%, -50%); }
+  from {
+    opacity: 0;
+    transform: translate(-50%, -48%);
+  }
+  to {
+    opacity: 0.98;
+    transform: translate(-50%, -50%);
+  }
 }
 
 /* Dialog transition improvements */
