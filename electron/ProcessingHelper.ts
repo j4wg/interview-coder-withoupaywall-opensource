@@ -477,14 +477,14 @@ export class ProcessingHelper {
         const messages = [
           {
             role: "system" as const, 
-            content: "You are a coding challenge interpreter. Analyze the screenshot of the coding problem and extract all relevant information. Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output. Just return the structured JSON without any other text."
+            content: "You are a coding challenge interpreter. Analyze the screenshots and extract all relevant information. IMPORTANT: If this is a Multiple Choice Question (MCQ), carefully read and analyze ALL the options provided in the screenshots. Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output, question_type (either 'coding' or 'mcq'), options (array of options if MCQ), correct_answer (option letter/number if MCQ). Just return the structured JSON without any other text."
           },
           {
             role: "user" as const,
             content: [
               {
                 type: "text" as const, 
-                text: `Extract the coding problem details from these screenshots. Return in JSON format. Preferred coding language we gonna use for this problem is ${language}.`
+                text: `Extract the problem details from these screenshots. If it's an MCQ, make sure to read and include ALL the options provided. Return in JSON format. Preferred coding language we gonna use for this problem is ${language}.`
               },
               ...imageDataList.map(data => ({
                 type: "image_url" as const,
@@ -531,7 +531,7 @@ export class ProcessingHelper {
               role: "user",
               parts: [
                 {
-                  text: `You are a coding challenge interpreter. Analyze the screenshots of the coding problem and extract all relevant information. Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output. Just return the structured JSON without any other text. Preferred coding language we gonna use for this problem is ${language}.`
+                  text: `You are a coding challenge interpreter. Analyze the screenshots and extract all relevant information. IMPORTANT: If this is a Multiple Choice Question (MCQ), carefully read and analyze ALL the options provided in the screenshots. Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output, question_type (either 'coding' or 'mcq'), options (array of options if MCQ), correct_answer (option letter/number if MCQ). Just return the structured JSON without any other text. Preferred coding language we gonna use for this problem is ${language}.`
                 },
                 ...imageDataList.map(data => ({
                   inlineData: {
@@ -589,7 +589,7 @@ export class ProcessingHelper {
               content: [
                 {
                   type: "text" as const,
-                  text: `Extract the coding problem details from these screenshots. Return in JSON format with these fields: problem_statement, constraints, example_input, example_output. Preferred coding language is ${language}.`
+                  text: `Extract the problem details from these screenshots. IMPORTANT: If this is a Multiple Choice Question (MCQ), carefully read and analyze ALL the options provided in the screenshots. Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output, question_type (either 'coding' or 'mcq'), options (array of options if MCQ), correct_answer (option letter/number if MCQ). Preferred coding language is ${language}.`
                 },
                 ...imageDataList.map(data => ({
                   type: "image" as const,
@@ -654,27 +654,65 @@ export class ProcessingHelper {
           problemInfo
         );
 
-        // Generate solutions after successful extraction
-        const solutionsResult = await this.generateSolutionsHelper(signal);
-        if (solutionsResult.success) {
+        // For MCQ questions, we don't need to generate coding solutions
+        if (problemInfo.question_type === "mcq") {
+                     // Create a simple MCQ response
+           const mcqResponse = {
+             code: `Question: ${problemInfo.problem_statement}\n\nOptions:\n${problemInfo.options ? problemInfo.options.map((opt: string, index: number) => {
+               // Handle various option formats: A, B, C, D or 1, 2, 3, 4 or just the option
+               let optionLabel = '';
+               if (opt.match(/^[A-D]$/i)) {
+                 optionLabel = opt.toUpperCase();
+               } else if (opt.match(/^[1-4]$/)) {
+                 optionLabel = opt;
+               } else {
+                 // If no clear label, use A, B, C, D
+                 optionLabel = String.fromCharCode(65 + index);
+               }
+               return `${optionLabel}. ${opt}`;
+             }).join('\n') : 'No options provided'}\n\nThis appears to be a Multiple Choice Question. Please use the debug feature to get the correct answer and explanation.`,
+             thoughts: ["This is a Multiple Choice Question (MCQ)"],
+             time_complexity: "N/A - MCQ Question",
+             space_complexity: "N/A - MCQ Question"
+           };
+          
           // Clear any existing extra screenshots before transitioning to solutions view
           this.screenshotHelper.clearExtraScreenshotQueue();
           
           // Final progress update
           mainWindow.webContents.send("processing-status", {
-            message: "Solution generated successfully",
+            message: "MCQ question processed successfully",
             progress: 100
           });
           
           mainWindow.webContents.send(
             this.deps.PROCESSING_EVENTS.SOLUTION_SUCCESS,
-            solutionsResult.data
+            mcqResponse
           );
-          return { success: true, data: solutionsResult.data };
+          return { success: true, data: mcqResponse };
         } else {
-          throw new Error(
-            solutionsResult.error || "Failed to generate solutions"
-          );
+          // Generate solutions for coding problems after successful extraction
+          const solutionsResult = await this.generateSolutionsHelper(signal);
+          if (solutionsResult.success) {
+            // Clear any existing extra screenshots before transitioning to solutions view
+            this.screenshotHelper.clearExtraScreenshotQueue();
+            
+            // Final progress update
+            mainWindow.webContents.send("processing-status", {
+              message: "Solution generated successfully",
+              progress: 100
+            });
+            
+            mainWindow.webContents.send(
+              this.deps.PROCESSING_EVENTS.SOLUTION_SUCCESS,
+              solutionsResult.data
+            );
+            return { success: true, data: solutionsResult.data };
+          } else {
+            throw new Error(
+              solutionsResult.error || "Failed to generate solutions"
+            );
+          }
         }
       }
 
@@ -735,7 +773,7 @@ export class ProcessingHelper {
 
       // Create prompt for solution generation
       const promptText = `
-Generate a detailed solution for the following coding problem:
+Generate a detailed solution for the following problem:
 
 PROBLEM STATEMENT:
 ${problemInfo.problem_statement}
@@ -749,9 +787,33 @@ ${problemInfo.example_input || "No example input provided."}
 EXAMPLE OUTPUT:
 ${problemInfo.example_output || "No example output provided."}
 
+QUESTION TYPE: ${problemInfo.question_type || "coding"}
+
+${problemInfo.question_type === "mcq" && problemInfo.options ? `OPTIONS:
+${problemInfo.options.map((opt: string, index: number) => {
+  // Handle various option formats: A, B, C, D or 1, 2, 3, 4 or just the option
+  let optionLabel = '';
+  if (opt.match(/^[A-D]$/i)) {
+    optionLabel = opt.toUpperCase();
+  } else if (opt.match(/^[1-4]$/)) {
+    optionLabel = opt;
+  } else {
+    // If no clear label, use A, B, C, D
+    optionLabel = String.fromCharCode(65 + index);
+  }
+  return `${optionLabel}. ${opt}`;
+}).join('\n')}` : ''}
+
 LANGUAGE: ${language}
 
-I need the response in the following format:
+IMPORTANT: If this is a Multiple Choice Question (MCQ), carefully read and analyze ALL the options provided above. Your response should:
+1. Identify that it's an MCQ
+2. Analyze each option (A, B, C, D, 1, 2, 3, 4, or whatever format is used)
+3. Provide the correct answer with the option label (letter, number, or text)
+4. Give a detailed explanation of why that option is correct
+5. Explain why other options are incorrect
+
+If it's a coding problem, provide the response in the following format:
 1. Code: A clean, optimized implementation in ${language}
 2. Your Thoughts: A list of key insights and reasoning behind your approach
 3. Time complexity: O(X) with a detailed explanation (at least 2 sentences)
@@ -760,6 +822,7 @@ I need the response in the following format:
 For complexity explanations, please be thorough. For example: "Time complexity: O(n) because we iterate through the array only once. This is optimal as we need to examine each element at least once to find the solution." or "Space complexity: O(n) because in the worst case, we store all elements in the hashmap. The additional space scales linearly with the input size."
 
 Your solution should be efficient, well-commented, and handle edge cases.
+It should as efficient as possible keeping in mind all the test cases and edge cases, keep in mind the constrainsts and keep it as short as possible, but edges cases and constraints are more important than shortness.
 `;
 
       let responseContent;
@@ -777,7 +840,7 @@ Your solution should be efficient, well-commented, and handle edge cases.
         const solutionResponse = await this.openaiClient.chat.completions.create({
           model: config.solutionModel || "gpt-4o",
           messages: [
-            { role: "system", content: "You are an expert coding interview assistant. Provide clear, optimal solutions with detailed explanations." },
+            { role: "system", content: "You are an expert coding interview assistant with mastery in DSA. For coding problems: try the best approach possible and not brute force as it always exceeds time limit, keep in mind all edge cases and constraints, keep the code as short as possible but edge cases are the first priority. For MCQ questions: carefully analyze ALL options provided in the screenshots, identify the correct answer with option letter/number, and explain why it's correct and why others are wrong. Provide clear, optimal solutions with detailed explanations." },
             { role: "user", content: promptText }
           ],
           max_tokens: 4000,
@@ -801,7 +864,7 @@ Your solution should be efficient, well-commented, and handle edge cases.
               role: "user",
               parts: [
                 {
-                  text: `You are an expert coding interview assistant. Provide a clear, optimal solution with detailed explanations for this problem:\n\n${promptText}`
+                  text: `You are an expert coding interview assistant with mastery in DSA. For coding problems: try the best approach possible and not brute force as it always exceeds time limit, keep in mind all edge cases and constraints, keep the code as short as possible but edge cases are the first priority. For MCQ questions: carefully analyze ALL options provided in the screenshots (they may be labeled as A, B, C, D or 1, 2, 3, 4 or just plain text), identify the correct answer with the appropriate label, and explain why it's correct and why others are wrong. Provide clear, optimal solutions with detailed explanations:\n\n${promptText}`
                 }
               ]
             }
@@ -850,7 +913,7 @@ Your solution should be efficient, well-commented, and handle edge cases.
               content: [
                 {
                   type: "text" as const,
-                  text: `You are an expert coding interview assistant. Provide a clear, optimal solution with detailed explanations for this problem:\n\n${promptText}`
+                  text: `You are an expert coding interview assistant with mastery in DSA. For coding problems: try the best approach possible and not brute force as it always exceeds time limit, keep in mind all edge cases and constraints, keep the code as short as possible but edge cases are the first priority. For MCQ questions: carefully analyze ALL options provided in the screenshots, identify the correct answer with option letter/number, and explain why it's correct and why others are wrong. Provide clear, optimal solutions with detailed explanations:\n\n${promptText}`
                 }
               ]
             }
@@ -889,62 +952,85 @@ Your solution should be efficient, well-commented, and handle edge cases.
       }
       
       // Extract parts from the response
-      const codeMatch = responseContent.match(/```(?:\w+)?\s*([\s\S]*?)```/);
-      const code = codeMatch ? codeMatch[1].trim() : responseContent;
-      
-      // Extract thoughts, looking for bullet points or numbered lists
-      const thoughtsRegex = /(?:Thoughts:|Key Insights:|Reasoning:|Approach:)([\s\S]*?)(?:Time complexity:|$)/i;
-      const thoughtsMatch = responseContent.match(thoughtsRegex);
+      let code = "// No code provided";
       let thoughts: string[] = [];
+      let timeComplexity = "N/A";
+      let spaceComplexity = "N/A";
       
-      if (thoughtsMatch && thoughtsMatch[1]) {
-        // Extract bullet points or numbered items
-        const bulletPoints = thoughtsMatch[1].match(/(?:^|\n)\s*(?:[-*•]|\d+\.)\s*(.*)/g);
-        if (bulletPoints) {
-          thoughts = bulletPoints.map(point => 
-            point.replace(/^\s*(?:[-*•]|\d+\.)\s*/, '').trim()
-          ).filter(Boolean);
-        } else {
-          // If no bullet points found, split by newlines and filter empty lines
-          thoughts = thoughtsMatch[1].split('\n')
-            .map((line) => line.trim())
-            .filter(Boolean);
-        }
-      }
-      
-      // Extract complexity information
-      const timeComplexityPattern = /Time complexity:?\s*([^\n]+(?:\n[^\n]+)*?)(?=\n\s*(?:Space complexity|$))/i;
-      const spaceComplexityPattern = /Space complexity:?\s*([^\n]+(?:\n[^\n]+)*?)(?=\n\s*(?:[A-Z]|$))/i;
-      
-      let timeComplexity = "O(n) - Linear time complexity because we only iterate through the array once. Each element is processed exactly one time, and the hashmap lookups are O(1) operations.";
-      let spaceComplexity = "O(n) - Linear space complexity because we store elements in the hashmap. In the worst case, we might need to store all elements before finding the solution pair.";
-      
-      const timeMatch = responseContent.match(timeComplexityPattern);
-      if (timeMatch && timeMatch[1]) {
-        timeComplexity = timeMatch[1].trim();
-        if (!timeComplexity.match(/O\([^)]+\)/i)) {
-          timeComplexity = `O(n) - ${timeComplexity}`;
-        } else if (!timeComplexity.includes('-') && !timeComplexity.includes('because')) {
-          const notationMatch = timeComplexity.match(/O\([^)]+\)/i);
-          if (notationMatch) {
-            const notation = notationMatch[0];
-            const rest = timeComplexity.replace(notation, '').trim();
-            timeComplexity = `${notation} - ${rest}`;
+      // Check if this is an MCQ question
+      if (problemInfo.question_type === "mcq") {
+        // For MCQ questions, extract the answer and explanation
+        // Handle various MCQ formats: A-D, 1-4, or just the option text
+        const answerMatch = responseContent.match(/(?:Answer|Correct Answer|Option|Correct option):?\s*([A-D]|[1-4]|[^,\n]+)/i);
+        const answer = answerMatch ? answerMatch[1].trim() : "Not specified";
+        
+        // Extract explanation
+        const explanationMatch = responseContent.match(/(?:Explanation|Reasoning|Why):([\s\S]*?)(?=\n\s*(?:[A-Z]|$))/i);
+        const explanation = explanationMatch ? explanationMatch[1].trim() : responseContent;
+        
+        // For MCQ, set appropriate values
+        code = `Answer: ${answer}\n\n${explanation}`;
+        thoughts = [explanation];
+        timeComplexity = "N/A - MCQ Question";
+        spaceComplexity = "N/A - MCQ Question";
+      } else {
+        // For coding problems, extract code and complexity info
+        const codeMatch = responseContent.match(/```(?:\w+)?\s*([\s\S]*?)```/);
+        code = codeMatch ? codeMatch[1].trim() : responseContent;
+        
+        // Extract thoughts, looking for bullet points or numbered lists
+        const thoughtsRegex = /(?:Thoughts:|Key Insights:|Reasoning:|Approach:)([\s\S]*?)(?:Time complexity:|$)/i;
+        const thoughtsMatch = responseContent.match(thoughtsRegex);
+        
+        if (thoughtsMatch && thoughtsMatch[1]) {
+          // Extract bullet points or numbered items
+          const bulletPoints = thoughtsMatch[1].match(/(?:^|\n)\s*(?:[-*•]|\d+\.)\s*(.*)/g);
+          if (bulletPoints) {
+            thoughts = bulletPoints.map(point => 
+              point.replace(/^\s*(?:[-*•]|\d+\.)\s*/, '').trim()
+            ).filter(Boolean);
+          } else {
+            // If no bullet points found, split by newlines and filter empty lines
+            thoughts = thoughtsMatch[1].split('\n')
+              .map((line) => line.trim())
+              .filter(Boolean);
           }
         }
-      }
-      
-      const spaceMatch = responseContent.match(spaceComplexityPattern);
-      if (spaceMatch && spaceMatch[1]) {
-        spaceComplexity = spaceMatch[1].trim();
-        if (!spaceComplexity.match(/O\([^)]+\)/i)) {
-          spaceComplexity = `O(n) - ${spaceComplexity}`;
-        } else if (!spaceComplexity.includes('-') && !spaceComplexity.includes('because')) {
-          const notationMatch = spaceComplexity.match(/O\([^)]+\)/i);
-          if (notationMatch) {
-            const notation = notationMatch[0];
-            const rest = spaceComplexity.replace(notation, '').trim();
-            spaceComplexity = `${notation} - ${rest}`;
+        
+        // Extract complexity information
+        const timeComplexityPattern = /Time complexity:?\s*([^\n]+(?:\n[^\n]+)*?)(?=\n\s*(?:Space complexity|$))/i;
+        const spaceComplexityPattern = /Space complexity:?\s*([^\n]+(?:\n[^\n]+)*?)(?=\n\s*(?:[A-Z]|$))/i;
+        
+        timeComplexity = "O(n) - Linear time complexity because we only iterate through the array once. Each element is processed exactly one time, and the hashmap lookups are O(1) operations.";
+        spaceComplexity = "O(n) - Linear space complexity because we store elements in the hashmap. In the worst case, we might need to store all elements before finding the solution pair.";
+        
+        const timeMatch = responseContent.match(timeComplexityPattern);
+        if (timeMatch && timeMatch[1]) {
+          timeComplexity = timeMatch[1].trim();
+          if (!timeComplexity.match(/O\([^)]+\)/i)) {
+            timeComplexity = `O(n) - ${timeComplexity}`;
+          } else if (!timeComplexity.includes('-') && !timeComplexity.includes('because')) {
+            const notationMatch = timeComplexity.match(/O\([^)]+\)/i);
+            if (notationMatch) {
+              const notation = notationMatch[0];
+              const rest = timeComplexity.replace(notation, '').trim();
+              timeComplexity = `${notation} - ${rest}`;
+            }
+          }
+        }
+        
+        const spaceMatch = responseContent.match(spaceComplexityPattern);
+        if (spaceMatch && spaceMatch[1]) {
+          spaceComplexity = spaceMatch[1].trim();
+          if (!spaceComplexity.match(/O\([^)]+\)/i)) {
+            spaceComplexity = `O(n) - ${spaceComplexity}`;
+          } else if (!spaceComplexity.includes('-') && !spaceComplexity.includes('because')) {
+            const notationMatch = spaceComplexity.match(/O\([^)]+\)/i);
+            if (notationMatch) {
+              const notation = notationMatch[0];
+              const rest = spaceComplexity.replace(notation, '').trim();
+              spaceComplexity = `${notation} - ${rest}`;
+            }
           }
         }
       }
@@ -1022,7 +1108,14 @@ Your solution should be efficient, well-commented, and handle edge cases.
             role: "system" as const, 
             content: `You are a coding interview assistant helping debug and improve solutions. Analyze these screenshots which include either error messages, incorrect outputs, or test cases, and provide detailed debugging help.
 
-Your response MUST follow this exact structure with these section headers (use ### for headers):
+IMPORTANT: If this is a Multiple Choice Question (MCQ), carefully read and analyze ALL the options provided in the screenshots. Your response should:
+1. Identify that it's an MCQ
+2. Analyze each option (A, B, C, D, 1, 2, 3, 4, or whatever format is used)
+3. Provide the correct answer with the option label (letter, number, or text)
+4. Give a detailed explanation of why that option is correct
+5. Explain why other options are incorrect
+
+If it's a coding problem that needs debugging, your response MUST follow this exact structure with these section headers (use ### for headers):
 ### Issues Identified
 - List each issue as a bullet point with clear explanation
 
@@ -1088,7 +1181,14 @@ You are a coding interview assistant helping debug and improve solutions. Analyz
 
 I'm solving this coding problem: "${problemInfo.problem_statement}" in ${language}. I need help with debugging or improving my solution.
 
-YOUR RESPONSE MUST FOLLOW THIS EXACT STRUCTURE WITH THESE SECTION HEADERS:
+IMPORTANT: If this is a Multiple Choice Question (MCQ), carefully read and analyze ALL the options provided in the screenshots. Your response should:
+1. Identify that it's an MCQ
+2. Analyze each option (A, B, C, D, 1, 2, 3, 4, or whatever format is used)
+3. Provide the correct answer with the option label (letter, number, or text)
+4. Give a detailed explanation of why that option is correct
+5. Explain why other options are incorrect
+
+If it's a coding problem that needs debugging, YOUR RESPONSE MUST FOLLOW THIS EXACT STRUCTURE WITH THESE SECTION HEADERS:
 ### Issues Identified
 - List each issue as a bullet point with clear explanation
 
@@ -1169,7 +1269,14 @@ You are a coding interview assistant helping debug and improve solutions. Analyz
 
 I'm solving this coding problem: "${problemInfo.problem_statement}" in ${language}. I need help with debugging or improving my solution.
 
-YOUR RESPONSE MUST FOLLOW THIS EXACT STRUCTURE WITH THESE SECTION HEADERS:
+IMPORTANT: If this is a Multiple Choice Question (MCQ), carefully read and analyze ALL the options provided in the screenshots. Your response should:
+1. Identify that it's an MCQ
+2. Analyze each option (A, B, C, D, 1, 2, 3, 4, or whatever format is used)
+3. Provide the correct answer with the option label (letter, number, or text)
+4. Give a detailed explanation of why that option is correct
+5. Explain why other options are incorrect
+
+If it's a coding problem that needs debugging, YOUR RESPONSE MUST FOLLOW THIS EXACT STRUCTURE WITH THESE SECTION HEADERS:
 ### Issues Identified
 - List each issue as a bullet point with clear explanation
 
@@ -1255,32 +1362,51 @@ If you include code examples, use proper markdown code blocks with language spec
       }
 
       let extractedCode = "// Debug mode - see analysis below";
-      const codeMatch = debugContent.match(/```(?:[a-zA-Z]+)?([\s\S]*?)```/);
-      if (codeMatch && codeMatch[1]) {
-        extractedCode = codeMatch[1].trim();
-      }
-
       let formattedDebugContent = debugContent;
+      let thoughts = ["Debug analysis based on your screenshots"];
       
-      if (!debugContent.includes('# ') && !debugContent.includes('## ')) {
-        formattedDebugContent = debugContent
-          .replace(/issues identified|problems found|bugs found/i, '## Issues Identified')
-          .replace(/code improvements|improvements|suggested changes/i, '## Code Improvements')
-          .replace(/optimizations|performance improvements/i, '## Optimizations')
-          .replace(/explanation|detailed analysis/i, '## Explanation');
-      }
+      // Check if this is an MCQ question
+      if (problemInfo.question_type === "mcq") {
+                 // For MCQ questions, extract the answer and explanation
+         // Handle various MCQ formats: A-D, 1-4, or just the option text
+         const answerMatch = debugContent.match(/(?:Answer|Correct Answer|Option|Correct option):?\s*([A-D]|[1-4]|[^,\n]+)/i);
+         const answer = answerMatch ? answerMatch[1].trim() : "Not specified";
+        
+        // Extract explanation
+        const explanationMatch = debugContent.match(/(?:Explanation|Reasoning|Why):([\s\S]*?)(?=\n\s*(?:[A-Z]|$))/i);
+        const explanation = explanationMatch ? explanationMatch[1].trim() : debugContent;
+        
+        // For MCQ, set appropriate values
+        extractedCode = `Answer: ${answer}\n\n${explanation}`;
+        formattedDebugContent = `## MCQ Answer\n\n**Correct Answer: ${answer}**\n\n${explanation}`;
+        thoughts = [explanation];
+      } else {
+        // For coding problems, extract code and format debug content
+        const codeMatch = debugContent.match(/```(?:[a-zA-Z]+)?([\s\S]*?)```/);
+        if (codeMatch && codeMatch[1]) {
+          extractedCode = codeMatch[1].trim();
+        }
+        
+        if (!debugContent.includes('# ') && !debugContent.includes('## ')) {
+          formattedDebugContent = debugContent
+            .replace(/issues identified|problems found|bugs found/i, '## Issues Identified')
+            .replace(/code improvements|improvements|suggested changes/i, '## Code Improvements')
+            .replace(/optimizations|performance improvements/i, '## Optimizations')
+            .replace(/explanation|detailed analysis/i, '## Explanation');
+        }
 
-      const bulletPoints = formattedDebugContent.match(/(?:^|\n)[ ]*(?:[-*•]|\d+\.)[ ]+([^\n]+)/g);
-      const thoughts = bulletPoints 
-        ? bulletPoints.map(point => point.replace(/^[ ]*(?:[-*•]|\d+\.)[ ]+/, '').trim()).slice(0, 5)
-        : ["Debug analysis based on your screenshots"];
+        const bulletPoints = formattedDebugContent.match(/(?:^|\n)[ ]*(?:[-*•]|\d+\.)[ ]+([^\n]+)/g);
+        if (bulletPoints) {
+          thoughts = bulletPoints.map(point => point.replace(/^[ ]*(?:[-*•]|\d+\.)[ ]+/, '').trim()).slice(0, 5);
+        }
+      }
       
       const response = {
         code: extractedCode,
         debug_analysis: formattedDebugContent,
         thoughts: thoughts,
-        time_complexity: "N/A - Debug mode",
-        space_complexity: "N/A - Debug mode"
+        time_complexity: problemInfo.question_type === "mcq" ? "N/A - MCQ Question" : "N/A - Debug mode",
+        space_complexity: problemInfo.question_type === "mcq" ? "N/A - MCQ Question" : "N/A - Debug mode"
       };
 
       return { success: true, data: response };
