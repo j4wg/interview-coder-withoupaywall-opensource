@@ -50,6 +50,7 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
           <option value="ruby" className="bg-black text-white">Ruby</option>
           <option value="sql" className="bg-black text-white">SQL</option>
           <option value="r" className="bg-black text-white">R</option>
+          <option value="csharp" className="bg-black text-white">C#</option>
         </select>
       </div>
     </div>
