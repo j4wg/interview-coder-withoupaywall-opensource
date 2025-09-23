@@ -27,8 +27,12 @@ mkdir -p ~/Library/Application\ Support/interview-coder-v1/extra_screenshots
 
 echo "=== Step 2: Cleaning previous builds... ==="
 echo "Removing old build files to ensure a fresh start..."
-rm -rf dist dist-electron
+rm -rf dist dist-electron node_modules
 rm -f .env
+
+echo "=== Step 2.5: Installing fresh dependencies... ==="
+echo "This ensures Electron is properly installed..."
+npm install
 
 echo "=== Step 3: Building application... ==="
 echo "This may take a moment..."
