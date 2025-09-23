@@ -196,6 +196,14 @@ export class ProcessingHelper {
     }
   }
 
+  public setProblemInfo(problemInfo: any): void {
+    this.deps.setProblemInfo(problemInfo);
+  }
+
+  public async generateSolutions(signal: AbortSignal) {
+    return this.generateSolutionsHelper(signal);
+  }
+
   public async processScreenshots(): Promise<void> {
     const mainWindow = this.deps.getMainWindow()
     if (!mainWindow) return

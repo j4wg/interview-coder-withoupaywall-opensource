@@ -5,6 +5,13 @@ import { useToast } from "../../contexts/toast"
 import { LanguageSelector } from "../shared/LanguageSelector"
 import { COMMAND_KEY } from "../../utils/platform"
 
+// Voice recording state
+interface VoiceRecordingState {
+  isRecording: boolean
+  isProcessing: boolean
+  duration: number
+}
+
 interface QueueCommandsProps {
   onTooltipVisibilityChange: (visible: boolean, height: number) => void
   screenshotCount?: number
@@ -23,6 +30,14 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
   const [isTooltipVisible, setIsTooltipVisible] = useState(false)
   const tooltipRef = useRef<HTMLDivElement>(null)
   const { showToast } = useToast()
+
+  // Voice recording state
+  const [voiceState, setVoiceState] = useState<VoiceRecordingState>({
+    isRecording: false,
+    isProcessing: false,
+    duration: 0
+  })
+  const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
   // Extract the repeated language selection logic into a separate function
   const extractLanguagesAndUpdate = (direction?: 'next' | 'prev') => {
@@ -113,10 +128,105 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
     setIsTooltipVisible(false)
   }
 
+  // Voice recording functions
+  const startVoiceRecording = async () => {
+    try {
+      setVoiceState({ isRecording: true, isProcessing: false, duration: 0 })
+
+      // Start duration counter
+      recordingIntervalRef.current = setInterval(() => {
+        setVoiceState(prev => ({ ...prev, duration: prev.duration + 1 }))
+      }, 1000)
+
+      const result = await window.electronAPI.startVoiceRecording()
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to start voice recording')
+      }
+    } catch (error) {
+      console.error('Error starting voice recording:', error)
+      setVoiceState({ isRecording: false, isProcessing: false, duration: 0 })
+      showToast('Error', 'Failed to start voice recording', 'error')
+    }
+  }
+
+  const stopVoiceRecording = async () => {
+    try {
+      // Clear duration counter
+      if (recordingIntervalRef.current) {
+        clearInterval(recordingIntervalRef.current)
+        recordingIntervalRef.current = null
+      }
+
+      setVoiceState(prev => ({ ...prev, isRecording: false, isProcessing: true }))
+
+      const result = await window.electronAPI.stopVoiceRecording()
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to stop voice recording')
+      }
+
+      // Process the voice recording
+      const processResult = await window.electronAPI.processVoiceRecording()
+      if (processResult.success) {
+        showToast('Success', 'Voice recording processed successfully', 'success')
+        // Trigger screenshot processing with voice data
+        const solveResult = await window.electronAPI.triggerProcessVoice()
+        if (!solveResult.success) {
+          showToast('Error', 'Failed to process voice for solution', 'error')
+        }
+      } else {
+        throw new Error(processResult.error || 'Failed to process voice recording')
+      }
+    } catch (error) {
+      console.error('Error stopping voice recording:', error)
+      showToast('Error', 'Failed to process voice recording', 'error')
+    } finally {
+      setVoiceState({ isRecording: false, isProcessing: false, duration: 0 })
+    }
+  }
+
+  const handleVoiceRecording = () => {
+    if (voiceState.isRecording) {
+      stopVoiceRecording()
+    } else {
+      startVoiceRecording()
+    }
+  }
+
   return (
     <div>
       <div className="pt-2 w-fit">
         <div className="text-xs text-white/90 backdrop-blur-md bg-black/60 rounded-lg py-2 px-4 flex items-center justify-center gap-4">
+          {/* Voice Recording */}
+          <div
+            className={`flex items-center gap-2 cursor-pointer rounded px-2 py-1.5 hover:bg-white/10 transition-colors ${
+              voiceState.isRecording ? 'bg-red-500/20 border border-red-500/50' :
+              voiceState.isProcessing ? 'bg-blue-500/20 border border-blue-500/50' : ''
+            }`}
+            onClick={handleVoiceRecording}
+          >
+            <div className="flex items-center gap-2">
+              <div className={`w-3 h-3 rounded-full ${
+                voiceState.isRecording ? 'bg-red-500 animate-pulse' :
+                voiceState.isProcessing ? 'bg-blue-500' : 'bg-white/50'
+              }`} />
+              <span className="text-[11px] leading-none truncate">
+                {voiceState.isRecording
+                  ? `Recording... ${voiceState.duration}s`
+                  : voiceState.isProcessing
+                  ? "Processing voice..."
+                  : "Voice input"}
+              </span>
+            </div>
+            <div className="flex gap-1">
+              <button className="bg-white/10 rounded-md px-1.5 py-1 text-[11px] leading-none text-white/70">
+                {COMMAND_KEY}
+              </button>
+              <button className="bg-white/10 rounded-md px-1.5 py-1 text-[11px] leading-none text-white/70">
+                V
+              </button>
+            </div>
+          </div>
+
           {/* Screenshot */}
           <div
             className="flex items-center gap-2 cursor-pointer rounded px-2 py-1.5 hover:bg-white/10 transition-colors"

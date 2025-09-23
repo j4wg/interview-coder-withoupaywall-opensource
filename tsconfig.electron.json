@@ -14,7 +14,8 @@
     "baseUrl": ".",
     "paths": {
       "main": ["electron/main.ts"]
-    }
+    },
+    "types": ["electron"]
   },
   "include": ["electron/**/*"]
 }

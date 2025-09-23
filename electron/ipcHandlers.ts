@@ -322,30 +322,36 @@ export function initializeIpcHandlers(deps: IIpcHandlerDeps): void {
   // Delete last screenshot handler
   ipcMain.handle("delete-last-screenshot", async () => {
     try {
-      const queue = deps.getView() === "queue" 
-        ? deps.getScreenshotQueue() 
+      const queue = deps.getView() === "queue"
+        ? deps.getScreenshotQueue()
         : deps.getExtraScreenshotQueue()
-      
+
       if (queue.length === 0) {
         return { success: false, error: "No screenshots to delete" }
       }
-      
+
       // Get the last screenshot in the queue
       const lastScreenshot = queue[queue.length - 1]
-      
+
       // Delete it
       const result = await deps.deleteScreenshot(lastScreenshot)
-      
+
       // Notify the renderer about the change
       const mainWindow = deps.getMainWindow()
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send("screenshot-deleted", { path: lastScreenshot })
       }
-      
+
       return result
     } catch (error) {
       console.error("Error deleting last screenshot:", error)
       return { success: false, error: "Failed to delete last screenshot" }
     }
+  })
+
+  // Voice processing handler (receives transcribed text from renderer)
+  ipcMain.handle("trigger-process-voice", async (_event, transcribedText: string) => {
+    const { triggerProcessVoice } = await import("./main")
+    return triggerProcessVoice(transcribedText)
   })
 }

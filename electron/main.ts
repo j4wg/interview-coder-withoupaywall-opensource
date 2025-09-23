@@ -1,6 +1,7 @@
-import { app, BrowserWindow, screen, shell, ipcMain } from "electron"
+import { app, BrowserWindow, screen, shell, ipcMain, systemPreferences } from "electron"
 import path from "path"
 import fs from "fs"
+import { Buffer } from "buffer"
 import { initializeIpcHandlers } from "./ipcHandlers"
 import { ProcessingHelper } from "./ProcessingHelper"
 import { ScreenshotHelper } from "./ScreenshotHelper"
@@ -8,6 +9,7 @@ import { ShortcutsHelper } from "./shortcuts"
 import { initAutoUpdater } from "./autoUpdater"
 import { configHelper } from "./ConfigHelper"
 import * as dotenv from "dotenv"
+import { OpenAI } from "openai"
 
 // Constants
 const isDev = process.env.NODE_ENV === "development"
@@ -685,6 +687,39 @@ function getHasDebugged(): boolean {
   return state.hasDebugged
 }
 
+// Voice processing functionality (handled in renderer process)
+async function triggerProcessVoice(transcribedText: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    // Process the transcribed text as a problem description
+    if (state.processingHelper) {
+      // Create a mock problem info from voice input
+      const problemInfo = {
+        problem_statement: transcribedText,
+        constraints: "Based on voice description",
+        example_input: "To be determined",
+        example_output: "To be determined"
+      }
+
+      state.processingHelper.setProblemInfo(problemInfo)
+
+      // Generate solutions
+      const solutionsResult = await state.processingHelper.generateSolutions(new AbortController().signal)
+
+      if (solutionsResult.success) {
+        setView("solutions")
+        return { success: true }
+      } else {
+        return { success: false, error: solutionsResult.error }
+      }
+    }
+
+    return { success: false, error: 'Processing helper not available' }
+  } catch (error: any) {
+    console.error('Error triggering voice processing:', error)
+    return { success: false, error: error.message }
+  }
+}
+
 // Export state and functions for other modules
 export {
   state,
@@ -708,7 +743,8 @@ export {
   getImagePreview,
   deleteScreenshot,
   setHasDebugged,
-  getHasDebugged
+  getHasDebugged,
+  triggerProcessVoice
 }
 
 app.whenReady().then(initializeApp)
