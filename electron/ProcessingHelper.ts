@@ -1314,4 +1314,243 @@ If you include code examples, use proper markdown code blocks with language spec
       mainWindow.webContents.send(this.deps.PROCESSING_EVENTS.NO_SCREENSHOTS)
     }
   }
+
+  /**
+   * Send a chat message to the AI and get a response
+   */
+  public async sendChatMessage(message: string): Promise<string> {
+    const config = configHelper.loadConfig();
+    
+    if (config.apiProvider === "openai" && this.openaiClient) {
+      return this.sendOpenAIChatMessage(message);
+    } else if (config.apiProvider === "gemini" && this.geminiApiKey) {
+      return this.sendGeminiChatMessage(message);
+    } else if (config.apiProvider === "anthropic" && this.anthropicClient) {
+      return this.sendAnthropicChatMessage(message);
+    } else {
+      throw new Error("No AI client available or API key not configured");
+    }
+  }
+
+  /**
+   * Send a follow-up query with solution context
+   */
+  public async sendFollowUpQuery(query: string, solutionContext: string): Promise<string> {
+    const config = configHelper.loadConfig();
+    
+    if (config.apiProvider === "openai" && this.openaiClient) {
+      return this.sendOpenAIFollowUpQuery(query, solutionContext);
+    } else if (config.apiProvider === "gemini" && this.geminiApiKey) {
+      return this.sendGeminiFollowUpQuery(query, solutionContext);
+    } else if (config.apiProvider === "anthropic" && this.anthropicClient) {
+      return this.sendAnthropicFollowUpQuery(query, solutionContext);
+    } else {
+      throw new Error("No AI client available or API key not configured");
+    }
+  }
+
+  private async sendOpenAIChatMessage(message: string): Promise<string> {
+    if (!this.openaiClient) {
+      throw new Error("OpenAI client not initialized");
+    }
+
+    try {
+      const response = await this.openaiClient.chat.completions.create({
+        model: "gpt-4o-mini", // Use mini for chat to be cost-effective
+        messages: [
+          {
+            role: "system",
+            content: "You are a helpful AI assistant. Provide clear, concise, and accurate responses to user questions. You can help with coding, problem-solving, explanations, and general questions."
+          },
+          {
+            role: "user",
+            content: message
+          }
+        ],
+        max_tokens: 1000,
+        temperature: 0.7
+      });
+
+      return response.choices[0]?.message?.content || "No response generated";
+    } catch (error) {
+      console.error("OpenAI chat error:", error);
+      throw new Error("Failed to get response from OpenAI");
+    }
+  }
+
+  private async sendGeminiChatMessage(message: string): Promise<string> {
+    if (!this.geminiApiKey) {
+      throw new Error("Gemini API key not configured");
+    }
+
+    try {
+      const response = await axios.default.post(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${this.geminiApiKey}`,
+        {
+          contents: [
+            {
+              parts: [
+                {
+                  text: `You are a helpful AI assistant. Provide clear, concise, and accurate responses to user questions. You can help with coding, problem-solving, explanations, and general questions.\n\nUser question: ${message}`
+                }
+              ]
+            }
+          ],
+          generationConfig: {
+            maxOutputTokens: 1000,
+            temperature: 0.7
+          }
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          timeout: 60000
+        }
+      );
+
+      const generatedText = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      return generatedText || "No response generated";
+    } catch (error) {
+      console.error("Gemini chat error:", error);
+      throw new Error("Failed to get response from Gemini");
+    }
+  }
+
+  private async sendAnthropicChatMessage(message: string): Promise<string> {
+    if (!this.anthropicClient) {
+      throw new Error("Anthropic client not initialized");
+    }
+
+    try {
+      const response = await this.anthropicClient.messages.create({
+        model: "claude-3-5-sonnet-20241022", // Use Sonnet for chat
+        max_tokens: 1000,
+        temperature: 0.7,
+        messages: [
+          {
+            role: "user",
+            content: `You are a helpful AI assistant. Provide clear, concise, and accurate responses to user questions. You can help with coding, problem-solving, explanations, and general questions.\n\nUser question: ${message}`
+          }
+        ]
+      });
+
+      return response.content[0]?.type === 'text' ? response.content[0].text : "No response generated";
+    } catch (error) {
+      console.error("Anthropic chat error:", error);
+      throw new Error("Failed to get response from Anthropic");
+    }
+  }
+
+  private async sendOpenAIFollowUpQuery(query: string, solutionContext: string): Promise<string> {
+    if (!this.openaiClient) {
+      throw new Error("OpenAI client not initialized");
+    }
+
+    try {
+      const response = await this.openaiClient.chat.completions.create({
+        model: "gpt-4o-mini", // Use mini for follow-up to be cost-effective
+        messages: [
+          {
+            role: "system",
+            content: `You are a helpful AI assistant. You have access to a coding solution that was previously generated. Use this context to answer follow-up questions about the solution, provide clarifications, suggest improvements, or explain related concepts. Be specific and reference the solution when relevant.
+
+Solution Context:
+${solutionContext}
+
+Please provide helpful, detailed responses based on this solution context.`
+          },
+          {
+            role: "user",
+            content: query
+          }
+        ],
+        max_tokens: 1000,
+        temperature: 0.7
+      });
+
+      return response.choices[0]?.message?.content || "No response generated";
+    } catch (error) {
+      console.error("OpenAI follow-up error:", error);
+      throw new Error("Failed to get follow-up response from OpenAI");
+    }
+  }
+
+  private async sendGeminiFollowUpQuery(query: string, solutionContext: string): Promise<string> {
+    if (!this.geminiApiKey) {
+      throw new Error("Gemini API key not configured");
+    }
+
+    try {
+      const response = await axios.default.post(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${this.geminiApiKey}`,
+        {
+          contents: [
+            {
+              parts: [
+                {
+                  text: `You are a helpful AI assistant. You have access to a coding solution that was previously generated. Use this context to answer follow-up questions about the solution, provide clarifications, suggest improvements, or explain related concepts. Be specific and reference the solution when relevant.
+
+Solution Context:
+${solutionContext}
+
+Please provide helpful, detailed responses based on this solution context.
+
+User question: ${query}`
+                }
+              ]
+            }
+          ],
+          generationConfig: {
+            maxOutputTokens: 1000,
+            temperature: 0.7
+          }
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          timeout: 60000
+        }
+      );
+
+      const generatedText = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      return generatedText || "No response generated";
+    } catch (error) {
+      console.error("Gemini follow-up error:", error);
+      throw new Error("Failed to get follow-up response from Gemini");
+    }
+  }
+
+  private async sendAnthropicFollowUpQuery(query: string, solutionContext: string): Promise<string> {
+    if (!this.anthropicClient) {
+      throw new Error("Anthropic client not initialized");
+    }
+
+    try {
+      const response = await this.anthropicClient.messages.create({
+        model: "claude-3-5-sonnet-20241022", // Use Sonnet for follow-up
+        max_tokens: 1000,
+        temperature: 0.7,
+        messages: [
+          {
+            role: "user",
+            content: `You are a helpful AI assistant. You have access to a coding solution that was previously generated. Use this context to answer follow-up questions about the solution, provide clarifications, suggest improvements, or explain related concepts. Be specific and reference the solution when relevant.
+
+Solution Context:
+${solutionContext}
+
+Please provide helpful, detailed responses based on this solution context.
+
+User question: ${query}`
+          }
+        ]
+      });
+
+      return response.content[0]?.type === 'text' ? response.content[0].text : "No response generated";
+    } catch (error) {
+      console.error("Anthropic follow-up error:", error);
+      throw new Error("Failed to get follow-up response from Anthropic");
+    }
+  }
 }

@@ -15,6 +15,8 @@ import {
 import { ToastContext } from "./contexts/toast"
 import { WelcomeScreen } from "./components/WelcomeScreen"
 import { SettingsDialog } from "./components/Settings/SettingsDialog"
+import { ChatDialog } from "./components/Chat/ChatDialog"
+import { FollowUpDialog } from "./components/FollowUp/FollowUpDialog"
 
 // Create a React Query client
 const queryClient = new QueryClient({
@@ -47,6 +49,9 @@ function App() {
   // Note: Model selection is now handled via separate extraction/solution/debugging model settings
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [isChatOpen, setIsChatOpen] = useState(false)
+  const [isFollowUpOpen, setIsFollowUpOpen] = useState(false)
+  const [solutionContext, setSolutionContext] = useState("")
 
   // Set unlimited credits
   const updateCredits = useCallback(() => {
@@ -144,6 +149,33 @@ function App() {
     
     return () => {
       unsubscribeSettings();
+    };
+  }, []);
+
+  // Listen for chat dialog toggle requests
+  useEffect(() => {
+    const unsubscribeChat = window.electronAPI.onToggleChatDialog(() => {
+      console.log("Toggle chat dialog requested");
+      setIsChatOpen(prev => !prev);
+    });
+    
+    return () => {
+      unsubscribeChat();
+    };
+  }, []);
+
+  // Listen for follow-up search requests
+  useEffect(() => {
+    const unsubscribeFollowUp = window.electronAPI.onOpenFollowUpSearch(() => {
+      console.log("Open follow-up search requested");
+      // Get current solution context from the global state
+      const currentSolution = window.__CURRENT_SOLUTION__ || "";
+      setSolutionContext(currentSolution);
+      setIsFollowUpOpen(true);
+    });
+    
+    return () => {
+      unsubscribeFollowUp();
     };
   }, []);
 
@@ -268,6 +300,19 @@ function App() {
           <SettingsDialog 
             open={isSettingsOpen} 
             onOpenChange={handleCloseSettings} 
+          />
+          
+          {/* Chat Dialog */}
+          <ChatDialog 
+            open={isChatOpen} 
+            onOpenChange={setIsChatOpen} 
+          />
+          
+          {/* Follow-up Dialog */}
+          <FollowUpDialog 
+            open={isFollowUpOpen} 
+            onOpenChange={setIsFollowUpOpen}
+            solutionContext={solutionContext}
           />
           
           <Toast

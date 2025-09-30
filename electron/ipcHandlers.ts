@@ -22,16 +22,45 @@ export function initializeIpcHandlers(deps: IIpcHandlerDeps): void {
   })
   
   ipcMain.handle("validate-api-key", async (_event, apiKey) => {
-    // First check the format
-    if (!configHelper.isValidApiKeyFormat(apiKey)) {
+    // Auto-detect the provider based on the API key format
+    let provider: "openai" | "gemini" | "anthropic" | undefined;
+    
+    if (apiKey.trim().startsWith('sk-ant-')) {
+      provider = "anthropic";
+    } else if (apiKey.trim().startsWith('sk-')) {
+      provider = "openai";
+    } else {
+      provider = "gemini";
+    }
+    
+    // Check the format for the detected provider
+    if (!configHelper.isValidApiKeyFormat(apiKey, provider)) {
+      let errorMessage = "Invalid API key format.";
+      if (provider === "openai") {
+        errorMessage = "Invalid OpenAI API key format. OpenAI API keys start with 'sk-'";
+      } else if (provider === "anthropic") {
+        errorMessage = "Invalid Anthropic API key format. Anthropic API keys start with 'sk-ant-'";
+      } else {
+        errorMessage = "Invalid Gemini API key format. Please check your Gemini API key.";
+      }
+      
       return { 
         valid: false, 
-        error: "Invalid API key format. OpenAI API keys start with 'sk-'" 
+        error: errorMessage
       };
     }
     
-    // Then test the API key with OpenAI
-    const result = await configHelper.testApiKey(apiKey);
+    // Test the API key with the detected provider
+    const result = await configHelper.testApiKey(apiKey, provider);
+    
+    // If the API key is valid, update the config to use the detected provider
+    if (result.valid) {
+      configHelper.updateConfig({ 
+        apiKey: apiKey,
+        apiProvider: provider 
+      });
+    }
+    
     return result;
   })
 
@@ -346,6 +375,38 @@ export function initializeIpcHandlers(deps: IIpcHandlerDeps): void {
     } catch (error) {
       console.error("Error deleting last screenshot:", error)
       return { success: false, error: "Failed to delete last screenshot" }
+    }
+  })
+
+  // Chat handlers
+  ipcMain.handle("send-chat-message", async (_event, message: string) => {
+    // Check for API key before processing
+    if (!configHelper.hasApiKey()) {
+      throw new Error("No API key configured");
+    }
+
+    try {
+      const response = await deps.processingHelper?.sendChatMessage(message);
+      return response;
+    } catch (error) {
+      console.error("Error sending chat message:", error);
+      throw error;
+    }
+  })
+
+  // Follow-up search handlers
+  ipcMain.handle("send-followup-query", async (_event, query: string, solutionContext: string) => {
+    // Check for API key before processing
+    if (!configHelper.hasApiKey()) {
+      throw new Error("No API key configured");
+    }
+
+    try {
+      const response = await deps.processingHelper?.sendFollowUpQuery(query, solutionContext);
+      return response;
+    } catch (error) {
+      console.error("Error sending follow-up query:", error);
+      throw error;
     }
   })
 }

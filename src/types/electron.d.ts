@@ -61,6 +61,14 @@ export interface ElectronAPI {
   openLink: (url: string) => void
   onApiKeyInvalid: (callback: () => void) => () => void
   removeListener: (eventName: string, callback: (...args: any[]) => void) => void
+  
+  // Chat functionality
+  sendChatMessage: (message: string) => Promise<string>
+  onToggleChatDialog: (callback: () => void) => () => void
+  
+  // Follow-up functionality
+  sendFollowUpQuery: (query: string, solutionContext: string) => Promise<string>
+  onOpenFollowUpSearch: (callback: () => void) => () => void
 }
 
 declare global {
@@ -79,5 +87,8 @@ declare global {
     __LANGUAGE__: string
     __IS_INITIALIZED__: boolean
     __AUTH_TOKEN__?: string | null
+    __CURRENT_SOLUTION__?: string
   }
+  
+  var __CURRENT_SOLUTION__: string | undefined
 }

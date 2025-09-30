@@ -342,6 +342,21 @@ const Solutions: React.FC<SolutionsProps> = ({
         setTimeComplexityData(solutionData.time_complexity || null)
         setSpaceComplexityData(solutionData.space_complexity || null)
 
+        // Store solution context globally for follow-up queries
+        const solutionContext = `Problem Statement: ${problemStatementData?.problem_statement || 'Not available'}
+
+Solution Code:
+${solutionData.code || 'Not available'}
+
+Thoughts:
+${solutionData.thoughts?.join('\n') || 'Not available'}
+
+Time Complexity: ${solutionData.time_complexity || 'Not available'}
+Space Complexity: ${solutionData.space_complexity || 'Not available'}`
+
+        // Store in global variable for follow-up access
+        window.__CURRENT_SOLUTION__ = solutionContext
+
         // Fetch latest screenshots when solution is successful
         const fetchScreenshots = async () => {
           try {

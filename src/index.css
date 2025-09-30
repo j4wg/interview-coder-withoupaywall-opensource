@@ -2,6 +2,58 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Force cursor to remain as default arrow everywhere */
+* {
+  cursor: default !important;
+}
+
+/* Override any cursor changes on interactive elements */
+button, input, textarea, select, a, [role="button"], [role="link"], [tabindex] {
+  cursor: default !important;
+}
+
+/* Ensure no cursor changes on hover states */
+button:hover, input:hover, textarea:hover, select:hover, a:hover, 
+[role="button"]:hover, [role="link"]:hover, [tabindex]:hover {
+  cursor: default !important;
+}
+
+/* Override cursor changes on focus states */
+button:focus, input:focus, textarea:focus, select:focus, a:focus,
+[role="button"]:focus, [role="link"]:focus, [tabindex]:focus {
+  cursor: default !important;
+}
+
+/* Override cursor changes on active states */
+button:active, input:active, textarea:active, select:active, a:active,
+[role="button"]:active, [role="link"]:active, [tabindex]:active {
+  cursor: default !important;
+}
+
+/* Override any cursor changes on disabled states */
+button:disabled, input:disabled, textarea:disabled, select:disabled {
+  cursor: default !important;
+}
+
+/* Chat dialog specific cursor overrides */
+.chat-dialog * {
+  cursor: default !important;
+}
+
+/* Override any Radix UI cursor changes */
+[data-radix-collection-item] {
+  cursor: default !important;
+}
+
+[data-radix-popper-content-wrapper] {
+  cursor: default !important;
+}
+
+/* Override any Tailwind cursor utilities */
+.cursor-pointer, .cursor-text, .cursor-move, .cursor-grab, .cursor-grabbing {
+  cursor: default !important;
+}
+
 /* Custom animations for UI elements */
 @keyframes fadeIn {
   from { opacity: 0; transform: translate(-50%, -48%); }

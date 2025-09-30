@@ -159,6 +159,26 @@ export class ShortcutsHelper {
       }
     })
     
+    // Chat dialog shortcut
+    globalShortcut.register("CommandOrControl+G", () => {
+      console.log("Command/Ctrl + G pressed. Toggling chat dialog.")
+      const mainWindow = this.deps.getMainWindow()
+      if (mainWindow) {
+        // Send an event to the renderer to toggle the chat dialog
+        mainWindow.webContents.send("toggle-chat-dialog")
+      }
+    })
+
+    // Follow-up search shortcut
+    globalShortcut.register("CommandOrControl+F", () => {
+      console.log("Command/Ctrl + F pressed. Opening follow-up search.")
+      const mainWindow = this.deps.getMainWindow()
+      if (mainWindow) {
+        // Send an event to the renderer to open the follow-up search dialog
+        mainWindow.webContents.send("open-followup-search")
+      }
+    })
+    
     // Unregister shortcuts when quitting
     app.on("will-quit", () => {
       globalShortcut.unregisterAll()

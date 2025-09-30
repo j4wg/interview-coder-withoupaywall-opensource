@@ -236,7 +236,27 @@ const electronAPI = {
       ipcRenderer.removeListener("delete-last-screenshot", subscription)
     }
   },
-  deleteLastScreenshot: () => ipcRenderer.invoke("delete-last-screenshot")
+  deleteLastScreenshot: () => ipcRenderer.invoke("delete-last-screenshot"),
+  
+  // Chat functionality
+  sendChatMessage: (message: string) => ipcRenderer.invoke("send-chat-message", message),
+  onToggleChatDialog: (callback: () => void) => {
+    const subscription = () => callback()
+    ipcRenderer.on("toggle-chat-dialog", subscription)
+    return () => {
+      ipcRenderer.removeListener("toggle-chat-dialog", subscription)
+    }
+  },
+  
+  // Follow-up functionality
+  sendFollowUpQuery: (query: string, solutionContext: string) => ipcRenderer.invoke("send-followup-query", query, solutionContext),
+  onOpenFollowUpSearch: (callback: () => void) => {
+    const subscription = () => callback()
+    ipcRenderer.on("open-followup-search", subscription)
+    return () => {
+      ipcRenderer.removeListener("open-followup-search", subscription)
+    }
+  }
 }
 
 // Before exposing the API
