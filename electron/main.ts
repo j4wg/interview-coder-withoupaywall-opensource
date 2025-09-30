@@ -414,9 +414,12 @@ function showMainWindow(): void {
       visibleOnFullScreen: true
     });
     state.mainWindow.setContentProtection(true);
-    state.mainWindow.setOpacity(0); // Set opacity to 0 before showing
-    state.mainWindow.showInactive(); // Use showInactive instead of show+focus
-    state.mainWindow.setOpacity(1); // Then set opacity to 1 after showing
+    
+    // Force show the window first
+    state.mainWindow.showInactive();
+    
+    // Set opacity to 1 to make it visible
+    state.mainWindow.setOpacity(1);
     state.isWindowVisible = true;
     console.log('Window shown with showInactive(), opacity set to 1');
   }
@@ -424,6 +427,8 @@ function showMainWindow(): void {
 
 function toggleMainWindow(): void {
   console.log(`Toggling window. Current state: ${state.isWindowVisible ? 'visible' : 'hidden'}`);
+  console.log(`Window exists: ${!!state.mainWindow}, Window destroyed: ${state.mainWindow?.isDestroyed()}`);
+  
   if (state.isWindowVisible) {
     hideMainWindow();
   } else {
