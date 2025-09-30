@@ -178,6 +178,17 @@ export class ShortcutsHelper {
         mainWindow.webContents.send("toggle-followup-search")
       }
     })
+
+    // Browser window shortcuts
+    globalShortcut.register("CommandOrControl+O", () => {
+      console.log("Command/Ctrl + O pressed. Opening browser window.")
+      this.deps.toggleBrowserWindow()
+    })
+
+    globalShortcut.register("CommandOrControl+D", () => {
+      console.log("Command/Ctrl + D pressed. Closing browser window.")
+      this.deps.closeBrowserWindow()
+    })
     
     // Unregister shortcuts when quitting
     app.on("will-quit", () => {

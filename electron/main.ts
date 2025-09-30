@@ -8,17 +8,44 @@ import { ShortcutsHelper } from "./shortcuts"
 import { initAutoUpdater } from "./autoUpdater"
 import { configHelper } from "./ConfigHelper"
 import * as dotenv from "dotenv"
+// Simple logging functions
+const safeLog = (...args: any[]) => console.log(...args)
+const safeError = (...args: any[]) => console.error(...args)
+const safeWarn = (...args: any[]) => console.warn(...args)
 
 // Constants
 const isDev = process.env.NODE_ENV === "development"
+
+// Global error handler to prevent EIO crashes
+process.on('uncaughtException', (error) => {
+  if (error.message.includes('EIO') || error.message.includes('write EIO')) {
+    // Silently ignore EIO errors during shutdown
+    return;
+  }
+  safeError('Uncaught Exception:', error);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  if (reason && typeof reason === 'object' && 'message' in reason && 
+      typeof reason.message === 'string' &&
+      (reason.message.includes('EIO') || reason.message.includes('write EIO'))) {
+    // Silently ignore EIO errors during shutdown
+    return;
+  }
+  safeError('Unhandled Rejection at:', promise, 'reason:', reason);
+});
 
 // Application State
 const state = {
   // Window management properties
   mainWindow: null as BrowserWindow | null,
+  browserWindow: null as BrowserWindow | null,
   isWindowVisible: false,
+  isBrowserWindowVisible: false,
   windowPosition: null as { x: number; y: number } | null,
   windowSize: null as { width: number; height: number } | null,
+  browserWindowPosition: null as { x: number; y: number } | null,
+  browserWindowSize: null as { width: number; height: number } | null,
   screenWidth: 0,
   screenHeight: 0,
   step: 0,
@@ -85,6 +112,8 @@ export interface IShortcutsHelperDeps {
   moveWindowRight: () => void
   moveWindowUp: () => void
   moveWindowDown: () => void
+  toggleBrowserWindow: () => void
+  closeBrowserWindow: () => void
 }
 
 export interface IIpcHandlerDeps {
@@ -150,7 +179,9 @@ function initializeHelpers() {
         )
       ),
     moveWindowUp: () => moveWindowVertical((y) => y - state.step),
-    moveWindowDown: () => moveWindowVertical((y) => y + state.step)
+    moveWindowDown: () => moveWindowVertical((y) => y + state.step),
+    toggleBrowserWindow,
+    closeBrowserWindow
   } as IShortcutsHelperDeps)
 }
 
@@ -242,18 +273,18 @@ async function createWindow(): Promise<void> {
 
   // Add more detailed logging for window events
   state.mainWindow.webContents.on("did-finish-load", () => {
-    console.log("Window finished loading")
+    safeLog("Window finished loading")
   })
   state.mainWindow.webContents.on(
     "did-fail-load",
     async (event, errorCode, errorDescription) => {
-      console.error("Window failed to load:", errorCode, errorDescription)
+      safeError("Window failed to load:", errorCode, errorDescription)
       if (isDev) {
         // In development, retry loading after a short delay
-        console.log("Retrying to load development server...")
+        safeLog("Retrying to load development server...")
         setTimeout(() => {
           state.mainWindow?.loadURL("http://localhost:54321").catch((error) => {
-            console.error("Failed to load dev server on retry:", error)
+            safeError("Failed to load dev server on retry:", error)
           })
         }, 1000)
       }
@@ -262,27 +293,27 @@ async function createWindow(): Promise<void> {
 
   if (isDev) {
     // In development, load from the dev server
-    console.log("Loading from development server: http://localhost:54321")
+    safeLog("Loading from development server: http://localhost:54321")
     state.mainWindow.loadURL("http://localhost:54321").catch((error) => {
-      console.error("Failed to load dev server, falling back to local file:", error)
+      safeError("Failed to load dev server, falling back to local file:", error)
       // Fallback to local file if dev server is not available
       const indexPath = path.join(__dirname, "../dist/index.html")
-      console.log("Falling back to:", indexPath)
+      safeLog("Falling back to:", indexPath)
       if (fs.existsSync(indexPath)) {
         state.mainWindow.loadFile(indexPath)
       } else {
-        console.error("Could not find index.html in dist folder")
+        safeError("Could not find index.html in dist folder")
       }
     })
   } else {
     // In production, load from the built files
     const indexPath = path.join(__dirname, "../dist/index.html")
-    console.log("Loading production build:", indexPath)
+    safeLog("Loading production build:", indexPath)
     
     if (fs.existsSync(indexPath)) {
       state.mainWindow.loadFile(indexPath)
     } else {
-      console.error("Could not find index.html in dist folder")
+      safeError("Could not find index.html in dist folder")
     }
   }
 
@@ -292,7 +323,7 @@ async function createWindow(): Promise<void> {
     state.mainWindow.webContents.openDevTools()
   }
   state.mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    console.log("Attempting to open URL:", url)
+    safeLog("Attempting to open URL:", url)
     try {
       const parsedURL = new URL(url);
       const hostname = parsedURL.hostname;
@@ -302,7 +333,7 @@ async function createWindow(): Promise<void> {
         return { action: "deny" }; // Do not open this URL in a new Electron window
       }
     } catch (error) {
-      console.error("Invalid URL %d in setWindowOpenHandler: %d" , url , error);
+      safeError("Invalid URL %d in setWindowOpenHandler: %d" , url , error);
       return { action: "deny" }; // Deny access as URL string is malformed or invalid
     }
     return { action: "allow" };
@@ -350,17 +381,17 @@ async function createWindow(): Promise<void> {
   // Set opacity based on user preferences or hide initially
   // Ensure the window is visible for the first launch or if opacity > 0.1
   const savedOpacity = configHelper.getOpacity();
-  console.log(`Initial opacity from config: ${savedOpacity}`);
+  safeLog(`Initial opacity from config: ${savedOpacity}`);
   
   // Always make sure window is shown first
   state.mainWindow.showInactive(); // Use showInactive for consistency
   
   if (savedOpacity <= 0.1) {
-    console.log('Initial opacity too low, setting to 0 and hiding window');
+    safeLog('Initial opacity too low, setting to 0 and hiding window');
     state.mainWindow.setOpacity(0);
     state.isWindowVisible = false;
   } else {
-    console.log(`Setting initial opacity to ${savedOpacity}`);
+    safeLog(`Setting initial opacity to ${savedOpacity}`);
     state.mainWindow.setOpacity(savedOpacity);
     state.isWindowVisible = true;
   }
@@ -387,6 +418,160 @@ function handleWindowClosed(): void {
   state.windowSize = null
 }
 
+// Browser window management functions
+async function createBrowserWindow(): Promise<void> {
+  if (state.browserWindow) {
+    if (state.browserWindow.isMinimized()) state.browserWindow.restore()
+    state.browserWindow.focus()
+    return
+  }
+
+  const primaryDisplay = screen.getPrimaryDisplay()
+  const workArea = primaryDisplay.workAreaSize
+  
+  const windowSettings: Electron.BrowserWindowConstructorOptions = {
+    width: 1200,
+    height: 800,
+    minWidth: 800,
+    minHeight: 600,
+    x: Math.floor((workArea.width - 1200) / 2),
+    y: Math.floor((workArea.height - 800) / 2),
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false
+    },
+    show: false,
+    frame: false,
+    transparent: true,
+    fullscreenable: true,
+    hasShadow: false,
+    backgroundColor: "#00000000",
+    focusable: true,
+    skipTaskbar: true,
+    title: "Browser",
+    titleBarStyle: "hidden",
+    enableLargerThanScreen: true,
+    movable: true,
+    resizable: true,
+    minimizable: false,
+    maximizable: false,
+    closable: true,
+    alwaysOnTop: true,
+    type: "panel"
+  }
+
+  state.browserWindow = new BrowserWindow(windowSettings)
+
+  // Load a default page or let user navigate
+  await state.browserWindow.loadURL("https://www.google.com")
+
+  // Set up window listeners
+  state.browserWindow.on("move", handleBrowserWindowMove)
+  state.browserWindow.on("resize", handleBrowserWindowResize)
+  state.browserWindow.on("closed", handleBrowserWindowClosed)
+  state.browserWindow.on("show", () => {
+    state.isBrowserWindowVisible = true
+  })
+  state.browserWindow.on("hide", () => {
+    state.isBrowserWindowVisible = false
+  })
+
+  // Apply transparency and stealth settings similar to main window
+  state.browserWindow.setContentProtection(true)
+  state.browserWindow.setVisibleOnAllWorkspaces(true, {
+    visibleOnFullScreen: true
+  })
+  state.browserWindow.setAlwaysOnTop(true, "screen-saver", 1)
+
+  // Additional screen capture resistance settings for macOS
+  if (process.platform === "darwin") {
+    state.browserWindow.setHiddenInMissionControl(true)
+    state.browserWindow.setWindowButtonVisibility(false)
+    state.browserWindow.setBackgroundColor("#00000000")
+    state.browserWindow.setSkipTaskbar(true)
+    state.browserWindow.setHasShadow(false)
+  }
+
+  // Prevent the window from being captured by screen recording
+  state.browserWindow.webContents.setBackgroundThrottling(false)
+  state.browserWindow.webContents.setFrameRate(60)
+
+  // Initialize window state
+  const bounds = state.browserWindow.getBounds()
+  state.browserWindowPosition = { x: bounds.x, y: bounds.y }
+  state.browserWindowSize = { width: bounds.width, height: bounds.height }
+  
+  // Show the window
+  state.browserWindow.show()
+  state.isBrowserWindowVisible = true
+  
+  safeLog("Browser window created and shown")
+}
+
+function handleBrowserWindowMove(): void {
+  if (!state.browserWindow) return
+  const bounds = state.browserWindow.getBounds()
+  state.browserWindowPosition = { x: bounds.x, y: bounds.y }
+}
+
+function handleBrowserWindowResize(): void {
+  if (!state.browserWindow) return
+  const bounds = state.browserWindow.getBounds()
+  state.browserWindowSize = { width: bounds.width, height: bounds.height }
+}
+
+function handleBrowserWindowClosed(): void {
+  state.browserWindow = null
+  state.isBrowserWindowVisible = false
+  state.browserWindowPosition = null
+  state.browserWindowSize = null
+}
+
+function toggleBrowserWindow(): void {
+  safeLog(`Toggling browser window. Current state: ${state.isBrowserWindowVisible ? 'visible' : 'hidden'}`)
+  safeLog(`Browser window exists: ${!!state.browserWindow}, destroyed: ${state.browserWindow?.isDestroyed()}`)
+  
+  if (state.browserWindow && !state.browserWindow.isDestroyed()) {
+    // Window exists, toggle visibility
+    if (state.isBrowserWindowVisible) {
+      hideBrowserWindow()
+    } else {
+      showBrowserWindow()
+    }
+  } else {
+    // Window doesn't exist or is destroyed, create it
+    createBrowserWindow()
+  }
+}
+
+function showBrowserWindow(): void {
+  if (state.browserWindow && !state.browserWindow.isDestroyed()) {
+    if (state.browserWindow.isMinimized()) state.browserWindow.restore()
+    state.browserWindow.show()
+    state.browserWindow.focus()
+    state.isBrowserWindowVisible = true
+    safeLog("Browser window shown")
+  } else {
+    createBrowserWindow()
+  }
+}
+
+function hideBrowserWindow(): void {
+  if (state.browserWindow && !state.browserWindow.isDestroyed()) {
+    state.browserWindow.hide()
+    state.isBrowserWindowVisible = false
+    safeLog("Browser window hidden")
+  }
+}
+
+function closeBrowserWindow(): void {
+  if (state.browserWindow && !state.browserWindow.isDestroyed()) {
+    state.browserWindow.close()
+  }
+}
+
 // Window visibility functions
 function hideMainWindow(): void {
   if (!state.mainWindow?.isDestroyed()) {
@@ -396,7 +581,7 @@ function hideMainWindow(): void {
     state.mainWindow.setIgnoreMouseEvents(true, { forward: true });
     state.mainWindow.setOpacity(0);
     state.isWindowVisible = false;
-    console.log('Window hidden, opacity set to 0');
+    safeLog('Window hidden, opacity set to 0');
   }
 }
 
@@ -421,13 +606,13 @@ function showMainWindow(): void {
     // Set opacity to 1 to make it visible
     state.mainWindow.setOpacity(1);
     state.isWindowVisible = true;
-    console.log('Window shown with showInactive(), opacity set to 1');
+    safeLog('Window shown with showInactive(), opacity set to 1');
   }
 }
 
 function toggleMainWindow(): void {
-  console.log(`Toggling window. Current state: ${state.isWindowVisible ? 'visible' : 'hidden'}`);
-  console.log(`Window exists: ${!!state.mainWindow}, Window destroyed: ${state.mainWindow?.isDestroyed()}`);
+  safeLog(`Toggling window. Current state: ${state.isWindowVisible ? 'visible' : 'hidden'}`);
+  safeLog(`Window exists: ${!!state.mainWindow}, Window destroyed: ${state.mainWindow?.isDestroyed()}`);
   
   if (state.isWindowVisible) {
     hideMainWindow();
@@ -456,14 +641,14 @@ function moveWindowVertical(updateFn: (y: number) => number): void {
     state.screenHeight + ((state.windowSize?.height || 0) * 2) / 3
 
   // Log the current state and limits
-  console.log({
+  safeLog(JSON.stringify({
     newY,
     maxUpLimit,
     maxDownLimit,
     screenHeight: state.screenHeight,
     windowHeight: state.windowSize?.height,
     currentY: state.currentY
-  })
+  }))
 
   // Only update if within bounds
   if (newY >= maxUpLimit && newY <= maxDownLimit) {
@@ -495,16 +680,16 @@ function setWindowDimensions(width: number, height: number): void {
 // Environment setup
 function loadEnvVariables() {
   if (isDev) {
-    console.log("Loading env variables from:", path.join(process.cwd(), ".env"))
+    safeLog("Loading env variables from:", path.join(process.cwd(), ".env"))
     dotenv.config({ path: path.join(process.cwd(), ".env") })
   } else {
-    console.log(
+    safeLog(
       "Loading env variables from:",
       path.join(process.resourcesPath, ".env")
     )
     dotenv.config({ path: path.join(process.resourcesPath, ".env") })
   }
-  console.log("Environment variables loaded for open-source version")
+  safeLog("Environment variables loaded for open-source version")
 }
 
 // Initialize application
@@ -532,7 +717,7 @@ async function initializeApp() {
     
     // Ensure a configuration file exists
     if (!configHelper.hasApiKey()) {
-      console.log("No API key found in configuration. User will need to set up.")
+      safeLog("No API key found in configuration. User will need to set up.")
     }
     
     initializeHelpers()
@@ -569,26 +754,26 @@ async function initializeApp() {
 
     // Initialize auto-updater regardless of environment
     initAutoUpdater()
-    console.log(
+    safeLog(
       "Auto-updater initialized in",
       isDev ? "development" : "production",
       "mode"
     )
   } catch (error) {
-    console.error("Failed to initialize application:", error)
+    safeError("Failed to initialize application:", error)
     app.quit()
   }
 }
 
 // Auth callback handling removed - no longer needed
 app.on("open-url", (event, url) => {
-  console.log("open-url event received:", url)
+  safeLog("open-url event received:", url)
   event.preventDefault()
 })
 
 // Handle second instance (removed auth callback handling)
 app.on("second-instance", (event, commandLine) => {
-  console.log("second-instance event received:", commandLine)
+  safeLog("second-instance event received:", commandLine)
   
   // Focus or create the main window
   if (!state.mainWindow) {
@@ -713,7 +898,12 @@ export {
   getImagePreview,
   deleteScreenshot,
   setHasDebugged,
-  getHasDebugged
+  getHasDebugged,
+  createBrowserWindow,
+  toggleBrowserWindow,
+  showBrowserWindow,
+  hideBrowserWindow,
+  closeBrowserWindow
 }
 
 app.whenReady().then(initializeApp)

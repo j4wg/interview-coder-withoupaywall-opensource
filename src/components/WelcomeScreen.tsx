@@ -47,6 +47,14 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onOpenSettings }) 
                 <span className="text-white/70">Quit App</span>
                 <span className="text-white/90">Ctrl+Q / Cmd+Q</span>
               </li>
+              <li className="flex justify-between text-sm">
+                <span className="text-white/70">Open Browser</span>
+                <span className="text-white/90">Ctrl+O / Cmd+O</span>
+              </li>
+              <li className="flex justify-between text-sm">
+                <span className="text-white/70">Close Browser</span>
+                <span className="text-white/90">Ctrl+D / Cmd+D</span>
+              </li>
             </ul>
           </div>
         </div>

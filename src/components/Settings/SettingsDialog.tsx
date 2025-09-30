@@ -496,6 +496,12 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
                 
                 <div className="text-white/70">Zoom In</div>
                 <div className="text-white/90 font-mono">Ctrl+= / Cmd+=</div>
+                
+                <div className="text-white/70">Open Browser</div>
+                <div className="text-white/90 font-mono">Ctrl+O / Cmd+O</div>
+                
+                <div className="text-white/70">Close Browser</div>
+                <div className="text-white/90 font-mono">Ctrl+D / Cmd+D</div>
               </div>
             </div>
           </div>
