@@ -171,11 +171,11 @@ export class ShortcutsHelper {
 
     // Follow-up search shortcut
     globalShortcut.register("CommandOrControl+F", () => {
-      console.log("Command/Ctrl + F pressed. Opening follow-up search.")
+      console.log("Command/Ctrl + F pressed. Toggling follow-up search.")
       const mainWindow = this.deps.getMainWindow()
       if (mainWindow) {
-        // Send an event to the renderer to open the follow-up search dialog
-        mainWindow.webContents.send("open-followup-search")
+        // Send an event to the renderer to toggle the follow-up search dialog
+        mainWindow.webContents.send("toggle-followup-search")
       }
     })
     

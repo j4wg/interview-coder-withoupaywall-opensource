@@ -68,7 +68,7 @@ export interface ElectronAPI {
   
   // Follow-up functionality
   sendFollowUpQuery: (query: string, solutionContext: string) => Promise<string>
-  onOpenFollowUpSearch: (callback: () => void) => () => void
+  onToggleFollowUpSearch: (callback: () => void) => () => void
 }
 
 declare global {

@@ -250,11 +250,11 @@ const electronAPI = {
   
   // Follow-up functionality
   sendFollowUpQuery: (query: string, solutionContext: string) => ipcRenderer.invoke("send-followup-query", query, solutionContext),
-  onOpenFollowUpSearch: (callback: () => void) => {
+  onToggleFollowUpSearch: (callback: () => void) => {
     const subscription = () => callback()
-    ipcRenderer.on("open-followup-search", subscription)
+    ipcRenderer.on("toggle-followup-search", subscription)
     return () => {
-      ipcRenderer.removeListener("open-followup-search", subscription)
+      ipcRenderer.removeListener("toggle-followup-search", subscription)
     }
   }
 }

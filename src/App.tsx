@@ -164,14 +164,14 @@ function App() {
     };
   }, []);
 
-  // Listen for follow-up search requests
+  // Listen for follow-up search toggle requests
   useEffect(() => {
-    const unsubscribeFollowUp = window.electronAPI.onOpenFollowUpSearch(() => {
-      console.log("Open follow-up search requested");
+    const unsubscribeFollowUp = window.electronAPI.onToggleFollowUpSearch(() => {
+      console.log("Toggle follow-up search requested");
       // Get current solution context from the global state
       const currentSolution = window.__CURRENT_SOLUTION__ || "";
       setSolutionContext(currentSolution);
-      setIsFollowUpOpen(true);
+      setIsFollowUpOpen(prev => !prev);
     });
     
     return () => {
