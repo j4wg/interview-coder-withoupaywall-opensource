@@ -467,6 +467,24 @@ async function createBrowserWindow(): Promise<void> {
   // Load a default page or let user navigate
   await state.browserWindow.loadURL("https://www.google.com")
 
+  // Force cursor to always be default inside the browser window
+  const applyAlwaysDefaultCursor = () => {
+    try {
+      state.browserWindow?.webContents.insertCSS(`
+        * { cursor: default !important; }
+        html, body { cursor: default !important; }
+        input, textarea, button, a, [role], [contenteditable] { cursor: default !important; }
+      `)
+    } catch (error) {
+      safeWarn('Failed to inject cursor CSS:', error)
+    }
+  }
+  // Apply on various navigation events to ensure persistence
+  state.browserWindow.webContents.on('did-finish-load', applyAlwaysDefaultCursor)
+  state.browserWindow.webContents.on('dom-ready', applyAlwaysDefaultCursor)
+  state.browserWindow.webContents.on('did-navigate', applyAlwaysDefaultCursor)
+  state.browserWindow.webContents.on('did-navigate-in-page', applyAlwaysDefaultCursor)
+
   // Set up window listeners
   state.browserWindow.on("move", handleBrowserWindowMove)
   state.browserWindow.on("resize", handleBrowserWindowResize)

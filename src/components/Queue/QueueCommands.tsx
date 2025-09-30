@@ -156,6 +156,19 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
             </div>
           </div>
 
+          {/* Inline hint: Open Chat (minimal, no box) */}
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] leading-none text-white/60">Open Chat</span>
+            <div className="flex gap-1">
+              <button className="bg-white/10 rounded-md px-1.5 py-1 text-[11px] leading-none text-white/70">
+                {COMMAND_KEY}
+              </button>
+              <button className="bg-white/10 rounded-md px-1.5 py-1 text-[11px] leading-none text-white/70">
+                G
+              </button>
+            </div>
+          </div>
+
           {/* Solve Command */}
           {screenshotCount > 0 && (
             <div
@@ -430,31 +443,11 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
 
                     {/* Separator and Log Out */}
                     <div className="pt-3 mt-3 border-t border-white/10">
-                      {/* Simplified Language Selector */}
-                      <div className="mb-3 px-2">
-                        <div 
-                          className="flex items-center justify-between cursor-pointer hover:bg-white/10 rounded px-2 py-1 transition-colors"
-                          onClick={() => extractLanguagesAndUpdate('next')}
-                          tabIndex={0}
-                          onKeyDown={(e) => {
-                            if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
-                              extractLanguagesAndUpdate('prev');
-                            } else if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
-                              extractLanguagesAndUpdate('next');
-                            }
-                          }}
-                        >
-                          <span className="text-[11px] text-white/70">Language</span>
-                          <div className="flex items-center gap-2">
-                            <span className="text-[11px] text-white/90">{currentLanguage}</span>
-                            <div className="text-white/40 text-[8px]">
-                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
-                                <path d="M7 13l5 5 5-5M7 6l5 5 5-5"/>
-                              </svg>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
+                      {/* Language Selector dropdown */}
+                      <LanguageSelector
+                        currentLanguage={currentLanguage}
+                        setLanguage={setLanguage}
+                      />
 
                       {/* API Key Settings */}
                       <div className="mb-3 px-2 space-y-1">
