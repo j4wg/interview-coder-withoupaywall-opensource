@@ -184,6 +184,7 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
   const [extractionModel, setExtractionModel] = useState("gpt-4o");
   const [solutionModel, setSolutionModel] = useState("gpt-4o");
   const [debuggingModel, setDebuggingModel] = useState("gpt-4o");
+  const [questionType, setQuestionType] = useState<"coding" | "mcq" | "general">("coding");
   const [isLoading, setIsLoading] = useState(false);
   const { showToast } = useToast();
 
@@ -213,6 +214,7 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
         extractionModel?: string;
         solutionModel?: string;
         debuggingModel?: string;
+        questionType?: "coding" | "mcq" | "general";
       }
 
       window.electronAPI
@@ -223,6 +225,7 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
           setExtractionModel(config.extractionModel || "gpt-4o");
           setSolutionModel(config.solutionModel || "gpt-4o");
           setDebuggingModel(config.debuggingModel || "gpt-4o");
+          setQuestionType((config.questionType as any) || "coding");
         })
         .catch((error: unknown) => {
           console.error("Failed to load config:", error);
@@ -263,6 +266,7 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
         extractionModel,
         solutionModel,
         debuggingModel,
+        questionType,
       });
       
       if (result) {
@@ -316,12 +320,60 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
         }}
       >        
         <DialogHeader>
-          <DialogTitle>API Settings</DialogTitle>
+          <DialogTitle>Settings</DialogTitle>
           <DialogDescription className="text-white/70">
-            Configure your API key and model preferences. You'll need your own API key to use this application.
+            Configure question type and API settings. You'll need your own API key to use this application.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-4">
+          {/* Question Type Selection */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-white">Question Type</label>
+            <div className="flex gap-2">
+              {([
+                { key: "coding", label: "Coding" },
+                { key: "mcq", label: "MCQ" },
+                { key: "general", label: "General" },
+              ] as const).map(({ key, label }) => (
+                <div
+                  key={key}
+                  className={`flex-1 p-2 rounded-lg cursor-pointer transition-colors ${
+                    questionType === key
+                      ? "bg-white/10 border border-white/20"
+                      : "bg-black/30 border border-white/5 hover:bg-white/5"
+                  }`}
+                  onClick={() => setQuestionType(key)}
+                >
+                  <div className="flex items-center gap-2">
+                    <div
+                      className={`w-3 h-3 rounded-full ${
+                        questionType === key ? "bg-white" : "bg-white/20"
+                      }`}
+                    />
+                    <div className="flex flex-col">
+                      <p className="font-medium text-white text-sm">{label}</p>
+                      <p className="text-xs text-white/60">
+                        {key === "coding" && "Generate code solution"}
+                        {key === "mcq" && "Analyze options and answer"}
+                        {key === "general" && "Provide direct answer + reasoning"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Divider */}
+          <div className="h-px w-full bg-white/10 my-2" />
+
+          {/* API Settings Section Label */}
+          <div>
+            <p className="text-sm font-medium text-white mb-1">API Settings</p>
+            <p className="text-xs text-white/60 -mt-1 mb-2">
+              Set your provider, API key, and preferred models
+            </p>
+          </div>
           {/* API Provider Selection */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-white">API Provider</label>

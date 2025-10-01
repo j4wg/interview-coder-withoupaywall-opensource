@@ -13,6 +13,7 @@ interface Config {
   debuggingModel: string;
   language: string;
   opacity: number;
+  questionType?: "coding" | "mcq" | "general";
 }
 
 export class ConfigHelper extends EventEmitter {
@@ -24,7 +25,8 @@ export class ConfigHelper extends EventEmitter {
     solutionModel: "gemini-2.0-flash",
     debuggingModel: "gemini-2.0-flash",
     language: "python",
-    opacity: 1.0
+    opacity: 1.0,
+    questionType: "coding"
   };
 
   constructor() {

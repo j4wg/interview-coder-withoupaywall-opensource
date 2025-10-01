@@ -348,4 +348,15 @@ export function initializeIpcHandlers(deps: IIpcHandlerDeps): void {
       return { success: false, error: "Failed to delete last screenshot" }
     }
   })
+
+  // Follow-up chat handler
+  ipcMain.handle("chat-followup", async (_event, args: { message: string; context?: { solution?: string } }) => {
+    try {
+      const problemInfo = deps.getMainWindow ? (deps as any).processingHelper?.["deps"]?.getProblemInfo?.() : undefined
+      const result = await deps.processingHelper.generateFollowUpResponse(args.message, { problemInfo, solution: args.context?.solution || "" });
+      return result;
+    } catch (error: any) {
+      return { success: false, error: error?.message || "Failed to process follow-up" };
+    }
+  })
 }

@@ -477,14 +477,14 @@ export class ProcessingHelper {
         const messages = [
           {
             role: "system" as const, 
-            content: "You are a coding challenge interpreter. Analyze the screenshot of the coding problem and extract all relevant information. Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output. Just return the structured JSON without any other text."
+            content: "You are a coding challenge interpreter. Analyze the screenshots and extract all relevant information. IMPORTANT: If this is a Multiple Choice Question (MCQ), carefully read and analyze ALL the options provided in the screenshots. Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output, question_type (one of: 'coding', 'mcq', 'general'), options (array of options if MCQ), correct_answer (option label if MCQ). If it is a general question that is neither coding nor MCQ, set question_type to 'general'. Just return the structured JSON without any other text."
           },
           {
             role: "user" as const,
             content: [
               {
                 type: "text" as const, 
-                text: `Extract the coding problem details from these screenshots. Return in JSON format. Preferred coding language we gonna use for this problem is ${language}.`
+                text: `Extract the problem details from these screenshots. If it's an MCQ, make sure to read and include ALL the options provided. Return in JSON format. Classify question_type as 'coding', 'mcq', or 'general'. Preferred coding language we gonna use for this problem is ${language}.`
               },
               ...imageDataList.map(data => ({
                 type: "image_url" as const,
@@ -531,7 +531,7 @@ export class ProcessingHelper {
               role: "user",
               parts: [
                 {
-                  text: `You are a coding challenge interpreter. Analyze the screenshots of the coding problem and extract all relevant information. Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output. Just return the structured JSON without any other text. Preferred coding language we gonna use for this problem is ${language}.`
+                  text: `You are a coding challenge interpreter. Analyze the screenshots and extract all relevant information. IMPORTANT: If this is a Multiple Choice Question (MCQ), carefully read and analyze ALL the options provided in the screenshots. Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output, question_type (one of: 'coding', 'mcq', 'general'), options (array of options if MCQ), correct_answer (option label if MCQ). If it is a general question that is neither coding nor MCQ, set question_type to 'general'. Just return the structured JSON without any other text. Preferred coding language we gonna use for this problem is ${language}.`
                 },
                 ...imageDataList.map(data => ({
                   inlineData: {
@@ -589,7 +589,7 @@ export class ProcessingHelper {
               content: [
                 {
                   type: "text" as const,
-                  text: `Extract the coding problem details from these screenshots. Return in JSON format with these fields: problem_statement, constraints, example_input, example_output. Preferred coding language is ${language}.`
+                  text: `Extract the problem details from these screenshots. IMPORTANT: If this is a Multiple Choice Question (MCQ), carefully read and analyze ALL the options provided in the screenshots. Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output, question_type (one of: 'coding', 'mcq', 'general'), options (array of options if MCQ), correct_answer (option label if MCQ). If it is a general question that is neither coding nor MCQ, set question_type to 'general'. Preferred coding language is ${language}.`
                 },
                 ...imageDataList.map(data => ({
                   type: "image" as const,
@@ -644,6 +644,12 @@ export class ProcessingHelper {
         });
       }
 
+      // Override question type if user selected a forced type in config
+      const forcedType = config.questionType as ("coding" | "mcq" | "general" | undefined);
+      if (forcedType) {
+        problemInfo.question_type = forcedType;
+      }
+
       // Store problem info in AppState
       this.deps.setProblemInfo(problemInfo);
 
@@ -654,27 +660,65 @@ export class ProcessingHelper {
           problemInfo
         );
 
-        // Generate solutions after successful extraction
-        const solutionsResult = await this.generateSolutionsHelper(signal);
-        if (solutionsResult.success) {
-          // Clear any existing extra screenshots before transitioning to solutions view
-          this.screenshotHelper.clearExtraScreenshotQueue();
-          
-          // Final progress update
-          mainWindow.webContents.send("processing-status", {
-            message: "Solution generated successfully",
-            progress: 100
-          });
-          
-          mainWindow.webContents.send(
-            this.deps.PROCESSING_EVENTS.SOLUTION_SUCCESS,
-            solutionsResult.data
-          );
-          return { success: true, data: solutionsResult.data };
+        if (problemInfo.question_type === "mcq") {
+          // Generate MCQ answer directly using solution generation flow
+          const solutionsResult = await this.generateSolutionsHelper(signal);
+          if (solutionsResult.success) {
+            this.screenshotHelper.clearExtraScreenshotQueue();
+            mainWindow.webContents.send("processing-status", {
+              message: "MCQ answer generated successfully",
+              progress: 100
+            });
+            mainWindow.webContents.send(
+              this.deps.PROCESSING_EVENTS.SOLUTION_SUCCESS,
+              solutionsResult.data
+            );
+            return { success: true, data: solutionsResult.data };
+          } else {
+            throw new Error(
+              solutionsResult.error || "Failed to generate MCQ answer"
+            );
+          }
+        } else if (problemInfo.question_type === "general") {
+          // Handle general Q&A type: produce a concise answer with reasoning
+          const generalResult = await this.generateGeneralAnswerHelper(signal);
+          if (generalResult.success) {
+            this.screenshotHelper.clearExtraScreenshotQueue();
+            mainWindow.webContents.send("processing-status", {
+              message: "Answer generated successfully",
+              progress: 100
+            });
+            mainWindow.webContents.send(
+              this.deps.PROCESSING_EVENTS.SOLUTION_SUCCESS,
+              generalResult.data
+            );
+            return { success: true, data: generalResult.data };
+          } else {
+            throw new Error(generalResult.error || "Failed to generate answer");
+          }
         } else {
-          throw new Error(
-            solutionsResult.error || "Failed to generate solutions"
-          );
+          // Generate solutions for coding problems after successful extraction
+          const solutionsResult = await this.generateSolutionsHelper(signal);
+          if (solutionsResult.success) {
+            // Clear any existing extra screenshots before transitioning to solutions view
+            this.screenshotHelper.clearExtraScreenshotQueue();
+            
+            // Final progress update
+            mainWindow.webContents.send("processing-status", {
+              message: "Solution generated successfully",
+              progress: 100
+            });
+            
+            mainWindow.webContents.send(
+              this.deps.PROCESSING_EVENTS.SOLUTION_SUCCESS,
+              solutionsResult.data
+            );
+            return { success: true, data: solutionsResult.data };
+          } else {
+            throw new Error(
+              solutionsResult.error || "Failed to generate solutions"
+            );
+          }
         }
       }
 
@@ -714,6 +758,113 @@ export class ProcessingHelper {
     }
   }
 
+  private async generateGeneralAnswerHelper(signal: AbortSignal) {
+    try {
+      const problemInfo = this.deps.getProblemInfo();
+      const config = configHelper.loadConfig();
+      const mainWindow = this.deps.getMainWindow();
+
+      if (!problemInfo) {
+        throw new Error("No problem info available");
+      }
+
+      if (mainWindow) {
+        mainWindow.webContents.send("processing-status", {
+          message: "Interpreting the question and forming an answer...",
+          progress: 60
+        });
+      }
+
+      const promptText = `You are an expert interview assistant. The user provided screenshots that contain a question which is NOT an MCQ and NOT a coding task. Carefully read the content and provide:
+
+1) A concise, direct answer first (1-3 sentences).
+2) A brief reasoning section with bullet points.
+
+If calculations or steps are needed, show them clearly. Avoid unnecessary verbosity.
+
+QUESTION:
+${problemInfo.problem_statement}
+`;
+
+      let responseContent = "";
+
+      if (config.apiProvider === "openai") {
+        if (!this.openaiClient) {
+          return { success: false, error: "OpenAI API key not configured. Please check your settings." };
+        }
+        const response = await this.openaiClient.chat.completions.create({
+          model: config.solutionModel || "gpt-4o",
+          messages: [
+            { role: "system", content: "You are a helpful but concise problem solver. Start with the direct answer, then list reasoning bullets." },
+            { role: "user", content: promptText }
+          ],
+          max_tokens: 1200,
+          temperature: 0.2
+        });
+        responseContent = response.choices[0].message.content || "";
+      } else if (config.apiProvider === "gemini") {
+        if (!this.geminiApiKey) {
+          return { success: false, error: "Gemini API key not configured. Please check your settings." };
+        }
+        const response = await axios.default.post(
+          `https://generativelanguage.googleapis.com/v1beta/models/${config.solutionModel || "gemini-2.0-flash"}:generateContent?key=${this.geminiApiKey}`,
+          {
+            contents: [
+              {
+                role: "user",
+                parts: [ { text: promptText } ]
+              }
+            ],
+            generationConfig: { temperature: 0.2, maxOutputTokens: 1200 }
+          },
+          { signal }
+        );
+        const responseData = response.data as GeminiResponse;
+        if (!responseData.candidates || responseData.candidates.length === 0) {
+          throw new Error("Empty response from Gemini API");
+        }
+        responseContent = responseData.candidates[0].content.parts[0].text;
+      } else if (config.apiProvider === "anthropic") {
+        if (!this.anthropicClient) {
+          return { success: false, error: "Anthropic API key not configured. Please check your settings." };
+        }
+        const response = await this.anthropicClient.messages.create({
+          model: config.solutionModel || "claude-3-7-sonnet-20250219",
+          max_tokens: 1200,
+          temperature: 0.2,
+          messages: [
+            {
+              role: "user",
+              content: [ { type: "text", text: promptText } ]
+            }
+          ]
+        });
+        responseContent = (response.content[0] as { type: 'text', text: string }).text;
+      }
+
+      // Build formatted response
+      const answerMatch = responseContent.match(/^(.*?)(?:\n\n|\n-\s|$)/s);
+      const directAnswer = answerMatch ? answerMatch[1].trim() : responseContent.trim();
+      const bullets = responseContent.match(/(?:^|\n)[ ]*(?:[-*•]|\d+\.)[ ]+([^\n]+)/g);
+      const thoughts = bullets ? bullets.map(point => point.replace(/^[ ]*(?:[-*•]|\d+\.)[ ]+/, '').trim()) : [];
+
+      const formatted = {
+        code: directAnswer,
+        thoughts: thoughts.length > 0 ? thoughts : ["Answer derived from provided screenshots/context"],
+        time_complexity: "N/A - General question",
+        space_complexity: "N/A - General question"
+      };
+
+      return { success: true, data: formatted };
+    } catch (error: any) {
+      if (axios.isCancel(error)) {
+        return { success: false, error: "Processing was canceled by the user." };
+      }
+      console.error("General answer generation error:", error);
+      return { success: false, error: error.message || "Failed to generate answer" };
+    }
+  }
+
   private async generateSolutionsHelper(signal: AbortSignal) {
     try {
       const problemInfo = this.deps.getProblemInfo();
@@ -735,7 +886,16 @@ export class ProcessingHelper {
 
       // Create prompt for solution generation
       const promptText = `
-Generate a detailed solution for the following coding problem:
+I'm in a high-stakes hackathon (3 problems, 3 hrs, strict hidden test cases).
+I'll share one problem at a time, need a '${language}' solution.
+Code must look human-written, not AI-generated.
+Use natural variable names, slightly imperfect formatting.
+Handle all edge cases: large inputs, boundaries, repeats, empty cases.
+Solution must be optimized in time and space.
+Avoid redundant code and heavy containers.
+Final code should look like a submission, not tutorial code.
+No excessive comments, just clean + logical structure.
+Bypass AI detection with natural coding style.
 
 PROBLEM STATEMENT:
 ${problemInfo.problem_statement}
@@ -749,9 +909,33 @@ ${problemInfo.example_input || "No example input provided."}
 EXAMPLE OUTPUT:
 ${problemInfo.example_output || "No example output provided."}
 
+QUESTION TYPE: ${problemInfo.question_type || "coding"}
+
+${problemInfo.question_type === "mcq" && problemInfo.options ? `OPTIONS:
+${problemInfo.options.map((opt: string, index: number) => {
+  // Handle various option formats: A, B, C, D or 1, 2, 3, 4 or just the option
+  let optionLabel = '';
+  if (opt.match(/^[A-D]$/i)) {
+    optionLabel = opt.toUpperCase();
+  } else if (opt.match(/^[1-4]$/)) {
+    optionLabel = opt;
+  } else {
+    // If no clear label, use A, B, C, D
+    optionLabel = String.fromCharCode(65 + index);
+  }
+  return `${optionLabel}. ${opt}`;
+}).join('\n')}` : ''}
+
 LANGUAGE: ${language}
 
-I need the response in the following format:
+IMPORTANT: If this is a Multiple Choice Question (MCQ), carefully read and analyze ALL the options provided above. Your response should:
+1. Identify that it's an MCQ
+2. Analyze each option (A, B, C, D, 1, 2, 3, 4, or whatever format is used)
+3. Provide the correct answer with the option label (letter, number, or text)
+4. Give a detailed explanation of why that option is correct
+5. Explain why other options are incorrect
+
+If it's a coding problem, provide the response in the following format:
 1. Code: A clean, optimized implementation in ${language}
 2. Your Thoughts: A list of key insights and reasoning behind your approach
 3. Time complexity: O(X) with a detailed explanation (at least 2 sentences)
@@ -760,6 +944,7 @@ I need the response in the following format:
 For complexity explanations, please be thorough. For example: "Time complexity: O(n) because we iterate through the array only once. This is optimal as we need to examine each element at least once to find the solution." or "Space complexity: O(n) because in the worst case, we store all elements in the hashmap. The additional space scales linearly with the input size."
 
 Your solution should be efficient, well-commented, and handle edge cases.
+It should as efficient as possible keeping in mind all the test cases and edge cases, keep in mind the constrainsts and keep it as short as possible, but edges cases and constraints are more important than shortness.
 `;
 
       let responseContent;
@@ -777,7 +962,7 @@ Your solution should be efficient, well-commented, and handle edge cases.
         const solutionResponse = await this.openaiClient.chat.completions.create({
           model: config.solutionModel || "gpt-4o",
           messages: [
-            { role: "system", content: "You are an expert coding interview assistant. Provide clear, optimal solutions with detailed explanations." },
+            { role: "system", content: "You are an expert coding interview assistant with mastery in DSA. For coding problems: try the best approach possible and not brute force as it always exceeds time limit, keep in mind all edge cases and constraints, keep the code as short as possible but edge cases are the first priority. For MCQ questions: carefully analyze ALL options provided in the screenshots, identify the correct answer with option letter/number, and explain why it's correct and why others are wrong. Provide clear, optimal solutions with detailed explanations." },
             { role: "user", content: promptText }
           ],
           max_tokens: 4000,
@@ -801,7 +986,7 @@ Your solution should be efficient, well-commented, and handle edge cases.
               role: "user",
               parts: [
                 {
-                  text: `You are an expert coding interview assistant. Provide a clear, optimal solution with detailed explanations for this problem:\n\n${promptText}`
+                  text: `You are an expert coding interview assistant with mastery in DSA. For coding problems: try the best approach possible and not brute force as it always exceeds time limit, keep in mind all edge cases and constraints, keep the code as short as possible but edge cases are the first priority. For MCQ questions: carefully analyze ALL options provided in the screenshots (they may be labeled as A, B, C, D or 1, 2, 3, 4 or just plain text), identify the correct answer with the appropriate label, and explain why it's correct and why others are wrong. Provide clear, optimal solutions with detailed explanations:\n\n${promptText}`
                 }
               ]
             }
@@ -850,7 +1035,7 @@ Your solution should be efficient, well-commented, and handle edge cases.
               content: [
                 {
                   type: "text" as const,
-                  text: `You are an expert coding interview assistant. Provide a clear, optimal solution with detailed explanations for this problem:\n\n${promptText}`
+                  text: `You are an expert coding interview assistant with mastery in DSA. For coding problems: try the best approach possible and not brute force as it always exceeds time limit, keep in mind all edge cases and constraints, keep the code as short as possible but edge cases are the first priority. For MCQ questions: carefully analyze ALL options provided in the screenshots, identify the correct answer with option letter/number, and explain why it's correct and why others are wrong. Provide clear, optimal solutions with detailed explanations:\n\n${promptText}`
                 }
               ]
             }
@@ -889,62 +1074,85 @@ Your solution should be efficient, well-commented, and handle edge cases.
       }
       
       // Extract parts from the response
-      const codeMatch = responseContent.match(/```(?:\w+)?\s*([\s\S]*?)```/);
-      const code = codeMatch ? codeMatch[1].trim() : responseContent;
-      
-      // Extract thoughts, looking for bullet points or numbered lists
-      const thoughtsRegex = /(?:Thoughts:|Key Insights:|Reasoning:|Approach:)([\s\S]*?)(?:Time complexity:|$)/i;
-      const thoughtsMatch = responseContent.match(thoughtsRegex);
+      let code = "// No code provided";
       let thoughts: string[] = [];
+      let timeComplexity = "N/A";
+      let spaceComplexity = "N/A";
       
-      if (thoughtsMatch && thoughtsMatch[1]) {
-        // Extract bullet points or numbered items
-        const bulletPoints = thoughtsMatch[1].match(/(?:^|\n)\s*(?:[-*•]|\d+\.)\s*(.*)/g);
-        if (bulletPoints) {
-          thoughts = bulletPoints.map(point => 
-            point.replace(/^\s*(?:[-*•]|\d+\.)\s*/, '').trim()
-          ).filter(Boolean);
-        } else {
-          // If no bullet points found, split by newlines and filter empty lines
-          thoughts = thoughtsMatch[1].split('\n')
-            .map((line) => line.trim())
-            .filter(Boolean);
-        }
-      }
-      
-      // Extract complexity information
-      const timeComplexityPattern = /Time complexity:?\s*([^\n]+(?:\n[^\n]+)*?)(?=\n\s*(?:Space complexity|$))/i;
-      const spaceComplexityPattern = /Space complexity:?\s*([^\n]+(?:\n[^\n]+)*?)(?=\n\s*(?:[A-Z]|$))/i;
-      
-      let timeComplexity = "O(n) - Linear time complexity because we only iterate through the array once. Each element is processed exactly one time, and the hashmap lookups are O(1) operations.";
-      let spaceComplexity = "O(n) - Linear space complexity because we store elements in the hashmap. In the worst case, we might need to store all elements before finding the solution pair.";
-      
-      const timeMatch = responseContent.match(timeComplexityPattern);
-      if (timeMatch && timeMatch[1]) {
-        timeComplexity = timeMatch[1].trim();
-        if (!timeComplexity.match(/O\([^)]+\)/i)) {
-          timeComplexity = `O(n) - ${timeComplexity}`;
-        } else if (!timeComplexity.includes('-') && !timeComplexity.includes('because')) {
-          const notationMatch = timeComplexity.match(/O\([^)]+\)/i);
-          if (notationMatch) {
-            const notation = notationMatch[0];
-            const rest = timeComplexity.replace(notation, '').trim();
-            timeComplexity = `${notation} - ${rest}`;
+      // Check if this is an MCQ question
+      if (problemInfo.question_type === "mcq") {
+        // For MCQ questions, extract the answer and explanation
+        // Handle various MCQ formats: A-D, 1-4, or just the option text
+        const answerMatch = responseContent.match(/(?:Answer|Correct Answer|Option|Correct option):?\s*([A-D]|[1-4]|[^,\n]+)/i);
+        const answer = answerMatch ? answerMatch[1].trim() : "Not specified";
+        
+        // Extract explanation
+        const explanationMatch = responseContent.match(/(?:Explanation|Reasoning|Why):([\s\S]*?)(?=\n\s*(?:[A-Z]|$))/i);
+        const explanation = explanationMatch ? explanationMatch[1].trim() : responseContent;
+        
+        // For MCQ, set appropriate values
+        code = `Answer: ${answer}\n\n${explanation}`;
+        thoughts = [explanation];
+        timeComplexity = "N/A - MCQ Question";
+        spaceComplexity = "N/A - MCQ Question";
+      } else {
+        // For coding problems, extract code and complexity info
+        const codeMatch = responseContent.match(/```(?:\w+)?\s*([\s\S]*?)```/);
+        code = codeMatch ? codeMatch[1].trim() : responseContent;
+        
+        // Extract thoughts, looking for bullet points or numbered lists
+        const thoughtsRegex = /(?:Thoughts:|Key Insights:|Reasoning:|Approach:)([\s\S]*?)(?:Time complexity:|$)/i;
+        const thoughtsMatch = responseContent.match(thoughtsRegex);
+        
+        if (thoughtsMatch && thoughtsMatch[1]) {
+          // Extract bullet points or numbered items
+          const bulletPoints = thoughtsMatch[1].match(/(?:^|\n)\s*(?:[-*•]|\d+\.)\s*(.*)/g);
+          if (bulletPoints) {
+            thoughts = bulletPoints.map(point => 
+              point.replace(/^\s*(?:[-*•]|\d+\.)\s*/, '').trim()
+            ).filter(Boolean);
+          } else {
+            // If no bullet points found, split by newlines and filter empty lines
+            thoughts = thoughtsMatch[1].split('\n')
+              .map((line) => line.trim())
+              .filter(Boolean);
           }
         }
-      }
-      
-      const spaceMatch = responseContent.match(spaceComplexityPattern);
-      if (spaceMatch && spaceMatch[1]) {
-        spaceComplexity = spaceMatch[1].trim();
-        if (!spaceComplexity.match(/O\([^)]+\)/i)) {
-          spaceComplexity = `O(n) - ${spaceComplexity}`;
-        } else if (!spaceComplexity.includes('-') && !spaceComplexity.includes('because')) {
-          const notationMatch = spaceComplexity.match(/O\([^)]+\)/i);
-          if (notationMatch) {
-            const notation = notationMatch[0];
-            const rest = spaceComplexity.replace(notation, '').trim();
-            spaceComplexity = `${notation} - ${rest}`;
+        
+        // Extract complexity information
+        const timeComplexityPattern = /Time complexity:?\s*([^\n]+(?:\n[^\n]+)*?)(?=\n\s*(?:Space complexity|$))/i;
+        const spaceComplexityPattern = /Space complexity:?\s*([^\n]+(?:\n[^\n]+)*?)(?=\n\s*(?:[A-Z]|$))/i;
+        
+        timeComplexity = "O(n) - Linear time complexity because we only iterate through the array once. Each element is processed exactly one time, and the hashmap lookups are O(1) operations.";
+        spaceComplexity = "O(n) - Linear space complexity because we store elements in the hashmap. In the worst case, we might need to store all elements before finding the solution pair.";
+        
+        const timeMatch = responseContent.match(timeComplexityPattern);
+        if (timeMatch && timeMatch[1]) {
+          timeComplexity = timeMatch[1].trim();
+          if (!timeComplexity.match(/O\([^)]+\)/i)) {
+            timeComplexity = `O(n) - ${timeComplexity}`;
+          } else if (!timeComplexity.includes('-') && !timeComplexity.includes('because')) {
+            const notationMatch = timeComplexity.match(/O\([^)]+\)/i);
+            if (notationMatch) {
+              const notation = notationMatch[0];
+              const rest = timeComplexity.replace(notation, '').trim();
+              timeComplexity = `${notation} - ${rest}`;
+            }
+          }
+        }
+        
+        const spaceMatch = responseContent.match(spaceComplexityPattern);
+        if (spaceMatch && spaceMatch[1]) {
+          spaceComplexity = spaceMatch[1].trim();
+          if (!spaceComplexity.match(/O\([^)]+\)/i)) {
+            spaceComplexity = `O(n) - ${spaceComplexity}`;
+          } else if (!spaceComplexity.includes('-') && !spaceComplexity.includes('because')) {
+            const notationMatch = spaceComplexity.match(/O\([^)]+\)/i);
+            if (notationMatch) {
+              const notation = notationMatch[0];
+              const rest = spaceComplexity.replace(notation, '').trim();
+              spaceComplexity = `${notation} - ${rest}`;
+            }
           }
         }
       }
@@ -1022,7 +1230,14 @@ Your solution should be efficient, well-commented, and handle edge cases.
             role: "system" as const, 
             content: `You are a coding interview assistant helping debug and improve solutions. Analyze these screenshots which include either error messages, incorrect outputs, or test cases, and provide detailed debugging help.
 
-Your response MUST follow this exact structure with these section headers (use ### for headers):
+IMPORTANT: If this is a Multiple Choice Question (MCQ), carefully read and analyze ALL the options provided in the screenshots. Your response should:
+1. Identify that it's an MCQ
+2. Analyze each option (A, B, C, D, 1, 2, 3, 4, or whatever format is used)
+3. Provide the correct answer with the option label (letter, number, or text)
+4. Give a detailed explanation of why that option is correct
+5. Explain why other options are incorrect
+
+If it's a coding problem that needs debugging, your response MUST follow this exact structure with these section headers (use ### for headers):
 ### Issues Identified
 - List each issue as a bullet point with clear explanation
 
@@ -1088,7 +1303,14 @@ You are a coding interview assistant helping debug and improve solutions. Analyz
 
 I'm solving this coding problem: "${problemInfo.problem_statement}" in ${language}. I need help with debugging or improving my solution.
 
-YOUR RESPONSE MUST FOLLOW THIS EXACT STRUCTURE WITH THESE SECTION HEADERS:
+IMPORTANT: If this is a Multiple Choice Question (MCQ), carefully read and analyze ALL the options provided in the screenshots. Your response should:
+1. Identify that it's an MCQ
+2. Analyze each option (A, B, C, D, 1, 2, 3, 4, or whatever format is used)
+3. Provide the correct answer with the option label (letter, number, or text)
+4. Give a detailed explanation of why that option is correct
+5. Explain why other options are incorrect
+
+If it's a coding problem that needs debugging, YOUR RESPONSE MUST FOLLOW THIS EXACT STRUCTURE WITH THESE SECTION HEADERS:
 ### Issues Identified
 - List each issue as a bullet point with clear explanation
 
@@ -1169,7 +1391,14 @@ You are a coding interview assistant helping debug and improve solutions. Analyz
 
 I'm solving this coding problem: "${problemInfo.problem_statement}" in ${language}. I need help with debugging or improving my solution.
 
-YOUR RESPONSE MUST FOLLOW THIS EXACT STRUCTURE WITH THESE SECTION HEADERS:
+IMPORTANT: If this is a Multiple Choice Question (MCQ), carefully read and analyze ALL the options provided in the screenshots. Your response should:
+1. Identify that it's an MCQ
+2. Analyze each option (A, B, C, D, 1, 2, 3, 4, or whatever format is used)
+3. Provide the correct answer with the option label (letter, number, or text)
+4. Give a detailed explanation of why that option is correct
+5. Explain why other options are incorrect
+
+If it's a coding problem that needs debugging, YOUR RESPONSE MUST FOLLOW THIS EXACT STRUCTURE WITH THESE SECTION HEADERS:
 ### Issues Identified
 - List each issue as a bullet point with clear explanation
 
@@ -1255,32 +1484,51 @@ If you include code examples, use proper markdown code blocks with language spec
       }
 
       let extractedCode = "// Debug mode - see analysis below";
-      const codeMatch = debugContent.match(/```(?:[a-zA-Z]+)?([\s\S]*?)```/);
-      if (codeMatch && codeMatch[1]) {
-        extractedCode = codeMatch[1].trim();
-      }
-
       let formattedDebugContent = debugContent;
+      let thoughts = ["Debug analysis based on your screenshots"];
       
-      if (!debugContent.includes('# ') && !debugContent.includes('## ')) {
-        formattedDebugContent = debugContent
-          .replace(/issues identified|problems found|bugs found/i, '## Issues Identified')
-          .replace(/code improvements|improvements|suggested changes/i, '## Code Improvements')
-          .replace(/optimizations|performance improvements/i, '## Optimizations')
-          .replace(/explanation|detailed analysis/i, '## Explanation');
-      }
+      // Check if this is an MCQ question
+      if (problemInfo.question_type === "mcq") {
+                 // For MCQ questions, extract the answer and explanation
+         // Handle various MCQ formats: A-D, 1-4, or just the option text
+         const answerMatch = debugContent.match(/(?:Answer|Correct Answer|Option|Correct option):?\s*([A-D]|[1-4]|[^,\n]+)/i);
+         const answer = answerMatch ? answerMatch[1].trim() : "Not specified";
+        
+        // Extract explanation
+        const explanationMatch = debugContent.match(/(?:Explanation|Reasoning|Why):([\s\S]*?)(?=\n\s*(?:[A-Z]|$))/i);
+        const explanation = explanationMatch ? explanationMatch[1].trim() : debugContent;
+        
+        // For MCQ, set appropriate values
+        extractedCode = `Answer: ${answer}\n\n${explanation}`;
+        formattedDebugContent = `## MCQ Answer\n\n**Correct Answer: ${answer}**\n\n${explanation}`;
+        thoughts = [explanation];
+      } else {
+        // For coding problems, extract code and format debug content
+        const codeMatch = debugContent.match(/```(?:[a-zA-Z]+)?([\s\S]*?)```/);
+        if (codeMatch && codeMatch[1]) {
+          extractedCode = codeMatch[1].trim();
+        }
+        
+        if (!debugContent.includes('# ') && !debugContent.includes('## ')) {
+          formattedDebugContent = debugContent
+            .replace(/issues identified|problems found|bugs found/i, '## Issues Identified')
+            .replace(/code improvements|improvements|suggested changes/i, '## Code Improvements')
+            .replace(/optimizations|performance improvements/i, '## Optimizations')
+            .replace(/explanation|detailed analysis/i, '## Explanation');
+        }
 
-      const bulletPoints = formattedDebugContent.match(/(?:^|\n)[ ]*(?:[-*•]|\d+\.)[ ]+([^\n]+)/g);
-      const thoughts = bulletPoints 
-        ? bulletPoints.map(point => point.replace(/^[ ]*(?:[-*•]|\d+\.)[ ]+/, '').trim()).slice(0, 5)
-        : ["Debug analysis based on your screenshots"];
+        const bulletPoints = formattedDebugContent.match(/(?:^|\n)[ ]*(?:[-*•]|\d+\.)[ ]+([^\n]+)/g);
+        if (bulletPoints) {
+          thoughts = bulletPoints.map(point => point.replace(/^[ ]*(?:[-*•]|\d+\.)[ ]+/, '').trim()).slice(0, 5);
+        }
+      }
       
       const response = {
         code: extractedCode,
         debug_analysis: formattedDebugContent,
         thoughts: thoughts,
-        time_complexity: "N/A - Debug mode",
-        space_complexity: "N/A - Debug mode"
+        time_complexity: problemInfo.question_type === "mcq" ? "N/A - MCQ Question" : "N/A - Debug mode",
+        space_complexity: problemInfo.question_type === "mcq" ? "N/A - MCQ Question" : "N/A - Debug mode"
       };
 
       return { success: true, data: response };
@@ -1312,6 +1560,96 @@ If you include code examples, use proper markdown code blocks with language spec
     const mainWindow = this.deps.getMainWindow()
     if (wasCancelled && mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send(this.deps.PROCESSING_EVENTS.NO_SCREENSHOTS)
+    }
+  }
+
+  public async generateFollowUpResponse(userMessage: string, context: { problemInfo?: any; solution?: string }, signal?: AbortSignal) {
+    try {
+      const config = configHelper.loadConfig();
+      const problemInfo = context.problemInfo || this.deps.getProblemInfo();
+      const solutionText = context.solution || "";
+
+      const baseContext = `You are assisting with follow-up questions about a previously generated answer. Be concise and accurate.
+
+Problem (if available):\n${problemInfo ? JSON.stringify(problemInfo, null, 2) : "(not provided)"}
+
+Current Answer/Solution (if available):\n${solutionText || "(not provided)"}
+
+User's follow-up question:\n${userMessage}
+
+Return STRICT JSON ONLY with this shape (no extra text):
+{
+  "message": string,        // your natural language reply to the user
+  "updated_code": string|null, // if your reply involves code changes, include the FULL updated code in one block, otherwise null
+  "notes": string[]         // brief bullet points of what changed and why (or empty if none)
+}`;
+
+      let responseContent = "";
+      if (config.apiProvider === "openai") {
+        if (!this.openaiClient) {
+          return { success: false, error: "OpenAI API key not configured. Please check your settings." };
+        }
+        const resp = await this.openaiClient.chat.completions.create({
+          model: config.solutionModel || "gpt-4o",
+          messages: [
+            { role: "system", content: "You are a helpful assistant for follow-up questions. Keep answers direct; cite reasoning briefly when useful." },
+            { role: "user", content: baseContext }
+          ],
+          max_tokens: 1200,
+          temperature: 0.2
+        });
+        responseContent = resp.choices[0].message.content || "";
+      } else if (config.apiProvider === "gemini") {
+        if (!this.geminiApiKey) {
+          return { success: false, error: "Gemini API key not configured. Please check your settings." };
+        }
+        const resp = await axios.default.post(
+          `https://generativelanguage.googleapis.com/v1beta/models/${config.solutionModel || "gemini-2.0-flash"}:generateContent?key=${this.geminiApiKey}`,
+          {
+            contents: [ { role: "user", parts: [ { text: baseContext } ] } ],
+            generationConfig: { temperature: 0.2, maxOutputTokens: 1200 }
+          },
+          { signal }
+        );
+        const data = resp.data as GeminiResponse;
+        if (!data.candidates || data.candidates.length === 0) {
+          throw new Error("Empty response from Gemini API");
+        }
+        responseContent = data.candidates[0].content.parts[0].text;
+      } else if (config.apiProvider === "anthropic") {
+        if (!this.anthropicClient) {
+          return { success: false, error: "Anthropic API key not configured. Please check your settings." };
+        }
+        const resp = await this.anthropicClient.messages.create({
+          model: config.solutionModel || "claude-3-7-sonnet-20250219",
+          max_tokens: 1200,
+          temperature: 0.2,
+          messages: [ { role: "user", content: [ { type: "text", text: baseContext } ] } ]
+        });
+        responseContent = (resp.content[0] as { type: 'text', text: string }).text;
+      }
+      // Try to parse JSON; some providers may wrap in markdown code fences
+      let jsonText = (responseContent || "").trim();
+      jsonText = jsonText.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
+      let parsed: any = null;
+      try {
+        parsed = JSON.parse(jsonText);
+      } catch (_) {
+        // fallback to plain message
+        parsed = { message: responseContent, updated_code: null, notes: [] };
+      }
+
+      const safeMessage = typeof parsed.message === 'string' ? parsed.message : (responseContent || "");
+      const updatedCode = typeof parsed.updated_code === 'string' ? parsed.updated_code : null;
+      const notes = Array.isArray(parsed.notes) ? parsed.notes.filter((n: any) => typeof n === 'string') : [];
+
+      return { success: true, data: { text: safeMessage, updatedCode, notes } };
+    } catch (error: any) {
+      if (axios.isCancel(error)) {
+        return { success: false, error: "Processing was canceled by the user." };
+      }
+      console.error("Follow-up chat error:", error);
+      return { success: false, error: error.message || "Failed to generate follow-up response" };
     }
   }
 }
