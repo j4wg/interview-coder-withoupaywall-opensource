@@ -23,6 +23,7 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
   const [isTooltipVisible, setIsTooltipVisible] = useState(false)
   const tooltipRef = useRef<HTMLDivElement>(null)
   const { showToast } = useToast()
+  const [questionType, setQuestionType] = useState<"coding" | "mcq" | "general">("coding")
 
   // Extract the repeated language selection logic into a separate function
   const extractLanguagesAndUpdate = (direction?: 'next' | 'prev') => {
@@ -81,6 +82,22 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
     }
     onTooltipVisibilityChange(isTooltipVisible, tooltipHeight)
   }, [isTooltipVisible])
+
+  // Load initial question type from config
+  useEffect(() => {
+    let mounted = true
+    window.electronAPI.getConfig()
+      .then((cfg: any) => {
+        if (!mounted) return
+        if (cfg && (cfg.questionType === "coding" || cfg.questionType === "mcq" || cfg.questionType === "general")) {
+          setQuestionType(cfg.questionType)
+        }
+      })
+      .catch(() => {})
+    return () => {
+      mounted = false
+    }
+  }, [])
 
   const handleSignOut = async () => {
     try {
@@ -430,6 +447,34 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
 
                     {/* Separator and Log Out */}
                     <div className="pt-3 mt-3 border-t border-white/10">
+                      {/* Question Mode Selector */}
+                      <div className="mb-3 px-2">
+                        <div className="text-[11px] text-white/70 mb-1">Question Mode</div>
+                        <div className="grid grid-cols-3 gap-2">
+                          {([
+                            { key: "coding", label: "Coding" },
+                            { key: "mcq", label: "MCQ" },
+                            { key: "general", label: "General" }
+                          ] as const).map(({ key, label }) => (
+                            <button
+                              key={key}
+                              className={`px-2 py-1 rounded text-[11px] transition-colors ${
+                                questionType === key
+                                  ? "bg-white/15 text-white border border-white/20"
+                                  : "bg-white/5 text-white/80 border border-white/10 hover:bg-white/10"
+                              }`}
+                              onClick={() => {
+                                setQuestionType(key)
+                                window.electronAPI.updateConfig({ questionType: key })
+                                  .catch((err: unknown) => console.error("Failed to save question type:", err))
+                              }}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
                       {/* Simplified Language Selector */}
                       <div className="mb-3 px-2">
                         <div 
@@ -459,7 +504,7 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
                       {/* API Key Settings */}
                       <div className="mb-3 px-2 space-y-1">
                         <div className="flex items-center justify-between text-[13px] font-medium text-white/90">
-                          <span>OpenAI API Settings</span>
+                          <span>API Settings</span>
                           <button
                             className="bg-white/10 hover:bg-white/20 px-2 py-1 rounded text-[11px]"
                             onClick={() => window.electronAPI.openSettingsPortal()}

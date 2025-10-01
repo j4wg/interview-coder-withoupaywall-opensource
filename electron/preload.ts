@@ -205,7 +205,7 @@ const electronAPI = {
   
   // New methods for OpenAI API integration
   getConfig: () => ipcRenderer.invoke("get-config"),
-  updateConfig: (config: { apiKey?: string; model?: string; language?: string; opacity?: number }) => 
+  updateConfig: (config: { apiKey?: string; model?: string; language?: string; opacity?: number; questionType?: "coding" | "mcq" | "general" }) => 
     ipcRenderer.invoke("update-config", config),
   onShowSettings: (callback: () => void) => {
     const subscription = () => callback()
@@ -237,6 +237,9 @@ const electronAPI = {
     }
   },
   deleteLastScreenshot: () => ipcRenderer.invoke("delete-last-screenshot")
+  ,
+  // Chat follow-up
+  chatFollowup: (message: string, context?: { solution?: string }) => ipcRenderer.invoke("chat-followup", { message, context })
 }
 
 // Before exposing the API

@@ -192,6 +192,11 @@ const Solutions: React.FC<SolutionsProps> = ({
     null
   )
 
+  // Chat state
+  const [chatInput, setChatInput] = useState("")
+  const [chatMessages, setChatMessages] = useState<Array<{ role: "user" | "assistant"; text: string }>>([])
+  const [isChatting, setIsChatting] = useState(false)
+
   const [isTooltipVisible, setIsTooltipVisible] = useState(false)
   const [tooltipHeight, setTooltipHeight] = useState(0)
 
@@ -557,6 +562,62 @@ const Solutions: React.FC<SolutionsProps> = ({
                       spaceComplexity={spaceComplexityData}
                       isLoading={!timeComplexityData || !spaceComplexityData}
                     />
+
+                    {/* Chat Panel */}
+                    <div className="mt-4 p-3 rounded-md border border-white/10 bg-black/40">
+                      <div className="text-[13px] font-medium text-white mb-2">Chat about this answer</div>
+                      <div className="space-y-2 max-h-48 overflow-auto pr-1">
+                        {chatMessages.map((m, idx) => (
+                          <div key={idx} className="text-[12px]">
+                            <span className={`mr-2 ${m.role === 'user' ? 'text-blue-300' : 'text-green-300'}`}>
+                              {m.role === 'user' ? 'You' : 'AI'}:
+                            </span>
+                            <span className="text-white/90 whitespace-pre-wrap">{m.text}</span>
+                          </div>
+                        ))}
+                        {chatMessages.length === 0 && (
+                          <div className="text-[12px] text-white/60">Ask follow-up questions about the solution.</div>
+                        )}
+                      </div>
+                      <div className="mt-2 flex gap-2">
+                        <input
+                          value={chatInput}
+                          onChange={(e) => setChatInput(e.target.value)}
+                          placeholder="Ask a follow-up question..."
+                          className="flex-1 bg-black/50 border border-white/10 rounded px-2 py-1 text-[12px] text-white outline-none focus:border-white/20"
+                        />
+                        <button
+                          disabled={isChatting || !chatInput.trim()}
+                          onClick={async () => {
+                            const msg = chatInput.trim()
+                            if (!msg) return
+                            setChatInput("")
+                            setChatMessages((prev) => [...prev, { role: 'user', text: msg }])
+                            setIsChatting(true)
+                            try {
+                              const result = await window.electronAPI.chatFollowup(msg, { solution: solutionData || '' })
+                              if (result?.success && result.data) {
+                                const aiText = result.data.text || ''
+                                setChatMessages((prev) => [...prev, { role: 'assistant', text: aiText }])
+                                // If updated code returned, update the visible solution
+                                if (result.data.updatedCode && typeof result.data.updatedCode === 'string') {
+                                  setSolutionData(result.data.updatedCode)
+                                }
+                              } else {
+                                setChatMessages((prev) => [...prev, { role: 'assistant', text: result?.error || 'Failed to get response' }])
+                              }
+                            } catch (err) {
+                              setChatMessages((prev) => [...prev, { role: 'assistant', text: 'Error while contacting AI' }])
+                            } finally {
+                              setIsChatting(false)
+                            }
+                          }}
+                          className={`px-3 py-1 rounded text-[12px] ${isChatting ? 'bg-white/10 text-white/50' : 'bg-white text-black hover:bg-white/90'}`}
+                        >
+                          {isChatting ? 'Sending...' : 'Send'}
+                        </button>
+                      </div>
+                    </div>
                   </>
                 )}
               </div>

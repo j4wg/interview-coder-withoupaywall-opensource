@@ -477,14 +477,14 @@ export class ProcessingHelper {
         const messages = [
           {
             role: "system" as const, 
-            content: "You are a coding challenge interpreter. Analyze the screenshots and extract all relevant information. IMPORTANT: If this is a Multiple Choice Question (MCQ), carefully read and analyze ALL the options provided in the screenshots. Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output, question_type (either 'coding' or 'mcq'), options (array of options if MCQ), correct_answer (option letter/number if MCQ). Just return the structured JSON without any other text."
+            content: "You are a coding challenge interpreter. Analyze the screenshots and extract all relevant information. IMPORTANT: If this is a Multiple Choice Question (MCQ), carefully read and analyze ALL the options provided in the screenshots. Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output, question_type (one of: 'coding', 'mcq', 'general'), options (array of options if MCQ), correct_answer (option label if MCQ). If it is a general question that is neither coding nor MCQ, set question_type to 'general'. Just return the structured JSON without any other text."
           },
           {
             role: "user" as const,
             content: [
               {
                 type: "text" as const, 
-                text: `Extract the problem details from these screenshots. If it's an MCQ, make sure to read and include ALL the options provided. Return in JSON format. Preferred coding language we gonna use for this problem is ${language}.`
+                text: `Extract the problem details from these screenshots. If it's an MCQ, make sure to read and include ALL the options provided. Return in JSON format. Classify question_type as 'coding', 'mcq', or 'general'. Preferred coding language we gonna use for this problem is ${language}.`
               },
               ...imageDataList.map(data => ({
                 type: "image_url" as const,
@@ -531,7 +531,7 @@ export class ProcessingHelper {
               role: "user",
               parts: [
                 {
-                  text: `You are a coding challenge interpreter. Analyze the screenshots and extract all relevant information. IMPORTANT: If this is a Multiple Choice Question (MCQ), carefully read and analyze ALL the options provided in the screenshots. Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output, question_type (either 'coding' or 'mcq'), options (array of options if MCQ), correct_answer (option letter/number if MCQ). Just return the structured JSON without any other text. Preferred coding language we gonna use for this problem is ${language}.`
+                  text: `You are a coding challenge interpreter. Analyze the screenshots and extract all relevant information. IMPORTANT: If this is a Multiple Choice Question (MCQ), carefully read and analyze ALL the options provided in the screenshots. Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output, question_type (one of: 'coding', 'mcq', 'general'), options (array of options if MCQ), correct_answer (option label if MCQ). If it is a general question that is neither coding nor MCQ, set question_type to 'general'. Just return the structured JSON without any other text. Preferred coding language we gonna use for this problem is ${language}.`
                 },
                 ...imageDataList.map(data => ({
                   inlineData: {
@@ -589,7 +589,7 @@ export class ProcessingHelper {
               content: [
                 {
                   type: "text" as const,
-                  text: `Extract the problem details from these screenshots. IMPORTANT: If this is a Multiple Choice Question (MCQ), carefully read and analyze ALL the options provided in the screenshots. Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output, question_type (either 'coding' or 'mcq'), options (array of options if MCQ), correct_answer (option letter/number if MCQ). Preferred coding language is ${language}.`
+                  text: `Extract the problem details from these screenshots. IMPORTANT: If this is a Multiple Choice Question (MCQ), carefully read and analyze ALL the options provided in the screenshots. Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output, question_type (one of: 'coding', 'mcq', 'general'), options (array of options if MCQ), correct_answer (option label if MCQ). If it is a general question that is neither coding nor MCQ, set question_type to 'general'. Preferred coding language is ${language}.`
                 },
                 ...imageDataList.map(data => ({
                   type: "image" as const,
@@ -644,6 +644,12 @@ export class ProcessingHelper {
         });
       }
 
+      // Override question type if user selected a forced type in config
+      const forcedType = config.questionType as ("coding" | "mcq" | "general" | undefined);
+      if (forcedType) {
+        problemInfo.question_type = forcedType;
+      }
+
       // Store problem info in AppState
       this.deps.setProblemInfo(problemInfo);
 
@@ -654,42 +660,42 @@ export class ProcessingHelper {
           problemInfo
         );
 
-        // For MCQ questions, we don't need to generate coding solutions
         if (problemInfo.question_type === "mcq") {
-                     // Create a simple MCQ response
-           const mcqResponse = {
-             code: `Question: ${problemInfo.problem_statement}\n\nOptions:\n${problemInfo.options ? problemInfo.options.map((opt: string, index: number) => {
-               // Handle various option formats: A, B, C, D or 1, 2, 3, 4 or just the option
-               let optionLabel = '';
-               if (opt.match(/^[A-D]$/i)) {
-                 optionLabel = opt.toUpperCase();
-               } else if (opt.match(/^[1-4]$/)) {
-                 optionLabel = opt;
-               } else {
-                 // If no clear label, use A, B, C, D
-                 optionLabel = String.fromCharCode(65 + index);
-               }
-               return `${optionLabel}. ${opt}`;
-             }).join('\n') : 'No options provided'}\n\nThis appears to be a Multiple Choice Question. Please use the debug feature to get the correct answer and explanation.`,
-             thoughts: ["This is a Multiple Choice Question (MCQ)"],
-             time_complexity: "N/A - MCQ Question",
-             space_complexity: "N/A - MCQ Question"
-           };
-          
-          // Clear any existing extra screenshots before transitioning to solutions view
-          this.screenshotHelper.clearExtraScreenshotQueue();
-          
-          // Final progress update
-          mainWindow.webContents.send("processing-status", {
-            message: "MCQ question processed successfully",
-            progress: 100
-          });
-          
-          mainWindow.webContents.send(
-            this.deps.PROCESSING_EVENTS.SOLUTION_SUCCESS,
-            mcqResponse
-          );
-          return { success: true, data: mcqResponse };
+          // Generate MCQ answer directly using solution generation flow
+          const solutionsResult = await this.generateSolutionsHelper(signal);
+          if (solutionsResult.success) {
+            this.screenshotHelper.clearExtraScreenshotQueue();
+            mainWindow.webContents.send("processing-status", {
+              message: "MCQ answer generated successfully",
+              progress: 100
+            });
+            mainWindow.webContents.send(
+              this.deps.PROCESSING_EVENTS.SOLUTION_SUCCESS,
+              solutionsResult.data
+            );
+            return { success: true, data: solutionsResult.data };
+          } else {
+            throw new Error(
+              solutionsResult.error || "Failed to generate MCQ answer"
+            );
+          }
+        } else if (problemInfo.question_type === "general") {
+          // Handle general Q&A type: produce a concise answer with reasoning
+          const generalResult = await this.generateGeneralAnswerHelper(signal);
+          if (generalResult.success) {
+            this.screenshotHelper.clearExtraScreenshotQueue();
+            mainWindow.webContents.send("processing-status", {
+              message: "Answer generated successfully",
+              progress: 100
+            });
+            mainWindow.webContents.send(
+              this.deps.PROCESSING_EVENTS.SOLUTION_SUCCESS,
+              generalResult.data
+            );
+            return { success: true, data: generalResult.data };
+          } else {
+            throw new Error(generalResult.error || "Failed to generate answer");
+          }
         } else {
           // Generate solutions for coding problems after successful extraction
           const solutionsResult = await this.generateSolutionsHelper(signal);
@@ -749,6 +755,113 @@ export class ProcessingHelper {
         success: false, 
         error: error.message || "Failed to process screenshots. Please try again." 
       };
+    }
+  }
+
+  private async generateGeneralAnswerHelper(signal: AbortSignal) {
+    try {
+      const problemInfo = this.deps.getProblemInfo();
+      const config = configHelper.loadConfig();
+      const mainWindow = this.deps.getMainWindow();
+
+      if (!problemInfo) {
+        throw new Error("No problem info available");
+      }
+
+      if (mainWindow) {
+        mainWindow.webContents.send("processing-status", {
+          message: "Interpreting the question and forming an answer...",
+          progress: 60
+        });
+      }
+
+      const promptText = `You are an expert interview assistant. The user provided screenshots that contain a question which is NOT an MCQ and NOT a coding task. Carefully read the content and provide:
+
+1) A concise, direct answer first (1-3 sentences).
+2) A brief reasoning section with bullet points.
+
+If calculations or steps are needed, show them clearly. Avoid unnecessary verbosity.
+
+QUESTION:
+${problemInfo.problem_statement}
+`;
+
+      let responseContent = "";
+
+      if (config.apiProvider === "openai") {
+        if (!this.openaiClient) {
+          return { success: false, error: "OpenAI API key not configured. Please check your settings." };
+        }
+        const response = await this.openaiClient.chat.completions.create({
+          model: config.solutionModel || "gpt-4o",
+          messages: [
+            { role: "system", content: "You are a helpful but concise problem solver. Start with the direct answer, then list reasoning bullets." },
+            { role: "user", content: promptText }
+          ],
+          max_tokens: 1200,
+          temperature: 0.2
+        });
+        responseContent = response.choices[0].message.content || "";
+      } else if (config.apiProvider === "gemini") {
+        if (!this.geminiApiKey) {
+          return { success: false, error: "Gemini API key not configured. Please check your settings." };
+        }
+        const response = await axios.default.post(
+          `https://generativelanguage.googleapis.com/v1beta/models/${config.solutionModel || "gemini-2.0-flash"}:generateContent?key=${this.geminiApiKey}`,
+          {
+            contents: [
+              {
+                role: "user",
+                parts: [ { text: promptText } ]
+              }
+            ],
+            generationConfig: { temperature: 0.2, maxOutputTokens: 1200 }
+          },
+          { signal }
+        );
+        const responseData = response.data as GeminiResponse;
+        if (!responseData.candidates || responseData.candidates.length === 0) {
+          throw new Error("Empty response from Gemini API");
+        }
+        responseContent = responseData.candidates[0].content.parts[0].text;
+      } else if (config.apiProvider === "anthropic") {
+        if (!this.anthropicClient) {
+          return { success: false, error: "Anthropic API key not configured. Please check your settings." };
+        }
+        const response = await this.anthropicClient.messages.create({
+          model: config.solutionModel || "claude-3-7-sonnet-20250219",
+          max_tokens: 1200,
+          temperature: 0.2,
+          messages: [
+            {
+              role: "user",
+              content: [ { type: "text", text: promptText } ]
+            }
+          ]
+        });
+        responseContent = (response.content[0] as { type: 'text', text: string }).text;
+      }
+
+      // Build formatted response
+      const answerMatch = responseContent.match(/^(.*?)(?:\n\n|\n-\s|$)/s);
+      const directAnswer = answerMatch ? answerMatch[1].trim() : responseContent.trim();
+      const bullets = responseContent.match(/(?:^|\n)[ ]*(?:[-*•]|\d+\.)[ ]+([^\n]+)/g);
+      const thoughts = bullets ? bullets.map(point => point.replace(/^[ ]*(?:[-*•]|\d+\.)[ ]+/, '').trim()) : [];
+
+      const formatted = {
+        code: directAnswer,
+        thoughts: thoughts.length > 0 ? thoughts : ["Answer derived from provided screenshots/context"],
+        time_complexity: "N/A - General question",
+        space_complexity: "N/A - General question"
+      };
+
+      return { success: true, data: formatted };
+    } catch (error: any) {
+      if (axios.isCancel(error)) {
+        return { success: false, error: "Processing was canceled by the user." };
+      }
+      console.error("General answer generation error:", error);
+      return { success: false, error: error.message || "Failed to generate answer" };
     }
   }
 
@@ -1447,6 +1560,96 @@ If you include code examples, use proper markdown code blocks with language spec
     const mainWindow = this.deps.getMainWindow()
     if (wasCancelled && mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send(this.deps.PROCESSING_EVENTS.NO_SCREENSHOTS)
+    }
+  }
+
+  public async generateFollowUpResponse(userMessage: string, context: { problemInfo?: any; solution?: string }, signal?: AbortSignal) {
+    try {
+      const config = configHelper.loadConfig();
+      const problemInfo = context.problemInfo || this.deps.getProblemInfo();
+      const solutionText = context.solution || "";
+
+      const baseContext = `You are assisting with follow-up questions about a previously generated answer. Be concise and accurate.
+
+Problem (if available):\n${problemInfo ? JSON.stringify(problemInfo, null, 2) : "(not provided)"}
+
+Current Answer/Solution (if available):\n${solutionText || "(not provided)"}
+
+User's follow-up question:\n${userMessage}
+
+Return STRICT JSON ONLY with this shape (no extra text):
+{
+  "message": string,        // your natural language reply to the user
+  "updated_code": string|null, // if your reply involves code changes, include the FULL updated code in one block, otherwise null
+  "notes": string[]         // brief bullet points of what changed and why (or empty if none)
+}`;
+
+      let responseContent = "";
+      if (config.apiProvider === "openai") {
+        if (!this.openaiClient) {
+          return { success: false, error: "OpenAI API key not configured. Please check your settings." };
+        }
+        const resp = await this.openaiClient.chat.completions.create({
+          model: config.solutionModel || "gpt-4o",
+          messages: [
+            { role: "system", content: "You are a helpful assistant for follow-up questions. Keep answers direct; cite reasoning briefly when useful." },
+            { role: "user", content: baseContext }
+          ],
+          max_tokens: 1200,
+          temperature: 0.2
+        });
+        responseContent = resp.choices[0].message.content || "";
+      } else if (config.apiProvider === "gemini") {
+        if (!this.geminiApiKey) {
+          return { success: false, error: "Gemini API key not configured. Please check your settings." };
+        }
+        const resp = await axios.default.post(
+          `https://generativelanguage.googleapis.com/v1beta/models/${config.solutionModel || "gemini-2.0-flash"}:generateContent?key=${this.geminiApiKey}`,
+          {
+            contents: [ { role: "user", parts: [ { text: baseContext } ] } ],
+            generationConfig: { temperature: 0.2, maxOutputTokens: 1200 }
+          },
+          { signal }
+        );
+        const data = resp.data as GeminiResponse;
+        if (!data.candidates || data.candidates.length === 0) {
+          throw new Error("Empty response from Gemini API");
+        }
+        responseContent = data.candidates[0].content.parts[0].text;
+      } else if (config.apiProvider === "anthropic") {
+        if (!this.anthropicClient) {
+          return { success: false, error: "Anthropic API key not configured. Please check your settings." };
+        }
+        const resp = await this.anthropicClient.messages.create({
+          model: config.solutionModel || "claude-3-7-sonnet-20250219",
+          max_tokens: 1200,
+          temperature: 0.2,
+          messages: [ { role: "user", content: [ { type: "text", text: baseContext } ] } ]
+        });
+        responseContent = (resp.content[0] as { type: 'text', text: string }).text;
+      }
+      // Try to parse JSON; some providers may wrap in markdown code fences
+      let jsonText = (responseContent || "").trim();
+      jsonText = jsonText.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
+      let parsed: any = null;
+      try {
+        parsed = JSON.parse(jsonText);
+      } catch (_) {
+        // fallback to plain message
+        parsed = { message: responseContent, updated_code: null, notes: [] };
+      }
+
+      const safeMessage = typeof parsed.message === 'string' ? parsed.message : (responseContent || "");
+      const updatedCode = typeof parsed.updated_code === 'string' ? parsed.updated_code : null;
+      const notes = Array.isArray(parsed.notes) ? parsed.notes.filter((n: any) => typeof n === 'string') : [];
+
+      return { success: true, data: { text: safeMessage, updatedCode, notes } };
+    } catch (error: any) {
+      if (axios.isCancel(error)) {
+        return { success: false, error: "Processing was canceled by the user." };
+      }
+      console.error("Follow-up chat error:", error);
+      return { success: false, error: error.message || "Failed to generate follow-up response" };
     }
   }
 }
