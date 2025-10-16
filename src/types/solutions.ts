@@ -9,22 +9,10 @@ export interface SolutionsResponse {
   [key: string]: Solution
 }
 
-export interface ProblemStatementData {
+// From previous type we was using only problem_statement and had duplication of types in electron/main.ts
+export interface IProblemStatementData {
   problem_statement: string
-  input_format: {
-    description: string
-    parameters: any[]
-  }
-  output_format: {
-    description: string
-    type: string
-    subtype: string
-  }
-  complexity: {
-    time: string
-    space: string
-  }
-  test_cases: any[]
-  validation_type: string
-  difficulty: string
+  constraints: string
+  example_input: string
+  example_output: string
 }

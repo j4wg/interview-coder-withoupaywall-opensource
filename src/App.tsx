@@ -1,10 +1,10 @@
-import SubscribedApp from "./_pages/SubscribedApp"
-import { UpdateNotification } from "./components/UpdateNotification"
 import {
   QueryClient,
   QueryClientProvider
 } from "@tanstack/react-query"
-import { useEffect, useState, useCallback } from "react"
+import { useCallback, useEffect, useState } from "react"
+import SubscribedApp from "./_pages/SubscribedApp"
+import { SettingsDialog } from "./components/Settings/SettingsDialog"
 import {
   Toast,
   ToastDescription,
@@ -12,9 +12,9 @@ import {
   ToastTitle,
   ToastViewport
 } from "./components/ui/toast"
-import { ToastContext } from "./contexts/toast"
+import { UpdateNotification } from "./components/UpdateNotification"
 import { WelcomeScreen } from "./components/WelcomeScreen"
-import { SettingsDialog } from "./components/Settings/SettingsDialog"
+import { ToastContext } from "./contexts/toast"
 
 // Create a React Query client
 const queryClient = new QueryClient({
@@ -43,7 +43,6 @@ function App() {
   const [currentLanguage, setCurrentLanguage] = useState<string>("python")
   const [isInitialized, setIsInitialized] = useState(false)
   const [hasApiKey, setHasApiKey] = useState(false)
-  const [apiKeyDialogOpen, setApiKeyDialogOpen] = useState(false)
   // Note: Model selection is now handled via separate extraction/solution/debugging model settings
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
@@ -89,7 +88,7 @@ function App() {
       try {
         const hasKey = await window.electronAPI.checkApiKey()
         setHasApiKey(hasKey)
-        
+
         // If no API key is found, show the settings dialog after a short delay
         if (!hasKey) {
           setTimeout(() => {
@@ -100,7 +99,7 @@ function App() {
         console.error("Failed to check API key:", error)
       }
     }
-    
+
     if (isInitialized) {
       checkApiKey()
     }
@@ -114,12 +113,12 @@ function App() {
         // Find both native select elements and custom dropdowns
         const selectElements = document.querySelectorAll('select');
         const customDropdowns = document.querySelectorAll('.dropdown-trigger, [role="combobox"], button:has(.dropdown)');
-        
+
         // Enable native selects
         selectElements.forEach(dropdown => {
           dropdown.disabled = false;
         });
-        
+
         // Enable custom dropdowns by removing any disabled attributes
         customDropdowns.forEach(dropdown => {
           if (dropdown instanceof HTMLElement) {
@@ -127,10 +126,10 @@ function App() {
             dropdown.setAttribute('aria-disabled', 'false');
           }
         });
-        
+
         console.log(`Enabled ${selectElements.length} select elements and ${customDropdowns.length} custom dropdowns`);
       }, 1000);
-      
+
       return () => clearTimeout(timer);
     }
   }, [isInitialized]);
@@ -141,7 +140,7 @@ function App() {
       console.log("Show settings dialog requested");
       setIsSettingsOpen(true);
     });
-    
+
     return () => {
       unsubscribeSettings();
     };
@@ -154,20 +153,20 @@ function App() {
       try {
         // Set unlimited credits
         updateCredits()
-        
+
         // Load config including language and model settings
         const config = await window.electronAPI.getConfig()
-        
+
         // Load language preference
         if (config && config.language) {
           updateLanguage(config.language)
         } else {
           updateLanguage("python")
         }
-        
+
         // Model settings are now managed through the settings dialog
         // and stored in config as extractionModel, solutionModel, and debuggingModel
-        
+
         markInitialized()
       } catch (error) {
         console.error("Failed to initialize app:", error)
@@ -176,7 +175,7 @@ function App() {
         markInitialized()
       }
     }
-    
+
     initializeApp()
 
     // Event listeners for process events
@@ -186,11 +185,10 @@ function App() {
         "Your OpenAI API key appears to be invalid or has insufficient credits",
         "error"
       )
-      setApiKeyDialogOpen(true)
     }
 
     // Setup API key invalid listener
-    window.electronAPI.onApiKeyInvalid(onApiKeyInvalid)
+    const unsubscribeApiKeyInvalid = window.electronAPI.onApiKeyInvalid(onApiKeyInvalid)
 
     // Define a no-op handler for solution success
     const unsubscribeSolutionSuccess = window.electronAPI.onSolutionSuccess(
@@ -202,7 +200,7 @@ function App() {
 
     // Cleanup function
     return () => {
-      window.electronAPI.removeListener("API_KEY_INVALID", onApiKeyInvalid)
+      unsubscribeApiKeyInvalid()
       unsubscribeSolutionSuccess()
       window.__IS_INITIALIZED__ = false
       setIsInitialized(false)
@@ -214,27 +212,11 @@ function App() {
     console.log('Opening settings dialog');
     setIsSettingsOpen(true);
   }, []);
-  
+
   const handleCloseSettings = useCallback((open: boolean) => {
     console.log('Settings dialog state changed:', open);
     setIsSettingsOpen(open);
   }, []);
-
-  const handleApiKeySave = useCallback(async (apiKey: string) => {
-    try {
-      await window.electronAPI.updateConfig({ apiKey })
-      setHasApiKey(true)
-      showToast("Success", "API key saved successfully", "success")
-      
-      // Reload app after a short delay to reinitialize with the new API key
-      setTimeout(() => {
-        window.location.reload()
-      }, 1500)
-    } catch (error) {
-      console.error("Failed to save API key:", error)
-      showToast("Error", "Failed to save API key", "error")
-    }
-  }, [showToast])
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -263,13 +245,13 @@ function App() {
             )}
             <UpdateNotification />
           </div>
-          
+
           {/* Settings Dialog */}
-          <SettingsDialog 
-            open={isSettingsOpen} 
-            onOpenChange={handleCloseSettings} 
+          <SettingsDialog
+            open={isSettingsOpen}
+            onOpenChange={handleCloseSettings}
           />
-          
+
           <Toast
             open={toastState.open}
             onOpenChange={(open) =>

@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef } from "react"
 import { useQuery } from "@tanstack/react-query"
-import ScreenshotQueue from "../components/Queue/ScreenshotQueue"
+import React, { useEffect, useRef, useState } from "react"
 import QueueCommands from "../components/Queue/QueueCommands"
+import ScreenshotQueue from "../components/Queue/ScreenshotQueue"
 
 import { useToast } from "../contexts/toast"
 import { Screenshot } from "../types/screenshots"
@@ -37,7 +37,6 @@ const Queue: React.FC<QueueProps> = ({
 
   const {
     data: screenshots = [],
-    isLoading,
     refetch
   } = useQuery<Screenshot[]>({
     queryKey: ["screenshots"],
@@ -95,7 +94,6 @@ const Queue: React.FC<QueueProps> = ({
       window.electronAPI.onResetView(() => refetch()),
       window.electronAPI.onDeleteLastScreenshot(async () => {
         if (screenshots.length > 0) {
-          const lastScreenshot = screenshots[screenshots.length - 1];
           await handleDeleteScreenshot(screenshots.length - 1);
           // Toast removed as requested
         } else {
@@ -132,12 +130,8 @@ const Queue: React.FC<QueueProps> = ({
     setTooltipHeight(height)
   }
 
-  const handleOpenSettings = () => {
-    window.electronAPI.openSettingsPortal();
-  };
-  
   return (
-    <div ref={contentRef} className={`bg-transparent w-1/2`}>
+    <div ref={contentRef} className="bg-transparent w-1/2">
       <div className="px-4 py-3">
         <div className="space-y-3 w-fit">
           <ScreenshotQueue

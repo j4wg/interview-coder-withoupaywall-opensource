@@ -1,16 +1,15 @@
-import React, { useState, useEffect, useRef } from "react"
+import React, { useEffect, useRef, useState } from "react"
 import { useToast } from "../../contexts/toast"
-import { Screenshot } from "../../types/screenshots"
 import { supabase } from "../../lib/supabase"
-import { LanguageSelector } from "../shared/LanguageSelector"
+import { Screenshot } from "../../types/screenshots"
 import { COMMAND_KEY } from "../../utils/platform"
+import { LanguageSelector } from "../shared/LanguageSelector"
 
 export interface SolutionCommandsProps {
   onTooltipVisibilityChange: (visible: boolean, height: number) => void
   isProcessing: boolean
   screenshots?: Screenshot[]
   extraScreenshots?: Screenshot[]
-  credits: number
   currentLanguage: string
   setLanguage: (language: string) => void
 }
@@ -33,7 +32,6 @@ const SolutionCommands: React.FC<SolutionCommandsProps> = ({
   onTooltipVisibilityChange,
   isProcessing,
   extraScreenshots = [],
-  credits,
   currentLanguage,
   setLanguage
 }) => {

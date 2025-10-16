@@ -1,13 +1,15 @@
-import { app, BrowserWindow, screen, shell, ipcMain } from "electron"
-import path from "path"
+import * as dotenv from "dotenv"
+import { app, BrowserWindow, screen, shell } from "electron"
 import fs from "fs"
+import path from "path"
+import { IProblemStatementData } from "../src/types/solutions"
+import { initAutoUpdater } from "./autoUpdater"
+import { configHelper } from "./ConfigHelper"
 import { initializeIpcHandlers } from "./ipcHandlers"
 import { ProcessingHelper } from "./ProcessingHelper"
 import { ScreenshotHelper } from "./ScreenshotHelper"
 import { ShortcutsHelper } from "./shortcuts"
-import { initAutoUpdater } from "./autoUpdater"
-import { configHelper } from "./ConfigHelper"
-import * as dotenv from "dotenv"
+
 
 // Constants
 const isDev = process.env.NODE_ENV === "development"
@@ -32,7 +34,7 @@ const state = {
 
   // View and state management
   view: "queue" as "queue" | "solutions" | "debug",
-  problemInfo: null as any,
+  problemInfo: null,
   hasDebugged: false,
 
   // Processing events
@@ -57,8 +59,8 @@ export interface IProcessingHelperDeps {
   getMainWindow: () => BrowserWindow | null
   getView: () => "queue" | "solutions" | "debug"
   setView: (view: "queue" | "solutions" | "debug") => void
-  getProblemInfo: () => any
-  setProblemInfo: (info: any) => void
+  getProblemInfo: () => IProblemStatementData
+  setProblemInfo: (info: IProblemStatementData) => void
   getScreenshotQueue: () => string[]
   getExtraScreenshotQueue: () => string[]
   clearQueues: () => void
@@ -178,7 +180,7 @@ const gotTheLock = app.requestSingleInstanceLock()
 if (!gotTheLock) {
   app.quit()
 } else {
-  app.on("second-instance", (event, commandLine) => {
+  app.on("second-instance", () => {
     // Someone tried to run a second instance, we should focus our window.
     if (state.mainWindow) {
       if (state.mainWindow.isMinimized()) state.mainWindow.restore()
@@ -278,7 +280,7 @@ async function createWindow(): Promise<void> {
     // In production, load from the built files
     const indexPath = path.join(__dirname, "../dist/index.html")
     console.log("Loading production build:", indexPath)
-    
+
     if (fs.existsSync(indexPath)) {
       state.mainWindow.loadFile(indexPath)
     } else {
@@ -346,15 +348,15 @@ async function createWindow(): Promise<void> {
   state.currentX = bounds.x
   state.currentY = bounds.y
   state.isWindowVisible = true
-  
+
   // Set opacity based on user preferences or hide initially
   // Ensure the window is visible for the first launch or if opacity > 0.1
   const savedOpacity = configHelper.getOpacity();
   console.log(`Initial opacity from config: ${savedOpacity}`);
-  
+
   // Always make sure window is shown first
   state.mainWindow.showInactive(); // Use showInactive for consistency
-  
+
   if (savedOpacity <= 0.1) {
     console.log('Initial opacity too low, setting to 0 and hiding window');
     state.mainWindow.setOpacity(0);
@@ -510,26 +512,26 @@ async function initializeApp() {
     const sessionPath = path.join(appDataPath, 'session')
     const tempPath = path.join(appDataPath, 'temp')
     const cachePath = path.join(appDataPath, 'cache')
-    
+
     // Create directories if they don't exist
     for (const dir of [appDataPath, sessionPath, tempPath, cachePath]) {
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true })
       }
     }
-    
+
     app.setPath('userData', appDataPath)
-    app.setPath('sessionData', sessionPath)      
+    app.setPath('sessionData', sessionPath)
     app.setPath('temp', tempPath)
     app.setPath('cache', cachePath)
-      
+
     loadEnvVariables()
-    
+
     // Ensure a configuration file exists
     if (!configHelper.hasApiKey()) {
       console.log("No API key found in configuration. User will need to set up.")
     }
-    
+
     initializeHelpers()
     initializeIpcHandlers({
       getMainWindow,
@@ -584,7 +586,7 @@ app.on("open-url", (event, url) => {
 // Handle second instance (removed auth callback handling)
 app.on("second-instance", (event, commandLine) => {
   console.log("second-instance event received:", commandLine)
-  
+
   // Focus or create the main window
   if (!state.mainWindow) {
     createWindow()
@@ -630,11 +632,11 @@ function getScreenshotHelper(): ScreenshotHelper | null {
   return state.screenshotHelper
 }
 
-function getProblemInfo(): any {
+function getProblemInfo(): IProblemStatementData {
   return state.problemInfo
 }
 
-function setProblemInfo(problemInfo: any): void {
+function setProblemInfo(problemInfo: IProblemStatementData): void {
   state.problemInfo = problemInfo
 }
 
@@ -687,28 +689,8 @@ function getHasDebugged(): boolean {
 
 // Export state and functions for other modules
 export {
-  state,
-  createWindow,
-  hideMainWindow,
-  showMainWindow,
-  toggleMainWindow,
-  setWindowDimensions,
-  moveWindowHorizontal,
-  moveWindowVertical,
-  getMainWindow,
-  getView,
-  setView,
-  getScreenshotHelper,
-  getProblemInfo,
-  setProblemInfo,
-  getScreenshotQueue,
-  getExtraScreenshotQueue,
-  clearQueues,
-  takeScreenshot,
-  getImagePreview,
-  deleteScreenshot,
-  setHasDebugged,
-  getHasDebugged
+  clearQueues, createWindow, deleteScreenshot, getExtraScreenshotQueue, getHasDebugged, getImagePreview, getMainWindow, getProblemInfo, getScreenshotHelper, getScreenshotQueue, getView, hideMainWindow, moveWindowHorizontal,
+  moveWindowVertical, setHasDebugged, setProblemInfo, setView, setWindowDimensions, showMainWindow, state, takeScreenshot, toggleMainWindow
 }
 
 app.whenReady().then(initializeApp)

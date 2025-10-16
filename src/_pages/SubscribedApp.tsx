@@ -57,7 +57,7 @@ const SubscribedApp: React.FC<SubscribedAppProps> = ({
 
     // Force initial dimension update immediately
     updateDimensions()
-    
+
     // Set a fallback timer to ensure dimensions are set even if content isn't fully loaded
     const fallbackTimer = setTimeout(() => {
       window.electronAPI?.updateContentDimensions({ width: 800, height: 600 })
@@ -119,7 +119,7 @@ const SubscribedApp: React.FC<SubscribedAppProps> = ({
       window.electronAPI.onResetView(() => {
         queryClient.setQueryData(["problem_statement"], null)
       }),
-      window.electronAPI.onProblemExtracted((data: any) => {
+      window.electronAPI.onProblemExtracted((data) => {
         if (view === "queue") {
           queryClient.invalidateQueries({
             queryKey: ["problem_statement"]
@@ -146,7 +146,6 @@ const SubscribedApp: React.FC<SubscribedAppProps> = ({
       ) : view === "solutions" ? (
         <Solutions
           setView={setView}
-          credits={credits}
           currentLanguage={currentLanguage}
           setLanguage={setLanguage}
         />
