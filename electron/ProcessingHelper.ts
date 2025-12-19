@@ -604,7 +604,7 @@ export class ProcessingHelper {
           ];
 
           const response = await this.anthropicClient.messages.create({
-            model: config.extractionModel || "claude-3-7-sonnet-20250219",
+            model: config.extractionModel || "claude-sonnet-4-5-20250929",
             max_tokens: 4000,
             messages: messages,
             temperature: 0.2
@@ -858,7 +858,7 @@ Your solution should be efficient, well-commented, and handle edge cases.
 
           // Send to Anthropic API
           const response = await this.anthropicClient.messages.create({
-            model: config.solutionModel || "claude-3-7-sonnet-20250219",
+            model: config.solutionModel || "claude-sonnet-4-5-20250929",
             max_tokens: 4000,
             messages: messages,
             temperature: 0.2
@@ -1216,7 +1216,7 @@ If you include code examples, use proper markdown code blocks with language spec
           }
 
           const response = await this.anthropicClient.messages.create({
-            model: config.debuggingModel || "claude-3-7-sonnet-20250219",
+            model: config.debuggingModel || "claude-sonnet-4-5-20250929",
             max_tokens: 4000,
             messages: messages,
             temperature: 0.2
@@ -1315,3 +1315,5 @@ If you include code examples, use proper markdown code blocks with language spec
     }
   }
 }
+
+

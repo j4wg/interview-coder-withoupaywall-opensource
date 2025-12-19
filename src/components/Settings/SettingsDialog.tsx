@@ -62,18 +62,16 @@ const modelCategories: ModelCategory[] = [
     ],
     anthropicModels: [
       {
-        id: "claude-3-7-sonnet-20250219",
-        name: "Claude 3.7 Sonnet",
+        id: "claude-sonnet-4-5-20250929", name: "Claude Sonnet 4.5",
         description: "Best overall performance for problem extraction"
       },
       {
-        id: "claude-3-5-sonnet-20241022",
-        name: "Claude 3.5 Sonnet",
+        id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4",
         description: "Balanced performance and speed"
       },
       {
-        id: "claude-3-opus-20240229",
-        name: "Claude 3 Opus",
+        id: "claude-opus-4-20250514",
+        name: "Claude Opus 4",
         description: "Top-level intelligence, fluency, and understanding"
       }
     ]
@@ -108,18 +106,16 @@ const modelCategories: ModelCategory[] = [
     ],
     anthropicModels: [
       {
-        id: "claude-3-7-sonnet-20250219",
-        name: "Claude 3.7 Sonnet",
+        id: "claude-sonnet-4-5-20250929", name: "Claude Sonnet 4.5",
         description: "Strong overall performance for coding tasks"
       },
       {
-        id: "claude-3-5-sonnet-20241022",
-        name: "Claude 3.5 Sonnet",
+        id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4",
         description: "Balanced performance and speed"
       },
       {
-        id: "claude-3-opus-20240229",
-        name: "Claude 3 Opus",
+        id: "claude-opus-4-20250514",
+        name: "Claude Opus 4",
         description: "Top-level intelligence, fluency, and understanding"
       }
     ]
@@ -154,18 +150,16 @@ const modelCategories: ModelCategory[] = [
     ],
     anthropicModels: [
       {
-        id: "claude-3-7-sonnet-20250219",
-        name: "Claude 3.7 Sonnet",
+        id: "claude-sonnet-4-5-20250929", name: "Claude Sonnet 4.5",
         description: "Best for analyzing code and error messages"
       },
       {
-        id: "claude-3-5-sonnet-20241022",
-        name: "Claude 3.5 Sonnet",
+        id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4",
         description: "Balanced performance and speed"
       },
       {
-        id: "claude-3-opus-20240229",
-        name: "Claude 3 Opus",
+        id: "claude-opus-4-20250514",
+        name: "Claude Opus 4",
         description: "Top-level intelligence, fluency, and understanding"
       }
     ]
@@ -584,3 +578,5 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
     </Dialog>
   );
 }
+
+
