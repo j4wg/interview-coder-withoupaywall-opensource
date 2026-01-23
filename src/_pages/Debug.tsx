@@ -1,8 +1,12 @@
 // Debug.tsx
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import React, { useEffect, useRef, useState } from "react"
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter"
-import { dracula } from "react-syntax-highlighter/dist/esm/styles/prism"
+import React, { useEffect, useRef, useState, lazy, Suspense } from "react"
+// Lazy load syntax highlighter to reduce initial bundle size
+const SyntaxHighlighter = lazy(() => 
+  import("react-syntax-highlighter").then(module => ({ 
+    default: module.Prism 
+  }))
+)
 import ScreenshotQueue from "../components/Queue/ScreenshotQueue"
 import SolutionCommands from "../components/Solutions/SolutionCommands"
 import { Screenshot } from "../types/screenshots"
@@ -32,10 +36,20 @@ const CodeSection = ({
       </div>
     ) : (
       <div className="w-full">
-        <SyntaxHighlighter
-          showLineNumbers
-          language={currentLanguage == "golang" ? "go" : currentLanguage}
-          style={dracula}
+        <Suspense fallback={<div className="text-white/60 text-sm">Loading syntax highlighter...</div>}>
+          <SyntaxHighlighter
+            showLineNumbers
+            language={currentLanguage == "golang" ? "go" : currentLanguage}
+            style={(() => {
+              // Dynamically import style to reduce initial bundle size
+              // This will be code-split by Vite
+              try {
+                const styleModule = require("react-syntax-highlighter/dist/esm/styles/prism")
+                return styleModule.dracula || {}
+              } catch {
+                return {}
+              }
+            })()}
           customStyle={{
             maxWidth: "100%",
             margin: 0,
@@ -47,7 +61,8 @@ const CodeSection = ({
           wrapLongLines={true}
         >
           {code as string}
-        </SyntaxHighlighter>
+          </SyntaxHighlighter>
+        </Suspense>
       </div>
     )}
   </div>

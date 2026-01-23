@@ -56,6 +56,7 @@ All it takes is modest JavaScript/TypeScript knowledge and understanding of the 
 - 🤖 AI-Powered Analysis: Automatically extracts and analyzes coding problems using GPT-4o
 - 💡 Solution Generation: Get detailed explanations and solutions with time/space complexity analysis
 - 🔧 Real-time Debugging: Debug your code with AI assistance and structured feedback
+- 🎙️ Speech Recognition Helper: Record and transcribe interview conversations with AI-powered answer suggestions
 - 🎨 Advanced Window Management: Freely move, resize, change opacity, and zoom the window
 - 🔄 Model Selection: Choose between GPT-4o and GPT-4o-mini for different processing stages
 - 🔒 Privacy-Focused: Your API key and data never leave your computer except for OpenAI API calls
@@ -70,6 +71,7 @@ The application uses unidentifiable global keyboard shortcuts that won't be dete
 - Delete Last Screenshot: [Control or Cmd + L]
 - Process Screenshots: [Control or Cmd + Enter]
 - Start New Problem: [Control or Cmd + R]
+- Toggle Recording: [Control or Cmd + M] (Speech Recognition Helper)
 - Quit: [Control or Cmd + Q]
 - Decrease Opacity: [Control or Cmd + []
 - Increase Opacity: [Control or Cmd + ]]
@@ -96,7 +98,7 @@ Note: The application is **NOT** invisible to:
 
 - Node.js (v16 or higher)
 - npm or bun package manager
-- OpenAI API Key
+- OpenAI API Key (required for all AI features including speech recognition)
 - Screen Recording Permission for Terminal/IDE
   - On macOS:
     1. Go to System Preferences > Security & Privacy > Privacy > Screen Recording
@@ -106,6 +108,14 @@ Note: The application is **NOT** invisible to:
     - No additional permissions needed
   - On Linux:
     - May require `xhost` access depending on your distribution
+- Microphone Permission (required for Speech Recognition Helper)
+  - On macOS:
+    1. Go to System Preferences > Security & Privacy > Privacy > Microphone
+    2. Ensure that CodeInterviewAssist has microphone permission enabled
+  - On Windows:
+    - Windows will prompt for microphone access when first using the feature
+  - On Linux:
+    - May require PulseAudio or ALSA configuration depending on your distribution
 
 ## Running the Application
 
@@ -201,6 +211,9 @@ The packaged applications will be available in the `release` directory.
 | Multi-language Support | ✅ | ✅ |
 | Time/Space Complexity Analysis | ✅ | ✅ |
 | Window Management | ✅ | ✅ |
+| Speech Recognition | ✅ | ✅ (OpenAI Whisper) |
+| AI Answer Suggestions | ✅ | ✅ (Context-aware) |
+| Conversation History | ✅ | ✅ |
 | Auth System | Required | None (Simplified) |
 | Payment Processing | Required | None (Use your own API key) |
 | Privacy | Server-processed | 100% Local Processing |
@@ -215,7 +228,8 @@ The packaged applications will be available in the `release` directory.
 - Vite
 - Tailwind CSS
 - Radix UI Components
-- OpenAI API
+- OpenAI API (GPT-4o, GPT-4o-mini, Whisper)
+- Web Audio API (for speech recording)
 
 ## How It Works
 
@@ -248,12 +262,27 @@ The packaged applications will be available in the `release` directory.
    - Window remains invisible to specified screen sharing applications
    - Start a new problem using [Control or Cmd + R]
 
-6. **Language Selection
+6. **Language Selection**
 
    - Easily switch between programming languages with a single click
    - Use arrow keys for keyboard navigation through available languages
    - The system dynamically adapts to any languages added or removed from the codebase
    - Your language preference is saved between sessions
+
+7. **Speech Recognition Helper**
+
+   - Record interview conversations using your microphone with [Control or Cmd + M]
+   - Automatically transcribe audio to text using OpenAI's Whisper API
+   - Toggle between "Interviewer" and "You" (Interviewee) speaker modes
+   - Maintain conversation history with timestamps for both speakers
+   - Get AI-powered answer suggestions when the interviewer asks questions
+   - Suggestions are context-aware and consider:
+     - Previous conversation history
+     - Your previous answers for consistency
+     - Screenshot context (if coding problems are captured)
+   - View real-time transcription and suggestions in the Conversations view
+   - All audio processing happens locally; only transcription requests are sent to OpenAI
+   - Supports both coding interviews (with screenshot context) and behavioral interviews
 
 ## Adding More AI Models
 
@@ -272,9 +301,28 @@ To add new models, simply extend the API integration in `electron/ProcessingHelp
   - Problem Extraction: Analyzes screenshots to understand the coding problem
   - Solution Generation: Creates optimized solutions with explanations
   - Debugging: Provides detailed analysis of errors and improvement suggestions
+- **Speech Recognition Model**: Configure the speech-to-text model for transcription:
+  - Currently supports OpenAI's Whisper-1 model
+  - Only available when using OpenAI as the API provider
+  - Configured in Settings > Speech Recognition Model
 - **Language**: Select your preferred programming language for solutions
 - **Window Controls**: Adjust opacity, position, and zoom level using keyboard shortcuts
 - **All settings are stored locally** in your user data directory and persist between sessions
+
+### Speech Recognition Helper Configuration
+
+The Speech Recognition Helper uses OpenAI's Whisper API for transcription. To use this feature:
+
+1. **API Provider**: Must be set to OpenAI (not Gemini or Anthropic)
+2. **Speech Recognition Model**: Select "whisper-1" in Settings
+3. **Microphone Access**: Grant microphone permissions when prompted
+4. **Usage**: 
+   - Press [Control or Cmd + M] to start/stop recording
+   - Toggle speaker mode between Interviewer and You (Interviewee)
+   - View transcribed conversation and AI suggestions in the Conversations view
+   - Suggestions automatically appear when interviewer questions are detected
+
+**Note**: Speech recognition requires an active OpenAI API key with sufficient credits. Audio is processed locally and only sent to OpenAI for transcription. Conversation history is stored locally and never transmitted except for transcription requests.
 
 ## License
 

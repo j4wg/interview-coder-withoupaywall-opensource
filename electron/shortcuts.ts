@@ -106,6 +106,39 @@ export class ShortcutsHelper {
       this.deps.toggleMainWindow()
     })
 
+    // Recording toggle (Ctrl/Cmd+M)
+    globalShortcut.register("CommandOrControl+M", async () => {
+      const mainWindow = this.deps.getMainWindow();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        console.log("Command/Ctrl + M pressed. Toggling recording.");
+        try {
+          await mainWindow.webContents.executeJavaScript(`
+            (async () => {
+              const event = new CustomEvent('toggle-recording');
+              window.dispatchEvent(event);
+            })();
+          `);
+        } catch (error) {
+          console.error("Error toggling recording:", error);
+        }
+      }
+    });
+
+    // Speaker toggle (Ctrl/Cmd+Shift+M)
+    globalShortcut.register("CommandOrControl+Shift+M", async () => {
+      const mainWindow = this.deps.getMainWindow();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        console.log("Command/Ctrl + Shift + M pressed. Toggling speaker.");
+        try {
+          await mainWindow.webContents.executeJavaScript(`
+            window.electronAPI.toggleSpeaker();
+          `);
+        } catch (error) {
+          console.error("Error toggling speaker:", error);
+        }
+      }
+    });
+
     globalShortcut.register("CommandOrControl+Q", () => {
       console.log("Command/Ctrl + Q pressed. Quitting application.")
       app.quit()

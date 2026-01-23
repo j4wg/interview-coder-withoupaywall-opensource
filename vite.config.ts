@@ -14,8 +14,8 @@ export default defineConfig({
         vite: {
           build: {
             outDir: "dist-electron",
-            sourcemap: true,
-            minify: false,
+            sourcemap: process.env.NODE_ENV === "development",
+            minify: process.env.NODE_ENV === "production" ? "esbuild" : false,
             rollupOptions: {
               external: ["electron"]
             }
@@ -28,7 +28,8 @@ export default defineConfig({
         vite: {
           build: {
             outDir: "dist-electron",
-            sourcemap: true,
+            sourcemap: process.env.NODE_ENV === "development",
+            minify: process.env.NODE_ENV === "production" ? "esbuild" : false,
             rollupOptions: {
               external: ["electron"]
             }
@@ -48,7 +49,18 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
-    sourcemap: true
+    sourcemap: process.env.NODE_ENV === "development",
+    minify: process.env.NODE_ENV === "production" ? "esbuild" : false,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+          'query-vendor': ['@tanstack/react-query'],
+          'ui-vendor': ['@radix-ui/react-dialog', '@radix-ui/react-toast', '@radix-ui/react-label', '@radix-ui/react-slot'],
+          'icons': ['lucide-react']
+        }
+      }
+    }
   },
   resolve: {
     alias: {

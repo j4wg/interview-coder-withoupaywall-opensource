@@ -348,4 +348,146 @@ export function initializeIpcHandlers(deps: IIpcHandlerDeps): void {
       return { success: false, error: "Failed to delete last screenshot" }
     }
   })
+
+  // ============================================
+  // Conversation & Transcription Handlers
+  // ============================================
+
+  // Transcription handler - receives audio buffer from renderer
+  ipcMain.handle("transcribe-audio", async (_event, audioBuffer: ArrayBuffer, mimeType: string) => {
+    try {
+      if (!deps.transcriptionHelper) {
+        return { success: false, error: "Transcription helper not initialized" };
+      }
+
+      const buffer = Buffer.from(audioBuffer);
+      const result = await deps.transcriptionHelper.transcribeAudio(buffer, mimeType);
+      return { success: true, result };
+    } catch (error: any) {
+      console.error("Transcription error:", error);
+      return { success: false, error: error.message || "Transcription failed" };
+    }
+  })
+
+  // Conversation message handlers
+  ipcMain.handle("add-conversation-message", (_event, text: string, speaker?: string) => {
+    try {
+      if (!deps.conversationManager) {
+        return { success: false, error: "Conversation manager not initialized" };
+      }
+
+      const message = deps.conversationManager.addMessage(text, speaker as any);
+      return { success: true, message };
+    } catch (error: any) {
+      console.error("Error adding message:", error);
+      return { success: false, error: error.message || "Failed to add message" };
+    }
+  })
+
+  ipcMain.handle("toggle-speaker", () => {
+    try {
+      if (!deps.conversationManager) {
+        return { success: false, error: "Conversation manager not initialized" };
+      }
+
+      const speaker = deps.conversationManager.toggleSpeaker();
+      return { success: true, speaker };
+    } catch (error: any) {
+      console.error("Error toggling speaker:", error);
+      return { success: false, error: error.message || "Failed to toggle speaker" };
+    }
+  })
+
+  ipcMain.handle("get-conversation", () => {
+    try {
+      if (!deps.conversationManager) {
+        return { success: false, error: "Conversation manager not initialized", messages: [] };
+      }
+
+      const messages = deps.conversationManager.getMessages();
+      return { success: true, messages };
+    } catch (error: any) {
+      console.error("Error getting conversation:", error);
+      return { success: false, error: error.message || "Failed to get conversation", messages: [] };
+    }
+  })
+
+  ipcMain.handle("clear-conversation", () => {
+    try {
+      if (!deps.conversationManager) {
+        return { success: false, error: "Conversation manager not initialized" };
+      }
+
+      deps.conversationManager.clearConversation();
+      return { success: true };
+    } catch (error: any) {
+      console.error("Error clearing conversation:", error);
+      return { success: false, error: error.message || "Failed to clear conversation" };
+    }
+  })
+
+  ipcMain.handle("update-conversation-message", (_event, messageId: string, newText: string) => {
+    try {
+      if (!deps.conversationManager) {
+        return { success: false, error: "Conversation manager not initialized" };
+      }
+
+      const success = deps.conversationManager.updateMessage(messageId, newText);
+      return { success };
+    } catch (error: any) {
+      console.error("Error updating message:", error);
+      return { success: false, error: error.message || "Failed to update message" };
+    }
+  })
+
+  // AI suggestion handler
+  ipcMain.handle("get-answer-suggestions", async (_event, question: string, screenshotContext?: string, candidateProfile?: any) => {
+    try {
+      if (!deps.answerAssistant || !deps.conversationManager) {
+        return { success: false, error: "Answer assistant or conversation manager not initialized" };
+      }
+
+      const suggestions = await deps.answerAssistant.generateAnswerSuggestions(
+        question,
+        deps.conversationManager,
+        screenshotContext,
+        candidateProfile
+      );
+      return { success: true, suggestions };
+    } catch (error: any) {
+      console.error("Error generating suggestions:", error);
+      return { success: false, error: error.message || "Failed to generate suggestions" };
+    }
+  })
+
+  // Event listeners for conversation events
+  if (deps.conversationManager) {
+    deps.conversationManager.on('message-added', (message) => {
+      const mainWindow = deps.getMainWindow();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('conversation-message-added', message);
+      }
+    });
+
+    deps.conversationManager.on('speaker-changed', (speaker) => {
+      const mainWindow = deps.getMainWindow();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('speaker-changed', speaker);
+      }
+    });
+
+    deps.conversationManager.on('message-updated', (message) => {
+      const mainWindow = deps.getMainWindow();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('conversation-message-updated', message);
+      }
+    });
+
+    deps.conversationManager.on('conversation-cleared', () => {
+      const mainWindow = deps.getMainWindow();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('conversation-cleared');
+      }
+    });
+  }
 }

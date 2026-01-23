@@ -1,8 +1,13 @@
 // Solutions.tsx
-import React, { useState, useEffect, useRef } from "react"
+import React, { useState, useEffect, useRef, lazy, Suspense } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter"
-import { dracula } from "react-syntax-highlighter/dist/esm/styles/prism"
+// Dynamic import for syntax highlighter - loaded only when code is displayed
+// This reduces initial bundle size significantly
+const SyntaxHighlighter = lazy(() => 
+  import("react-syntax-highlighter").then(module => ({ 
+    default: module.Prism 
+  }))
+)
 
 import ScreenshotQueue from "../components/Queue/ScreenshotQueue"
 
@@ -11,6 +16,7 @@ import SolutionCommands from "../components/Solutions/SolutionCommands"
 import Debug from "./Debug"
 import { useToast } from "../contexts/toast"
 import { COMMAND_KEY } from "../utils/platform"
+import { ConversationSection } from "../components/Conversation/ConversationSection"
 
 export const ContentSection = ({
   title,
@@ -81,10 +87,21 @@ const SolutionSection = ({
           >
             {copied ? "Copied!" : "Copy"}
           </button>
-          <SyntaxHighlighter
-            showLineNumbers
-            language={currentLanguage == "golang" ? "go" : currentLanguage}
-            style={dracula}
+          <Suspense fallback={<div className="text-white/60 text-sm">Loading syntax highlighter...</div>}>
+            <SyntaxHighlighter
+              showLineNumbers
+              language={currentLanguage == "golang" ? "go" : currentLanguage}
+              style={(() => {
+                // Dynamically import style to reduce initial bundle size
+                // This will be code-split by Vite
+                try {
+                  // Use dynamic import for better tree-shaking
+                  const styleModule = require("react-syntax-highlighter/dist/esm/styles/prism")
+                  return styleModule.dracula || {}
+                } catch {
+                  return {}
+                }
+              })()}
             customStyle={{
               maxWidth: "100%",
               margin: 0,
@@ -96,7 +113,8 @@ const SolutionSection = ({
             wrapLongLines={true}
           >
             {content as string}
-          </SyntaxHighlighter>
+            </SyntaxHighlighter>
+          </Suspense>
         </div>
       )}
     </div>
@@ -499,6 +517,11 @@ const Solutions: React.FC<SolutionsProps> = ({
             currentLanguage={currentLanguage}
             setLanguage={setLanguage}
           />
+
+          {/* Conversation Section */}
+          <div className="bg-black/60 rounded-md p-4" style={{ height: '350px', display: 'flex', flexDirection: 'column' }}>
+            <ConversationSection />
+          </div>
 
           {/* Main Content - Modified width constraints */}
           <div className="w-full text-sm text-black bg-black/60 rounded-md">

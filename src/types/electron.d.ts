@@ -54,13 +54,26 @@ export interface ElectronAPI {
   getPlatform: () => string
   
   // New methods for OpenAI integration
-  getConfig: () => Promise<{ apiKey: string; model: string }>
-  updateConfig: (config: { apiKey?: string; model?: string }) => Promise<boolean>
+  getConfig: () => Promise<{ apiKey: string; model: string; apiProvider?: string; extractionModel?: string; solutionModel?: string; debuggingModel?: string; answerModel?: string; speechRecognitionModel?: string; candidateProfile?: any }>
+  updateConfig: (config: { apiKey?: string; model?: string; apiProvider?: string; extractionModel?: string; solutionModel?: string; debuggingModel?: string; answerModel?: string; speechRecognitionModel?: string; candidateProfile?: any }) => Promise<boolean>
   checkApiKey: () => Promise<boolean>
   validateApiKey: (apiKey: string) => Promise<{ valid: boolean; error?: string }>
   openLink: (url: string) => void
   onApiKeyInvalid: (callback: () => void) => () => void
   removeListener: (eventName: string, callback: (...args: any[]) => void) => void
+  
+  // Conversation & Transcription methods
+  transcribeAudio: (audioBuffer: ArrayBuffer, mimeType: string) => Promise<{ success: boolean; result?: { text: string; language?: string }; error?: string }>
+  addConversationMessage: (text: string, speaker?: string) => Promise<{ success: boolean; message?: any; error?: string }>
+  toggleSpeaker: () => Promise<{ success: boolean; speaker?: string; error?: string }>
+  getConversation: () => Promise<{ success: boolean; messages?: any[]; error?: string }>
+  clearConversation: () => Promise<{ success: boolean; error?: string }>
+  updateConversationMessage: (messageId: string, newText: string) => Promise<{ success: boolean; error?: string }>
+  getAnswerSuggestions: (question: string, screenshotContext?: string, candidateProfile?: any) => Promise<{ success: boolean; suggestions?: { suggestions: string[]; reasoning: string }; error?: string }>
+  onConversationMessageAdded: (callback: (message: any) => void) => () => void
+  onSpeakerChanged: (callback: (speaker: string) => void) => () => void
+  onConversationMessageUpdated: (callback: (message: any) => void) => () => void
+  onConversationCleared: (callback: () => void) => () => void
 }
 
 declare global {

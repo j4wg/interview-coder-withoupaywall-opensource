@@ -124,8 +124,6 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
     "@electron/notarize": "^2.3.0",
-    "@emotion/react": "^11.11.0",
-    "@emotion/styled": "^11.11.0",
     "@radix-ui/react-dialog": "^1.1.2",
     "@radix-ui/react-label": "^2.1.0",
     "@radix-ui/react-slot": "^1.1.0",
@@ -144,7 +142,6 @@
     "lucide-react": "^0.460.0",
     "openai": "^4.28.4",
     "react": "^18.2.0",
-    "react-code-blocks": "^0.1.6",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.28.1",
     "react-syntax-highlighter": "^15.6.1",
@@ -202,5 +199,8 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
+  },
+  "overrides": {
+    "prismjs": ">=1.30.0"
   }
 }

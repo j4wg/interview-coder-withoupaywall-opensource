@@ -1,4 +1,4 @@
-import SubscribedApp from "./_pages/SubscribedApp"
+import { lazy, Suspense } from "react"
 import { UpdateNotification } from "./components/UpdateNotification"
 import {
   QueryClient,
@@ -14,14 +14,21 @@ import {
 } from "./components/ui/toast"
 import { ToastContext } from "./contexts/toast"
 import { WelcomeScreen } from "./components/WelcomeScreen"
-import { SettingsDialog } from "./components/Settings/SettingsDialog"
+
+// Lazy load heavy components for better code splitting
+const SubscribedApp = lazy(() => import("./_pages/SubscribedApp"))
+const SettingsDialog = lazy(() => 
+  import("./components/Settings/SettingsDialog").then(module => ({ 
+    default: module.SettingsDialog 
+  }))
+)
 
 // Create a React Query client
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 0,
-      gcTime: Infinity,
+      gcTime: 5 * 60 * 1000, // 5 minutes - prevents memory leaks
       retry: 1,
       refetchOnWindowFocus: false
     },
@@ -243,11 +250,20 @@ function App() {
           <div className="relative">
             {isInitialized ? (
               hasApiKey ? (
-                <SubscribedApp
-                  credits={credits}
-                  currentLanguage={currentLanguage}
-                  setLanguage={updateLanguage}
-                />
+                <Suspense fallback={
+                  <div className="min-h-screen bg-black flex items-center justify-center">
+                    <div className="flex flex-col items-center gap-3">
+                      <div className="w-6 h-6 border-2 border-white/20 border-t-white/80 rounded-full animate-spin"></div>
+                      <p className="text-white/60 text-sm">Loading...</p>
+                    </div>
+                  </div>
+                }>
+                  <SubscribedApp
+                    credits={credits}
+                    currentLanguage={currentLanguage}
+                    setLanguage={updateLanguage}
+                  />
+                </Suspense>
               ) : (
                 <WelcomeScreen onOpenSettings={handleOpenSettings} />
               )
@@ -264,11 +280,15 @@ function App() {
             <UpdateNotification />
           </div>
           
-          {/* Settings Dialog */}
-          <SettingsDialog 
-            open={isSettingsOpen} 
-            onOpenChange={handleCloseSettings} 
-          />
+          {/* Settings Dialog - Lazy loaded */}
+          {isSettingsOpen && (
+            <Suspense fallback={null}>
+              <SettingsDialog 
+                open={isSettingsOpen} 
+                onOpenChange={handleCloseSettings} 
+              />
+            </Suspense>
+          )}
           
           <Toast
             open={toastState.open}

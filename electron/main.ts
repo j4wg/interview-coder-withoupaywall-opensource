@@ -29,6 +29,9 @@ const state = {
   screenshotHelper: null as ScreenshotHelper | null,
   shortcutsHelper: null as ShortcutsHelper | null,
   processingHelper: null as ProcessingHelper | null,
+  transcriptionHelper: null as import('./TranscriptionHelper').TranscriptionHelper | null,
+  conversationManager: null as import('./ConversationManager').ConversationManager | null,
+  answerAssistant: null as import('./AnswerAssistant').AnswerAssistant | null,
 
   // View and state management
   view: "queue" as "queue" | "solutions" | "debug",
@@ -70,6 +73,7 @@ export interface IProcessingHelperDeps {
   setHasDebugged: (value: boolean) => void
   getHasDebugged: () => boolean
   PROCESSING_EVENTS: typeof state.PROCESSING_EVENTS
+  getConversationManager?: () => import('./ConversationManager').ConversationManager | null
 }
 
 export interface IShortcutsHelperDeps {
@@ -107,10 +111,13 @@ export interface IIpcHandlerDeps {
   moveWindowRight: () => void
   moveWindowUp: () => void
   moveWindowDown: () => void
+  transcriptionHelper?: import('./TranscriptionHelper').TranscriptionHelper
+  conversationManager?: import('./ConversationManager').ConversationManager
+  answerAssistant?: import('./AnswerAssistant').AnswerAssistant
 }
 
 // Initialize helpers
-function initializeHelpers() {
+async function initializeHelpers() {
   state.screenshotHelper = new ScreenshotHelper(state.view)
   state.processingHelper = new ProcessingHelper({
     getScreenshotHelper,
@@ -127,8 +134,19 @@ function initializeHelpers() {
     deleteScreenshot,
     setHasDebugged,
     getHasDebugged,
-    PROCESSING_EVENTS: state.PROCESSING_EVENTS
+    PROCESSING_EVENTS: state.PROCESSING_EVENTS,
+    getConversationManager: () => state.conversationManager
   } as IProcessingHelperDeps)
+  
+  // Initialize conversation and transcription helpers
+  const { TranscriptionHelper } = await import('./TranscriptionHelper')
+  const { ConversationManager } = await import('./ConversationManager')
+  const { AnswerAssistant } = await import('./AnswerAssistant')
+  
+  state.transcriptionHelper = new TranscriptionHelper()
+  state.conversationManager = new ConversationManager()
+  state.answerAssistant = new AnswerAssistant()
+  
   state.shortcutsHelper = new ShortcutsHelper({
     getMainWindow,
     takeScreenshot,
@@ -530,7 +548,7 @@ async function initializeApp() {
       console.log("No API key found in configuration. User will need to set up.")
     }
     
-    initializeHelpers()
+    await initializeHelpers()
     initializeIpcHandlers({
       getMainWindow,
       setWindowDimensions,
@@ -557,7 +575,10 @@ async function initializeApp() {
           )
         ),
       moveWindowUp: () => moveWindowVertical((y) => y - state.step),
-      moveWindowDown: () => moveWindowVertical((y) => y + state.step)
+      moveWindowDown: () => moveWindowVertical((y) => y + state.step),
+      transcriptionHelper: state.transcriptionHelper,
+      conversationManager: state.conversationManager,
+      answerAssistant: state.answerAssistant
     })
     await createWindow()
     state.shortcutsHelper?.registerGlobalShortcuts()

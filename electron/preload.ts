@@ -205,7 +205,7 @@ const electronAPI = {
   
   // New methods for OpenAI API integration
   getConfig: () => ipcRenderer.invoke("get-config"),
-  updateConfig: (config: { apiKey?: string; model?: string; language?: string; opacity?: number }) => 
+  updateConfig: (config: { apiKey?: string; model?: string; language?: string; opacity?: number; apiProvider?: string; extractionModel?: string; solutionModel?: string; debuggingModel?: string; answerModel?: string; speechRecognitionModel?: string; candidateProfile?: any }) => 
     ipcRenderer.invoke("update-config", config),
   onShowSettings: (callback: () => void) => {
     const subscription = () => callback()
@@ -236,7 +236,61 @@ const electronAPI = {
       ipcRenderer.removeListener("delete-last-screenshot", subscription)
     }
   },
-  deleteLastScreenshot: () => ipcRenderer.invoke("delete-last-screenshot")
+  deleteLastScreenshot: () => ipcRenderer.invoke("delete-last-screenshot"),
+  
+  // ============================================
+  // Conversation & Transcription Methods
+  // ============================================
+  
+  // Transcription
+  transcribeAudio: (audioBuffer: ArrayBuffer, mimeType: string) => 
+    ipcRenderer.invoke("transcribe-audio", audioBuffer, mimeType),
+  
+  // Conversation
+  addConversationMessage: (text: string, speaker?: string) => 
+    ipcRenderer.invoke("add-conversation-message", text, speaker),
+  toggleSpeaker: () => ipcRenderer.invoke("toggle-speaker"),
+  getConversation: () => ipcRenderer.invoke("get-conversation"),
+  clearConversation: () => ipcRenderer.invoke("clear-conversation"),
+  updateConversationMessage: (messageId: string, newText: string) =>
+    ipcRenderer.invoke("update-conversation-message", messageId, newText),
+  
+  // AI suggestions
+  getAnswerSuggestions: (question: string, screenshotContext?: string, candidateProfile?: any) =>
+    ipcRenderer.invoke("get-answer-suggestions", question, screenshotContext, candidateProfile),
+  
+  // Event listeners
+  onConversationMessageAdded: (callback: (message: any) => void) => {
+    const subscription = (_: any, message: any) => callback(message)
+    ipcRenderer.on("conversation-message-added", subscription)
+    return () => {
+      ipcRenderer.removeListener("conversation-message-added", subscription)
+    }
+  },
+  
+  onSpeakerChanged: (callback: (speaker: string) => void) => {
+    const subscription = (_: any, speaker: string) => callback(speaker)
+    ipcRenderer.on("speaker-changed", subscription)
+    return () => {
+      ipcRenderer.removeListener("speaker-changed", subscription)
+    }
+  },
+  
+  onConversationMessageUpdated: (callback: (message: any) => void) => {
+    const subscription = (_: any, message: any) => callback(message)
+    ipcRenderer.on("conversation-message-updated", subscription)
+    return () => {
+      ipcRenderer.removeListener("conversation-message-updated", subscription)
+    }
+  },
+  
+  onConversationCleared: (callback: () => void) => {
+    const subscription = () => callback()
+    ipcRenderer.on("conversation-cleared", subscription)
+    return () => {
+      ipcRenderer.removeListener("conversation-cleared", subscription)
+    }
+  }
 }
 
 // Before exposing the API

@@ -4,27 +4,50 @@ import path from "node:path"
 import { app } from "electron"
 import { EventEmitter } from "events"
 import { OpenAI } from "openai"
+import {
+  APIProvider,
+  DEFAULT_PROVIDER,
+  DEFAULT_MODELS,
+  sanitizeModelSelection,
+} from "../shared/aiModels";
+
+export interface CandidateProfile {
+  name?: string;
+  resume?: string;  // Full resume text
+  jobDescription?: string; // Target role/job description
+}
 
 interface Config {
   apiKey: string;
-  apiProvider: "openai" | "gemini" | "anthropic";  // Added provider selection
+  apiProvider: APIProvider;  // Added provider selection
   extractionModel: string;
   solutionModel: string;
   debuggingModel: string;
+  answerModel: string;  // Model for AI answer suggestions in conversations
+  speechRecognitionModel: string;  // Speech recognition model (Whisper for OpenAI)
   language: string;
   opacity: number;
+  candidateProfile?: CandidateProfile;  // Candidate profile for personalized AI suggestions
 }
 
 export class ConfigHelper extends EventEmitter {
   private configPath: string;
   private defaultConfig: Config = {
     apiKey: "",
-    apiProvider: "gemini", // Default to Gemini
-    extractionModel: "gemini-2.0-flash", // Default to Flash for faster responses
-    solutionModel: "gemini-2.0-flash",
-    debuggingModel: "gemini-2.0-flash",
+    apiProvider: DEFAULT_PROVIDER,
+    extractionModel: DEFAULT_MODELS[DEFAULT_PROVIDER].extractionModel,
+    solutionModel: DEFAULT_MODELS[DEFAULT_PROVIDER].solutionModel,
+    debuggingModel: DEFAULT_MODELS[DEFAULT_PROVIDER].debuggingModel,
+    answerModel: DEFAULT_MODELS[DEFAULT_PROVIDER].answerModel,
+    speechRecognitionModel:
+      DEFAULT_MODELS.openai.speechRecognitionModel || "whisper-1",
     language: "python",
-    opacity: 1.0
+    opacity: 1.0,
+    candidateProfile: {
+      name: "",
+      resume: "",
+      jobDescription: ""
+    }
   };
 
   constructor() {
@@ -56,38 +79,9 @@ export class ConfigHelper extends EventEmitter {
   }
 
   /**
-   * Validate and sanitize model selection to ensure only allowed models are used
+   * Validate and sanitize model selection to ensure only allowed models are used.
+   * Delegates to shared model configuration for single source of truth.
    */
-  private sanitizeModelSelection(model: string, provider: "openai" | "gemini" | "anthropic"): string {
-    if (provider === "openai") {
-      // Only allow gpt-4o and gpt-4o-mini for OpenAI
-      const allowedModels = ['gpt-4o', 'gpt-4o-mini'];
-      if (!allowedModels.includes(model)) {
-        console.warn(`Invalid OpenAI model specified: ${model}. Using default model: gpt-4o`);
-        return 'gpt-4o';
-      }
-      return model;
-    } else if (provider === "gemini")  {
-      // Only allow gemini-1.5-pro and gemini-2.0-flash for Gemini
-      const allowedModels = ['gemini-1.5-pro', 'gemini-2.0-flash'];
-      if (!allowedModels.includes(model)) {
-        console.warn(`Invalid Gemini model specified: ${model}. Using default model: gemini-2.0-flash`);
-        return 'gemini-2.0-flash'; // Changed default to flash
-      }
-      return model;
-    }  else if (provider === "anthropic") {
-      // Only allow Claude models
-      const allowedModels = ['claude-3-7-sonnet-20250219', 'claude-3-5-sonnet-20241022', 'claude-3-opus-20240229'];
-      if (!allowedModels.includes(model)) {
-        console.warn(`Invalid Anthropic model specified: ${model}. Using default model: claude-3-7-sonnet-20250219`);
-        return 'claude-3-7-sonnet-20250219';
-      }
-      return model;
-    }
-    // Default fallback
-    return model;
-  }
-
   public loadConfig(): Config {
     try {
       if (fs.existsSync(this.configPath)) {
@@ -96,18 +90,57 @@ export class ConfigHelper extends EventEmitter {
         
         // Ensure apiProvider is a valid value
         if (config.apiProvider !== "openai" && config.apiProvider !== "gemini"  && config.apiProvider !== "anthropic") {
-          config.apiProvider = "gemini"; // Default to Gemini if invalid
+          config.apiProvider = DEFAULT_PROVIDER; // Default to shared provider if invalid
         }
         
         // Sanitize model selections to ensure only allowed models are used
         if (config.extractionModel) {
-          config.extractionModel = this.sanitizeModelSelection(config.extractionModel, config.apiProvider);
+          config.extractionModel = sanitizeModelSelection(
+            config.extractionModel,
+            config.apiProvider,
+            "extractionModel"
+          );
         }
         if (config.solutionModel) {
-          config.solutionModel = this.sanitizeModelSelection(config.solutionModel, config.apiProvider);
+          config.solutionModel = sanitizeModelSelection(
+            config.solutionModel,
+            config.apiProvider,
+            "solutionModel"
+          );
         }
         if (config.debuggingModel) {
-          config.debuggingModel = this.sanitizeModelSelection(config.debuggingModel, config.apiProvider);
+          config.debuggingModel = sanitizeModelSelection(
+            config.debuggingModel,
+            config.apiProvider,
+            "debuggingModel"
+          );
+        }
+        if (config.answerModel) {
+          config.answerModel = sanitizeModelSelection(
+            config.answerModel,
+            config.apiProvider,
+            "answerModel"
+          );
+        }
+        
+        // Ensure speechRecognitionModel is valid
+        if (config.speechRecognitionModel) {
+          if (config.apiProvider === "openai" && config.speechRecognitionModel !== "whisper-1") {
+            config.speechRecognitionModel = "whisper-1";
+          } else if (config.apiProvider === "gemini") {
+            const allowedGeminiSpeechModels = [
+              "gemini-1.5-flash",
+              "gemini-1.5-pro",
+              "gemini-3-flash-preview",
+              "gemini-3-pro-preview",
+              "gemini-2.0-flash-exp"
+            ];
+            if (!allowedGeminiSpeechModels.includes(config.speechRecognitionModel)) {
+              config.speechRecognitionModel = DEFAULT_MODELS.gemini.speechRecognitionModel || "gemini-3-flash-preview";
+            }
+          }
+        } else if (!config.speechRecognitionModel) {
+          config.speechRecognitionModel = this.defaultConfig.speechRecognitionModel;
         }
         
         return {
@@ -148,7 +181,7 @@ export class ConfigHelper extends EventEmitter {
   public updateConfig(updates: Partial<Config>): Config {
     try {
       const currentConfig = this.loadConfig();
-      let provider = updates.apiProvider || currentConfig.apiProvider;
+      let provider: APIProvider = updates.apiProvider || currentConfig.apiProvider;
       
       // Auto-detect provider based on API key format if a new key is provided
       if (updates.apiKey && !updates.apiProvider) {
@@ -170,30 +203,67 @@ export class ConfigHelper extends EventEmitter {
       
       // If provider is changing, reset models to the default for that provider
       if (updates.apiProvider && updates.apiProvider !== currentConfig.apiProvider) {
-        if (updates.apiProvider === "openai") {
-          updates.extractionModel = "gpt-4o";
-          updates.solutionModel = "gpt-4o";
-          updates.debuggingModel = "gpt-4o";
-        } else if (updates.apiProvider === "anthropic") {
-          updates.extractionModel = "claude-3-7-sonnet-20250219";
-          updates.solutionModel = "claude-3-7-sonnet-20250219";
-          updates.debuggingModel = "claude-3-7-sonnet-20250219";
-        } else {
-          updates.extractionModel = "gemini-2.0-flash";
-          updates.solutionModel = "gemini-2.0-flash";
-          updates.debuggingModel = "gemini-2.0-flash";
+        const defaults = DEFAULT_MODELS[updates.apiProvider];
+        updates.extractionModel = defaults.extractionModel;
+        updates.solutionModel = defaults.solutionModel;
+        updates.debuggingModel = defaults.debuggingModel;
+        updates.answerModel = defaults.answerModel;
+        // Speech recognition supported for OpenAI and Gemini
+        if (defaults.speechRecognitionModel) {
+          updates.speechRecognitionModel = defaults.speechRecognitionModel;
+        }
+      }
+      
+      // Validate speech recognition model
+      if (updates.speechRecognitionModel) {
+        if (provider === "openai" && updates.speechRecognitionModel !== "whisper-1") {
+          console.warn(`Invalid speech recognition model: ${updates.speechRecognitionModel}. Only whisper-1 is supported for OpenAI.`);
+          updates.speechRecognitionModel = "whisper-1";
+        } else if (provider === "gemini") {
+          // Validate Gemini models that support audio understanding
+          const allowedGeminiSpeechModels = [
+            "gemini-1.5-flash",
+            "gemini-1.5-pro",
+            "gemini-3-flash-preview",
+            "gemini-3-pro-preview",
+            "gemini-2.0-flash-exp"
+          ];
+          if (!allowedGeminiSpeechModels.includes(updates.speechRecognitionModel)) {
+            const defaultModel = DEFAULT_MODELS[provider].speechRecognitionModel || "gemini-3-flash-preview";
+            console.warn(`Invalid Gemini speech recognition model: ${updates.speechRecognitionModel}. Using default: ${defaultModel}`);
+            updates.speechRecognitionModel = defaultModel;
+          }
         }
       }
       
       // Sanitize model selections in the updates
       if (updates.extractionModel) {
-        updates.extractionModel = this.sanitizeModelSelection(updates.extractionModel, provider);
+        updates.extractionModel = sanitizeModelSelection(
+          updates.extractionModel,
+          provider,
+          "extractionModel"
+        );
       }
       if (updates.solutionModel) {
-        updates.solutionModel = this.sanitizeModelSelection(updates.solutionModel, provider);
+        updates.solutionModel = sanitizeModelSelection(
+          updates.solutionModel,
+          provider,
+          "solutionModel"
+        );
       }
       if (updates.debuggingModel) {
-        updates.debuggingModel = this.sanitizeModelSelection(updates.debuggingModel, provider);
+        updates.debuggingModel = sanitizeModelSelection(
+          updates.debuggingModel,
+          provider,
+          "debuggingModel"
+        );
+      }
+      if (updates.answerModel) {
+        updates.answerModel = sanitizeModelSelection(
+          updates.answerModel,
+          provider,
+          "answerModel"
+        );
       }
       
       const newConfig = { ...currentConfig, ...updates };
@@ -203,7 +273,9 @@ export class ConfigHelper extends EventEmitter {
       // This prevents re-initializing the AI client when only opacity changes
       if (updates.apiKey !== undefined || updates.apiProvider !== undefined || 
           updates.extractionModel !== undefined || updates.solutionModel !== undefined || 
-          updates.debuggingModel !== undefined || updates.language !== undefined) {
+          updates.debuggingModel !== undefined || updates.answerModel !== undefined ||
+          updates.speechRecognitionModel !== undefined || 
+          updates.language !== undefined) {
         this.emit('config-updated', newConfig);
       }
       

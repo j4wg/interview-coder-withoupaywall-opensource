@@ -16,5 +16,5 @@
       "main": ["electron/main.ts"]
     }
   },
-  "include": ["electron/**/*"]
+  "include": ["electron/**/*", "shared/**/*"]
 }

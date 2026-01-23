@@ -321,6 +321,74 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
                         </p>
                       </div>
 
+                      {/* Start/Stop Recording Command */}
+                      <div
+                        className="cursor-pointer rounded px-2 py-1.5 hover:bg-white/10 transition-colors"
+                        onClick={async () => {
+                          try {
+                            const event = new CustomEvent('toggle-recording');
+                            window.dispatchEvent(event);
+                          } catch (error) {
+                            console.error("Error toggling recording:", error)
+                            showToast(
+                              "Error",
+                              "Failed to toggle recording",
+                              "error"
+                            )
+                          }
+                        }}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="truncate">Start/Stop Recording</span>
+                          <div className="flex gap-1 flex-shrink-0">
+                            <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] leading-none">
+                              {COMMAND_KEY}
+                            </span>
+                            <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] leading-none">
+                              M
+                            </span>
+                          </div>
+                        </div>
+                        <p className="text-[10px] leading-relaxed text-white/70 truncate mt-1">
+                          Record interview conversation for transcription.
+                        </p>
+                      </div>
+
+                      {/* Toggle Speaker Mode Command */}
+                      <div
+                        className="cursor-pointer rounded px-2 py-1.5 hover:bg-white/10 transition-colors"
+                        onClick={async () => {
+                          try {
+                            await window.electronAPI.toggleSpeaker();
+                          } catch (error) {
+                            console.error("Error toggling speaker:", error)
+                            showToast(
+                              "Error",
+                              "Failed to toggle speaker mode",
+                              "error"
+                            )
+                          }
+                        }}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="truncate">Toggle Speaker Mode</span>
+                          <div className="flex gap-1 flex-shrink-0">
+                            <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] leading-none">
+                              {COMMAND_KEY}
+                            </span>
+                            <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] leading-none">
+                              Shift
+                            </span>
+                            <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] leading-none">
+                              M
+                            </span>
+                          </div>
+                        </div>
+                        <p className="text-[10px] leading-relaxed text-white/70 truncate mt-1">
+                          Switch between Interviewer and You mode.
+                        </p>
+                      </div>
+
                       {/* Solve Command */}
                       <div
                         className={`cursor-pointer rounded px-2 py-1.5 hover:bg-white/10 transition-colors ${
