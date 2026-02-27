@@ -5,14 +5,28 @@ import { app } from "electron"
 import { EventEmitter } from "events"
 import { OpenAI } from "openai"
 
+// API URL constants for Chinese AI providers
+const API_URLS = {
+  deepseek: 'https://api.deepseek.com',
+  zhipu: 'https://open.bigmodel.cn/api/paas/v4',
+  bailian: 'https://coding.dashscope.aliyuncs.com/v1'  // Coding Plan 专属 URL
+} as const;
+
 interface Config {
-  apiKey: string;
-  apiProvider: "openai" | "gemini" | "anthropic";  // Added provider selection
+  apiKey: string;  // Legacy: used for OpenAI/Gemini/Anthropic
+  apiProvider: "openai" | "gemini" | "anthropic" | "deepseek" | "zhipu" | "bailian";
   extractionModel: string;
   solutionModel: string;
   debuggingModel: string;
   language: string;
   opacity: number;
+  // Separate API keys for each provider
+  openaiApiKey?: string;
+  geminiApiKey?: string;
+  anthropicApiKey?: string;
+  deepseekApiKey?: string;
+  zhipuApiKey?: string;
+  bailianApiKey?: string;
 }
 
 export class ConfigHelper extends EventEmitter {
@@ -58,7 +72,7 @@ export class ConfigHelper extends EventEmitter {
   /**
    * Validate and sanitize model selection to ensure only allowed models are used
    */
-  private sanitizeModelSelection(model: string, provider: "openai" | "gemini" | "anthropic"): string {
+  private sanitizeModelSelection(model: string, provider: "openai" | "gemini" | "anthropic" | "deepseek" | "zhipu" | "bailian"): string {
     if (provider === "openai") {
       // Only allow gpt-4o and gpt-4o-mini for OpenAI
       const allowedModels = ['gpt-4o', 'gpt-4o-mini'];
@@ -72,15 +86,54 @@ export class ConfigHelper extends EventEmitter {
       const allowedModels = ['gemini-1.5-pro', 'gemini-2.0-flash'];
       if (!allowedModels.includes(model)) {
         console.warn(`Invalid Gemini model specified: ${model}. Using default model: gemini-2.0-flash`);
-        return 'gemini-2.0-flash'; // Changed default to flash
+        return 'gemini-2.0-flash';
       }
       return model;
-    }  else if (provider === "anthropic") {
+    } else if (provider === "anthropic") {
       // Only allow Claude models
       const allowedModels = ['claude-3-7-sonnet-20250219', 'claude-3-5-sonnet-20241022', 'claude-3-opus-20240229'];
       if (!allowedModels.includes(model)) {
         console.warn(`Invalid Anthropic model specified: ${model}. Using default model: claude-3-7-sonnet-20250219`);
         return 'claude-3-7-sonnet-20250219';
+      }
+      return model;
+    } else if (provider === "deepseek") {
+      // Deepseek models - OpenAI compatible API
+      const allowedModels = ['deepseek-chat', 'deepseek-coder', 'deepseek-reasoner'];
+      if (!allowedModels.includes(model)) {
+        console.warn(`Invalid Deepseek model specified: ${model}. Using default model: deepseek-chat`);
+        return 'deepseek-chat';
+      }
+      return model;
+    } else if (provider === "zhipu") {
+      // Zhipu/GLM models (including GLM-4.5 and GLM-5 series)
+      const allowedModels = [
+        'glm-4v-flash', 'glm-4v-plus',           // Vision models
+        'glm-4-flash', 'glm-4-plus', 'glm-4-long', // GLM-4 text models
+        'glm-4.5', 'glm-4.5-air', 'glm-4.5-airx', // GLM-4.5 series
+        'glm-5', 'glm-5-plus'                     // GLM-5 series (latest)
+      ];
+      if (!allowedModels.includes(model)) {
+        console.warn(`Invalid Zhipu model specified: ${model}. Using default model: glm-4v-flash`);
+        return 'glm-4v-flash';
+      }
+      return model;
+    } else if (provider === "bailian") {
+      // Alibaba Bailian Coding Plan models
+      const allowedModels = [
+        // Coding Plan Pro 推荐模型 (支持图片理解)
+        'qwen3.5-plus', 'kimi-k2.5',
+        // Coding Plan Pro 其他模型
+        'glm-5', 'MiniMax-M2.5', 'glm-4.7',
+        'qwen3-max-2026-01-23', 'qwen3-coder-next', 'qwen3-coder-plus',
+        // 兼容旧版本的普通百炼模型 (以防用户切换)
+        'qwen-vl-max', 'qwen-vl-plus', 'qwen3-vl-plus', 'qwen3-vl-flash',
+        'qwen-plus', 'qwen-max', 'qwen-turbo', 'qwen3-max',
+        'qwq-plus'
+      ];
+      if (!allowedModels.includes(model)) {
+        console.warn(`Invalid Bailian model specified: ${model}. Using default model: qwen3.5-plus`);
+        return 'qwen3.5-plus';
       }
       return model;
     }
@@ -95,7 +148,8 @@ export class ConfigHelper extends EventEmitter {
         const config = JSON.parse(configData);
         
         // Ensure apiProvider is a valid value
-        if (config.apiProvider !== "openai" && config.apiProvider !== "gemini"  && config.apiProvider !== "anthropic") {
+        const validProviders = ["openai", "gemini", "anthropic", "deepseek", "zhipu", "bailian"];
+        if (!validProviders.includes(config.apiProvider)) {
           config.apiProvider = "gemini"; // Default to Gemini if invalid
         }
         
@@ -178,6 +232,18 @@ export class ConfigHelper extends EventEmitter {
           updates.extractionModel = "claude-3-7-sonnet-20250219";
           updates.solutionModel = "claude-3-7-sonnet-20250219";
           updates.debuggingModel = "claude-3-7-sonnet-20250219";
+        } else if (updates.apiProvider === "deepseek") {
+          updates.extractionModel = "deepseek-chat";
+          updates.solutionModel = "deepseek-chat";
+          updates.debuggingModel = "deepseek-chat";
+        } else if (updates.apiProvider === "zhipu") {
+          updates.extractionModel = "glm-4v-flash";
+          updates.solutionModel = "glm-4v-flash";
+          updates.debuggingModel = "glm-4v-flash";
+        } else if (updates.apiProvider === "bailian") {
+          updates.extractionModel = "qwen-vl-plus";
+          updates.solutionModel = "qwen-plus";
+          updates.debuggingModel = "qwen-vl-plus";
         } else {
           updates.extractionModel = "gemini-2.0-flash";
           updates.solutionModel = "gemini-2.0-flash";
@@ -195,18 +261,36 @@ export class ConfigHelper extends EventEmitter {
       if (updates.debuggingModel) {
         updates.debuggingModel = this.sanitizeModelSelection(updates.debuggingModel, provider);
       }
-      
+
+      // Save API key to the provider-specific field
+      if (updates.apiKey !== undefined) {
+        const targetProvider = updates.apiProvider || currentConfig.apiProvider;
+        if (targetProvider === "openai") {
+          updates.openaiApiKey = updates.apiKey;
+        } else if (targetProvider === "gemini") {
+          updates.geminiApiKey = updates.apiKey;
+        } else if (targetProvider === "anthropic") {
+          updates.anthropicApiKey = updates.apiKey;
+        } else if (targetProvider === "deepseek") {
+          updates.deepseekApiKey = updates.apiKey;
+        } else if (targetProvider === "zhipu") {
+          updates.zhipuApiKey = updates.apiKey;
+        } else if (targetProvider === "bailian") {
+          updates.bailianApiKey = updates.apiKey;
+        }
+      }
+
       const newConfig = { ...currentConfig, ...updates };
       this.saveConfig(newConfig);
-      
+
       // Only emit update event for changes other than opacity
       // This prevents re-initializing the AI client when only opacity changes
-      if (updates.apiKey !== undefined || updates.apiProvider !== undefined || 
-          updates.extractionModel !== undefined || updates.solutionModel !== undefined || 
+      if (updates.apiKey !== undefined || updates.apiProvider !== undefined ||
+          updates.extractionModel !== undefined || updates.solutionModel !== undefined ||
           updates.debuggingModel !== undefined || updates.language !== undefined) {
         this.emit('config-updated', newConfig);
       }
-      
+
       return newConfig;
     } catch (error) {
       console.error('Error updating config:', error);
@@ -215,17 +299,43 @@ export class ConfigHelper extends EventEmitter {
   }
 
   /**
-   * Check if the API key is configured
+   * Get the API key for the current provider
+   */
+  public getApiKeyForProvider(provider?: string): string {
+    const config = this.loadConfig();
+    const targetProvider = provider || config.apiProvider;
+
+    // First check provider-specific keys
+    if (targetProvider === "openai" && config.openaiApiKey) {
+      return config.openaiApiKey;
+    } else if (targetProvider === "gemini" && config.geminiApiKey) {
+      return config.geminiApiKey;
+    } else if (targetProvider === "anthropic" && config.anthropicApiKey) {
+      return config.anthropicApiKey;
+    } else if (targetProvider === "deepseek" && config.deepseekApiKey) {
+      return config.deepseekApiKey;
+    } else if (targetProvider === "zhipu" && config.zhipuApiKey) {
+      return config.zhipuApiKey;
+    } else if (targetProvider === "bailian" && config.bailianApiKey) {
+      return config.bailianApiKey;
+    }
+
+    // Fallback to legacy apiKey field
+    return config.apiKey || "";
+  }
+
+  /**
+   * Check if the API key is configured for the current provider
    */
   public hasApiKey(): boolean {
-    const config = this.loadConfig();
-    return !!config.apiKey && config.apiKey.trim().length > 0;
+    const apiKey = this.getApiKeyForProvider();
+    return !!apiKey && apiKey.trim().length > 0;
   }
   
   /**
    * Validate the API key format
    */
-  public isValidApiKeyFormat(apiKey: string, provider?: "openai" | "gemini" | "anthropic" ): boolean {
+  public isValidApiKeyFormat(apiKey: string, provider?: "openai" | "gemini" | "anthropic" | "deepseek" | "zhipu" | "bailian"): boolean {
     // If provider is not specified, attempt to auto-detect
     if (!provider) {
       if (apiKey.trim().startsWith('sk-')) {
@@ -238,18 +348,27 @@ export class ConfigHelper extends EventEmitter {
         provider = "gemini";
       }
     }
-    
+
     if (provider === "openai") {
       // Basic format validation for OpenAI API keys
       return /^sk-[a-zA-Z0-9]{32,}$/.test(apiKey.trim());
     } else if (provider === "gemini") {
       // Basic format validation for Gemini API keys (usually alphanumeric with no specific prefix)
-      return apiKey.trim().length >= 10; // Assuming Gemini keys are at least 10 chars
+      return apiKey.trim().length >= 10;
     } else if (provider === "anthropic") {
       // Basic format validation for Anthropic API keys
       return /^sk-ant-[a-zA-Z0-9]{32,}$/.test(apiKey.trim());
+    } else if (provider === "deepseek") {
+      // Deepseek API keys typically start with "sk-"
+      return apiKey.trim().length >= 10;
+    } else if (provider === "zhipu") {
+      // Zhipu/GLM API keys - format varies, just check length
+      return apiKey.trim().length >= 10;
+    } else if (provider === "bailian") {
+      // Alibaba Bailian API keys - format varies, just check length
+      return apiKey.trim().length >= 10;
     }
-    
+
     return false;
   }
   
@@ -288,7 +407,7 @@ export class ConfigHelper extends EventEmitter {
   /**
    * Test API key with the selected provider
    */
-  public async testApiKey(apiKey: string, provider?: "openai" | "gemini" | "anthropic"): Promise<{valid: boolean, error?: string}> {
+  public async testApiKey(apiKey: string, provider?: "openai" | "gemini" | "anthropic" | "deepseek" | "zhipu" | "bailian"): Promise<{valid: boolean, error?: string}> {
     // Auto-detect provider based on key format if not specified
     if (!provider) {
       if (apiKey.trim().startsWith('sk-')) {
@@ -304,15 +423,21 @@ export class ConfigHelper extends EventEmitter {
         console.log("Using Gemini API key format for testing (default)");
       }
     }
-    
+
     if (provider === "openai") {
       return this.testOpenAIKey(apiKey);
     } else if (provider === "gemini") {
       return this.testGeminiKey(apiKey);
     } else if (provider === "anthropic") {
       return this.testAnthropicKey(apiKey);
+    } else if (provider === "deepseek") {
+      return this.testDeepseekKey(apiKey);
+    } else if (provider === "zhipu") {
+      return this.testZhipuKey(apiKey);
+    } else if (provider === "bailian") {
+      return this.testBailianKey(apiKey);
     }
-    
+
     return { valid: false, error: "Unknown API provider" };
   }
   
@@ -386,11 +511,110 @@ export class ConfigHelper extends EventEmitter {
     } catch (error: any) {
       console.error('Anthropic API key test failed:', error);
       let errorMessage = 'Unknown error validating Anthropic API key';
-      
+
       if (error.message) {
         errorMessage = `Error: ${error.message}`;
       }
-      
+
+      return { valid: false, error: errorMessage };
+    }
+  }
+
+  /**
+   * Test Deepseek API key
+   * Deepseek uses OpenAI-compatible API
+   */
+  private async testDeepseekKey(apiKey: string): Promise<{valid: boolean, error?: string}> {
+    try {
+      // Deepseek uses OpenAI-compatible API with different base URL
+      const openai = new OpenAI({
+        apiKey,
+        baseURL: API_URLS.deepseek
+      });
+      // Make a simple API call to test the key
+      await openai.models.list();
+      return { valid: true };
+    } catch (error: any) {
+      console.error('Deepseek API key test failed:', error);
+
+      let errorMessage = 'Unknown error validating Deepseek API key';
+
+      if (error.status === 401) {
+        errorMessage = 'Invalid API key. Please check your Deepseek key and try again.';
+      } else if (error.status === 429) {
+        errorMessage = 'Rate limit exceeded. Your Deepseek API key has reached its request limit.';
+      } else if (error.status === 500) {
+        errorMessage = 'Deepseek server error. Please try again later.';
+      } else if (error.message) {
+        errorMessage = `Error: ${error.message}`;
+      }
+
+      return { valid: false, error: errorMessage };
+    }
+  }
+
+  /**
+   * Test Zhipu/GLM API key
+   * Zhipu uses OpenAI-compatible API
+   */
+  private async testZhipuKey(apiKey: string): Promise<{valid: boolean, error?: string}> {
+    try {
+      // Zhipu uses OpenAI-compatible API with different base URL
+      const openai = new OpenAI({
+        apiKey,
+        baseURL: API_URLS.zhipu
+      });
+      // Make a simple API call to test the key
+      await openai.models.list();
+      return { valid: true };
+    } catch (error: any) {
+      console.error('Zhipu API key test failed:', error);
+
+      let errorMessage = 'Unknown error validating Zhipu API key';
+
+      if (error.status === 401) {
+        errorMessage = 'Invalid API key. Please check your Zhipu key and try again.';
+      } else if (error.status === 429) {
+        errorMessage = 'Rate limit exceeded. Your Zhipu API key has reached its request limit.';
+      } else if (error.status === 500) {
+        errorMessage = 'Zhipu server error. Please try again later.';
+      } else if (error.message) {
+        errorMessage = `Error: ${error.message}`;
+      }
+
+      return { valid: false, error: errorMessage };
+    }
+  }
+
+  /**
+   * Test Alibaba Bailian API key
+   * Bailian uses OpenAI-compatible API
+   */
+  private async testBailianKey(apiKey: string): Promise<{valid: boolean, error?: string}> {
+    try {
+      // Bailian uses OpenAI-compatible API with different base URL
+      const openai = new OpenAI({
+        apiKey,
+        baseURL: API_URLS.bailian
+      });
+      // Make a simple API call to test the key
+      await openai.models.list();
+      return { valid: true };
+    } catch (error: any) {
+      console.error('Bailian API key test failed:', error);
+
+      let errorMessage = 'Unknown error validating Bailian API key';
+
+      if (error.status === 401) {
+        errorMessage = 'Invalid API key. Please check your Bailian/DashScope key and try again.';
+      } else if (error.status === 429) {
+        errorMessage = 'Rate limit exceeded. Your Bailian API key has reached its request limit.';
+      } else if (error.status === 500) {
+        errorMessage = 'Bailian server error. Please try again later.';
+      } else if (error.message) {
+        errorMessage = `Error: ${error.message}`;
+      }
+
       return { valid: false, error: errorMessage };
     }
   }

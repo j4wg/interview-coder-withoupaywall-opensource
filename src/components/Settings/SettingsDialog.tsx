@@ -13,7 +13,7 @@ import { Button } from "../ui/button";
 import { Settings } from "lucide-react";
 import { useToast } from "../../contexts/toast";
 
-type APIProvider = "openai" | "gemini" | "anthropic";
+type APIProvider = "openai" | "gemini" | "anthropic" | "deepseek" | "zhipu" | "bailian";
 
 type AIModel = {
   id: string;
@@ -28,6 +28,9 @@ type ModelCategory = {
   openaiModels: AIModel[];
   geminiModels: AIModel[];
   anthropicModels: AIModel[];
+  deepseekModels: AIModel[];
+  zhipuModels: AIModel[];
+  bailianModels: AIModel[];
 };
 
 // Define available models for each category
@@ -76,6 +79,47 @@ const modelCategories: ModelCategory[] = [
         name: "Claude 3 Opus",
         description: "Top-level intelligence, fluency, and understanding"
       }
+    ],
+    deepseekModels: [
+      {
+        id: "deepseek-chat",
+        name: "DeepSeek Chat",
+        description: "Best for general coding tasks"
+      },
+      {
+        id: "deepseek-coder",
+        name: "DeepSeek Coder",
+        description: "Specialized for code generation"
+      },
+      {
+        id: "deepseek-reasoner",
+        name: "DeepSeek Reasoner",
+        description: "Advanced reasoning capabilities"
+      }
+    ],
+    zhipuModels: [
+      {
+        id: "glm-4v-flash",
+        name: "GLM-4V Flash",
+        description: "Fast vision model for screenshots"
+      },
+      {
+        id: "glm-4v-plus",
+        name: "GLM-4V Plus",
+        description: "Enhanced vision model"
+      }
+    ],
+    bailianModels: [
+      {
+        id: "qwen3.5-plus",
+        name: "Qwen3.5 Plus",
+        description: "推荐模型，支持图片理解"
+      },
+      {
+        id: "kimi-k2.5",
+        name: "Kimi K2.5",
+        description: "Kimi 最新模型，支持图片理解"
+      }
     ]
   },
   {
@@ -121,6 +165,82 @@ const modelCategories: ModelCategory[] = [
         id: "claude-3-opus-20240229",
         name: "Claude 3 Opus",
         description: "Top-level intelligence, fluency, and understanding"
+      }
+    ],
+    deepseekModels: [
+      {
+        id: "deepseek-chat",
+        name: "DeepSeek Chat",
+        description: "Best for general coding tasks"
+      },
+      {
+        id: "deepseek-coder",
+        name: "DeepSeek Coder",
+        description: "Specialized for code generation"
+      },
+      {
+        id: "deepseek-reasoner",
+        name: "DeepSeek Reasoner",
+        description: "Advanced reasoning capabilities"
+      }
+    ],
+    zhipuModels: [
+      {
+        id: "glm-4-flash",
+        name: "GLM-4 Flash",
+        description: "Fast and efficient text model"
+      },
+      {
+        id: "glm-4-plus",
+        name: "GLM-4 Plus",
+        description: "Enhanced text model"
+      },
+      {
+        id: "glm-4.5",
+        name: "GLM-4.5",
+        description: "Latest GLM-4.5 model (recommended)"
+      },
+      {
+        id: "glm-5",
+        name: "GLM-5",
+        description: "Latest GLM-5 series"
+      }
+    ],
+    bailianModels: [
+      {
+        id: "qwen3.5-plus",
+        name: "Qwen3.5 Plus",
+        description: "推荐模型，支持图片理解"
+      },
+      {
+        id: "kimi-k2.5",
+        name: "Kimi K2.5",
+        description: "Kimi 最新模型，支持图片理解"
+      },
+      {
+        id: "glm-5",
+        name: "GLM-5",
+        description: "智谱 GLM-5"
+      },
+      {
+        id: "MiniMax-M2.5",
+        name: "MiniMax M2.5",
+        description: "MiniMax 最新模型"
+      },
+      {
+        id: "qwen3-coder-plus",
+        name: "Qwen3 Coder Plus",
+        description: "代码专用模型"
+      },
+      {
+        id: "qwen3-coder-next",
+        name: "Qwen3 Coder Next",
+        description: "下一代代码模型"
+      },
+      {
+        id: "glm-4.7",
+        name: "GLM-4.7",
+        description: "智谱 GLM-4.7"
       }
     ]
   },
@@ -168,6 +288,47 @@ const modelCategories: ModelCategory[] = [
         name: "Claude 3 Opus",
         description: "Top-level intelligence, fluency, and understanding"
       }
+    ],
+    deepseekModels: [
+      {
+        id: "deepseek-chat",
+        name: "DeepSeek Chat",
+        description: "Best for debugging and code analysis"
+      },
+      {
+        id: "deepseek-coder",
+        name: "DeepSeek Coder",
+        description: "Specialized for code analysis"
+      },
+      {
+        id: "deepseek-reasoner",
+        name: "DeepSeek Reasoner",
+        description: "Advanced reasoning for complex bugs"
+      }
+    ],
+    zhipuModels: [
+      {
+        id: "glm-4v-flash",
+        name: "GLM-4V Flash",
+        description: "Fast vision model for debugging screenshots"
+      },
+      {
+        id: "glm-4v-plus",
+        name: "GLM-4V Plus",
+        description: "Enhanced vision model"
+      }
+    ],
+    bailianModels: [
+      {
+        id: "qwen3.5-plus",
+        name: "Qwen3.5 Plus",
+        description: "推荐模型，支持图片理解"
+      },
+      {
+        id: "kimi-k2.5",
+        name: "Kimi K2.5",
+        description: "Kimi 最新模型，支持图片理解"
+      }
     ]
   }
 ];
@@ -203,6 +364,35 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
     }
   };
   
+  // Store all provider API keys
+  const [providerApiKeys, setProviderApiKeys] = useState<{
+    openai?: string;
+    gemini?: string;
+    anthropic?: string;
+    deepseek?: string;
+    zhipu?: string;
+    bailian?: string;
+  }>({});
+
+  // Helper to get API key for a specific provider
+  const getApiKeyForProvider = (provider: APIProvider, config: {
+    apiKey?: string;
+    openaiApiKey?: string;
+    geminiApiKey?: string;
+    anthropicApiKey?: string;
+    deepseekApiKey?: string;
+    zhipuApiKey?: string;
+    bailianApiKey?: string;
+  }): string => {
+    if (provider === "openai" && config.openaiApiKey) return config.openaiApiKey;
+    if (provider === "gemini" && config.geminiApiKey) return config.geminiApiKey;
+    if (provider === "anthropic" && config.anthropicApiKey) return config.anthropicApiKey;
+    if (provider === "deepseek" && config.deepseekApiKey) return config.deepseekApiKey;
+    if (provider === "zhipu" && config.zhipuApiKey) return config.zhipuApiKey;
+    if (provider === "bailian" && config.bailianApiKey) return config.bailianApiKey;
+    return config.apiKey || "";
+  };
+
   // Load current config on dialog open
   useEffect(() => {
     if (open) {
@@ -213,13 +403,36 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
         extractionModel?: string;
         solutionModel?: string;
         debuggingModel?: string;
+        openaiApiKey?: string;
+        geminiApiKey?: string;
+        anthropicApiKey?: string;
+        deepseekApiKey?: string;
+        zhipuApiKey?: string;
+        bailianApiKey?: string;
       }
 
       window.electronAPI
         .getConfig()
         .then((config: Config) => {
-          setApiKey(config.apiKey || "");
-          setApiProvider(config.apiProvider || "openai");
+          const provider = config.apiProvider || "openai";
+          console.log("DEBUG: Loading config", {
+            provider,
+            extractionModel: config.extractionModel,
+            solutionModel: config.solutionModel,
+            debuggingModel: config.debuggingModel
+          });
+          // Store all provider keys
+          setProviderApiKeys({
+            openai: config.openaiApiKey || "",
+            gemini: config.geminiApiKey || "",
+            anthropic: config.anthropicApiKey || "",
+            deepseek: config.deepseekApiKey || "",
+            zhipu: config.zhipuApiKey || "",
+            bailian: config.bailianApiKey || "",
+          });
+          // Set current provider's API key
+          setApiKey(getApiKeyForProvider(provider, config));
+          setApiProvider(provider);
           setExtractionModel(config.extractionModel || "gpt-4o");
           setSolutionModel(config.solutionModel || "gpt-4o");
           setDebuggingModel(config.debuggingModel || "gpt-4o");
@@ -236,8 +449,18 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
 
   // Handle API provider change
   const handleProviderChange = (provider: APIProvider) => {
+    // Save current API key to the current provider before switching
+    setProviderApiKeys(prev => ({
+      ...prev,
+      [apiProvider]: apiKey
+    }));
+
+    // Switch to new provider
     setApiProvider(provider);
-    
+
+    // Load the API key for the new provider
+    setApiKey(providerApiKeys[provider] || "");
+
     // Reset models to defaults when changing provider
     if (provider === "openai") {
       setExtractionModel("gpt-4o");
@@ -251,6 +474,18 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
       setExtractionModel("claude-3-7-sonnet-20250219");
       setSolutionModel("claude-3-7-sonnet-20250219");
       setDebuggingModel("claude-3-7-sonnet-20250219");
+    } else if (provider === "deepseek") {
+      setExtractionModel("deepseek-chat");
+      setSolutionModel("deepseek-chat");
+      setDebuggingModel("deepseek-chat");
+    } else if (provider === "zhipu") {
+      setExtractionModel("glm-4v-flash");
+      setSolutionModel("glm-4-flash");
+      setDebuggingModel("glm-4v-flash");
+    } else if (provider === "bailian") {
+      setExtractionModel("qwen3.5-plus");
+      setSolutionModel("qwen3.5-plus");
+      setDebuggingModel("qwen3.5-plus");
     }
   };
 
@@ -387,13 +622,78 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
                 </div>
               </div>
             </div>
+            <div className="flex gap-2 mt-2">
+              <div
+                className={`flex-1 p-2 rounded-lg cursor-pointer transition-colors ${
+                  apiProvider === "deepseek"
+                    ? "bg-white/10 border border-white/20"
+                    : "bg-black/30 border border-white/5 hover:bg-white/5"
+                }`}
+                onClick={() => handleProviderChange("deepseek")}
+              >
+                <div className="flex items-center gap-2">
+                  <div
+                    className={`w-3 h-3 rounded-full ${
+                      apiProvider === "deepseek" ? "bg-white" : "bg-white/20"
+                    }`}
+                  />
+                  <div className="flex flex-col">
+                    <p className="font-medium text-white text-sm">DeepSeek</p>
+                    <p className="text-xs text-white/60">DeepSeek models</p>
+                  </div>
+                </div>
+              </div>
+              <div
+                className={`flex-1 p-2 rounded-lg cursor-pointer transition-colors ${
+                  apiProvider === "zhipu"
+                    ? "bg-white/10 border border-white/20"
+                    : "bg-black/30 border border-white/5 hover:bg-white/5"
+                }`}
+                onClick={() => handleProviderChange("zhipu")}
+              >
+                <div className="flex items-center gap-2">
+                  <div
+                    className={`w-3 h-3 rounded-full ${
+                      apiProvider === "zhipu" ? "bg-white" : "bg-white/20"
+                    }`}
+                  />
+                  <div className="flex flex-col">
+                    <p className="font-medium text-white text-sm">智谱 GLM</p>
+                    <p className="text-xs text-white/60">GLM-4 models</p>
+                  </div>
+                </div>
+              </div>
+              <div
+                className={`flex-1 p-2 rounded-lg cursor-pointer transition-colors ${
+                  apiProvider === "bailian"
+                    ? "bg-white/10 border border-white/20"
+                    : "bg-black/30 border border-white/5 hover:bg-white/5"
+                }`}
+                onClick={() => handleProviderChange("bailian")}
+              >
+                <div className="flex items-center gap-2">
+                  <div
+                    className={`w-3 h-3 rounded-full ${
+                      apiProvider === "bailian" ? "bg-white" : "bg-white/20"
+                    }`}
+                  />
+                  <div className="flex flex-col">
+                    <p className="font-medium text-white text-sm">百炼 Coding</p>
+                    <p className="text-xs text-white/60">Coding Plan</p>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
           
           <div className="space-y-2">
             <label className="text-sm font-medium text-white" htmlFor="apiKey">
-            {apiProvider === "openai" ? "OpenAI API Key" : 
-             apiProvider === "gemini" ? "Gemini API Key" : 
-             "Anthropic API Key"}
+            {apiProvider === "openai" ? "OpenAI API Key" :
+             apiProvider === "gemini" ? "Gemini API Key" :
+             apiProvider === "anthropic" ? "Anthropic API Key" :
+             apiProvider === "deepseek" ? "DeepSeek API Key" :
+             apiProvider === "zhipu" ? "智谱 API Key" :
+             "百炼 API Key"}
             </label>
             <Input
               id="apiKey"
@@ -401,9 +701,12 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
               placeholder={
-                apiProvider === "openai" ? "sk-..." : 
+                apiProvider === "openai" ? "sk-..." :
                 apiProvider === "gemini" ? "Enter your Gemini API key" :
-                "sk-ant-..."
+                apiProvider === "anthropic" ? "sk-ant-..." :
+                apiProvider === "deepseek" ? "sk-..." :
+                apiProvider === "zhipu" ? "Enter your Zhipu API key" :
+                "sk-... (百炼 DashScope API Key)"
               }
               className="bg-black/50 border-white/10 text-white"
             />
@@ -413,45 +716,88 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
               </p>
             )}
             <p className="text-xs text-white/50">
-              Your API key is stored locally and never sent to any server except {apiProvider === "openai" ? "OpenAI" : "Google"}
+              Your API key is stored locally and never sent to any server except {
+                apiProvider === "openai" ? "OpenAI" :
+                apiProvider === "gemini" ? "Google" :
+                apiProvider === "anthropic" ? "Anthropic" :
+                apiProvider === "deepseek" ? "DeepSeek" :
+                apiProvider === "zhipu" ? "智谱 AI" :
+                "阿里云百炼"
+              }
             </p>
             <div className="mt-2 p-2 rounded-md bg-white/5 border border-white/10">
               <p className="text-xs text-white/80 mb-1">Don't have an API key?</p>
               {apiProvider === "openai" ? (
                 <>
-                  <p className="text-xs text-white/60 mb-1">1. Create an account at <button 
-                    onClick={() => openExternalLink('https://platform.openai.com/signup')} 
+                  <p className="text-xs text-white/60 mb-1">1. Create an account at <button
+                    onClick={() => openExternalLink('https://platform.openai.com/signup')}
                     className="text-blue-400 hover:underline cursor-pointer">OpenAI</button>
                   </p>
-                  <p className="text-xs text-white/60 mb-1">2. Go to <button 
-                    onClick={() => openExternalLink('https://platform.openai.com/api-keys')} 
+                  <p className="text-xs text-white/60 mb-1">2. Go to <button
+                    onClick={() => openExternalLink('https://platform.openai.com/api-keys')}
                     className="text-blue-400 hover:underline cursor-pointer">API Keys</button> section
                   </p>
                   <p className="text-xs text-white/60">3. Create a new secret key and paste it here</p>
                 </>
-              ) : apiProvider === "gemini" ?  (
+              ) : apiProvider === "gemini" ? (
                 <>
-                  <p className="text-xs text-white/60 mb-1">1. Create an account at <button 
-                    onClick={() => openExternalLink('https://aistudio.google.com/')} 
+                  <p className="text-xs text-white/60 mb-1">1. Create an account at <button
+                    onClick={() => openExternalLink('https://aistudio.google.com/')}
                     className="text-blue-400 hover:underline cursor-pointer">Google AI Studio</button>
                   </p>
-                  <p className="text-xs text-white/60 mb-1">2. Go to the <button 
-                    onClick={() => openExternalLink('https://aistudio.google.com/app/apikey')} 
+                  <p className="text-xs text-white/60 mb-1">2. Go to the <button
+                    onClick={() => openExternalLink('https://aistudio.google.com/app/apikey')}
                     className="text-blue-400 hover:underline cursor-pointer">API Keys</button> section
                   </p>
                   <p className="text-xs text-white/60">3. Create a new API key and paste it here</p>
                 </>
-              ) : (
+              ) : apiProvider === "anthropic" ? (
                 <>
-                  <p className="text-xs text-white/60 mb-1">1. Create an account at <button 
-                    onClick={() => openExternalLink('https://console.anthropic.com/signup')} 
+                  <p className="text-xs text-white/60 mb-1">1. Create an account at <button
+                    onClick={() => openExternalLink('https://console.anthropic.com/signup')}
                     className="text-blue-400 hover:underline cursor-pointer">Anthropic</button>
                   </p>
-                  <p className="text-xs text-white/60 mb-1">2. Go to the <button 
-                    onClick={() => openExternalLink('https://console.anthropic.com/settings/keys')} 
+                  <p className="text-xs text-white/60 mb-1">2. Go to the <button
+                    onClick={() => openExternalLink('https://console.anthropic.com/settings/keys')}
                     className="text-blue-400 hover:underline cursor-pointer">API Keys</button> section
                   </p>
                   <p className="text-xs text-white/60">3. Create a new API key and paste it here</p>
+                </>
+              ) : apiProvider === "deepseek" ? (
+                <>
+                  <p className="text-xs text-white/60 mb-1">1. Create an account at <button
+                    onClick={() => openExternalLink('https://platform.deepseek.com/')}
+                    className="text-blue-400 hover:underline cursor-pointer">DeepSeek Platform</button>
+                  </p>
+                  <p className="text-xs text-white/60 mb-1">2. Go to the <button
+                    onClick={() => openExternalLink('https://platform.deepseek.com/api_keys')}
+                    className="text-blue-400 hover:underline cursor-pointer">API Keys</button> section
+                  </p>
+                  <p className="text-xs text-white/60">3. Create a new API key and paste it here</p>
+                </>
+              ) : apiProvider === "zhipu" ? (
+                <>
+                  <p className="text-xs text-white/60 mb-1">1. 在 <button
+                    onClick={() => openExternalLink('https://open.bigmodel.cn/')}
+                    className="text-blue-400 hover:underline cursor-pointer">智谱 AI 开放平台</button> 注册账号
+                  </p>
+                  <p className="text-xs text-white/60 mb-1">2. 进入 <button
+                    onClick={() => openExternalLink('https://open.bigmodel.cn/usercenter/apikeys')}
+                    className="text-blue-400 hover:underline cursor-pointer">API Keys</button> 页面
+                  </p>
+                  <p className="text-xs text-white/60">3. 创建新的 API Key 并粘贴到这里</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-xs text-white/60 mb-1">1. 购买 <button
+                    onClick={() => openExternalLink('https://bailian.console.aliyun.com/#/api-agent/coding-plan')}
+                    className="text-blue-400 hover:underline cursor-pointer">百炼 Coding Plan 套餐</button>
+                  </p>
+                  <p className="text-xs text-white/60 mb-1">2. 在 Coding Plan 页面获取 <button
+                    onClick={() => openExternalLink('https://bailian.console.aliyun.com/#/api-agent/coding-plan')}
+                    className="text-blue-400 hover:underline cursor-pointer">专属 API Key</button>（格式 sk-sp-xxx）
+                  </p>
+                  <p className="text-xs text-white/60">3. 粘贴到这里（注意：不是普通百炼 API Key）</p>
                 </>
               )}
             </div>
@@ -508,10 +854,13 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
             
             {modelCategories.map((category) => {
               // Get the appropriate model list based on selected provider
-              const models = 
-                apiProvider === "openai" ? category.openaiModels : 
+              const models =
+                apiProvider === "openai" ? category.openaiModels :
                 apiProvider === "gemini" ? category.geminiModels :
-                category.anthropicModels;
+                apiProvider === "anthropic" ? category.anthropicModels :
+                apiProvider === "deepseek" ? category.deepseekModels :
+                apiProvider === "zhipu" ? category.zhipuModels :
+                category.bailianModels;
               
               return (
                 <div key={category.key} className="mb-4">
@@ -523,22 +872,28 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
                   <div className="space-y-2">
                     {models.map((m) => {
                       // Determine which state to use based on category key
-                      const currentValue = 
+                      const currentValue =
                         category.key === 'extractionModel' ? extractionModel :
                         category.key === 'solutionModel' ? solutionModel :
                         debuggingModel;
-                      
+
                       // Determine which setter function to use
-                      const setValue = 
+                      const setValue =
                         category.key === 'extractionModel' ? setExtractionModel :
                         category.key === 'solutionModel' ? setSolutionModel :
                         setDebuggingModel;
-                        
+
+                      const isSelected = currentValue === m.id;
+                      // Debug: log selection state
+                      if (m.id.includes('kimi')) {
+                        console.log(`DEBUG: ${category.key} - model ${m.id}, currentValue=${currentValue}, isSelected=${isSelected}`);
+                      }
+
                       return (
                         <div
                           key={m.id}
                           className={`p-2 rounded-lg cursor-pointer transition-colors ${
-                            currentValue === m.id
+                            isSelected
                               ? "bg-white/10 border border-white/20"
                               : "bg-black/30 border border-white/5 hover:bg-white/5"
                           }`}
@@ -547,7 +902,7 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
                           <div className="flex items-center gap-2">
                             <div
                               className={`w-3 h-3 rounded-full ${
-                                currentValue === m.id ? "bg-white" : "bg-white/20"
+                                isSelected ? "bg-white" : "bg-white/20"
                               }`}
                             />
                             <div>
