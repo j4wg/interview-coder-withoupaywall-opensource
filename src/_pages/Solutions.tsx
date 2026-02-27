@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter"
 import { dracula } from "react-syntax-highlighter/dist/esm/styles/prism"
+import DOMPurify from "dompurify"
 
 import ScreenshotQueue from "../components/Queue/ScreenshotQueue"
 
@@ -15,29 +16,48 @@ import { COMMAND_KEY } from "../utils/platform"
 export const ContentSection = ({
   title,
   content,
-  isLoading
+  isLoading,
+  collapsible = false,
+  defaultCollapsed = false
 }: {
   title: string
   content: React.ReactNode
   isLoading: boolean
-}) => (
-  <div className="space-y-2">
-    <h2 className="text-[13px] font-medium text-white tracking-wide">
-      {title}
-    </h2>
-    {isLoading ? (
-      <div className="mt-4 flex">
-        <p className="text-xs bg-gradient-to-r from-gray-300 via-gray-100 to-gray-300 bg-clip-text text-transparent animate-pulse">
-          Extracting problem statement...
-        </p>
-      </div>
-    ) : (
-      <div className="text-[13px] leading-[1.4] text-gray-100 max-w-[600px]">
-        {content}
-      </div>
-    )}
-  </div>
-)
+  collapsible?: boolean
+  defaultCollapsed?: boolean
+}) => {
+  const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
+
+  return (
+    <div className="space-y-2">
+      <h2
+        className={`text-[13px] font-medium text-white tracking-wide flex items-center gap-2 ${collapsible ? 'cursor-pointer hover:text-blue-300 transition-colors' : ''}`}
+        onClick={() => collapsible && setIsCollapsed(!isCollapsed)}
+      >
+        {collapsible && (
+          <span className={`text-[10px] transition-transform ${isCollapsed ? '' : 'rotate-90'}`}>▶</span>
+        )}
+        {title}
+        {collapsible && (
+          <span className="text-[10px] text-gray-400 font-normal">
+            {isCollapsed ? '(点击展开)' : '(点击收起)'}
+          </span>
+        )}
+      </h2>
+      {isLoading ? (
+        <div className="mt-4 flex">
+          <p className="text-xs bg-gradient-to-r from-gray-300 via-gray-100 to-gray-300 bg-clip-text text-transparent animate-pulse">
+            Extracting problem statement...
+          </p>
+        </div>
+      ) : (
+        <div className={`text-[13px] leading-[1.4] text-gray-100 max-w-[600px] transition-all duration-200 ${isCollapsed ? 'hidden' : ''}`}>
+          {content}
+        </div>
+      )}
+    </div>
+  );
+}
 const SolutionSection = ({
   title,
   content,
@@ -524,20 +544,33 @@ const Solutions: React.FC<SolutionsProps> = ({
                 {solutionData && (
                   <>
                     <ContentSection
-                      title={`My Thoughts (${COMMAND_KEY} + Arrow keys to scroll)`}
+                      title={`解题思路 (${COMMAND_KEY} + 方向键滚动)`}
+                      collapsible={true}
+                      defaultCollapsed={false}
                       content={
                         thoughtsData && (
                           <div className="space-y-3">
                             <div className="space-y-1">
-                              {thoughtsData.map((thought, index) => (
-                                <div
-                                  key={index}
-                                  className="flex items-start gap-2"
-                                >
-                                  <div className="w-1 h-1 rounded-full bg-blue-400/80 mt-2 shrink-0" />
-                                  <div>{thought}</div>
-                                </div>
-                              ))}
+                              {thoughtsData.map((thought, index) => {
+                                // Simple markdown rendering: **bold** -> <strong>bold</strong>
+                                const formattedThought = thought
+                                  .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+                                  .replace(/`([^`]+)`/g, '<code class="bg-gray-700 px-1 rounded text-sm">$1</code>');
+                                // Sanitize HTML to prevent XSS attacks from AI-generated content
+                                const sanitizedHtml = DOMPurify.sanitize(formattedThought, {
+                                  ALLOWED_TAGS: ['strong', 'code'],
+                                  ALLOWED_ATTR: ['class']
+                                });
+                                return (
+                                  <div
+                                    key={index}
+                                    className="flex items-start gap-2"
+                                  >
+                                    <div className="w-1 h-1 rounded-full bg-blue-400/80 mt-2 shrink-0" />
+                                    <div dangerouslySetInnerHTML={{ __html: sanitizedHtml }} />
+                                  </div>
+                                );
+                              })}
                             </div>
                           </div>
                         )

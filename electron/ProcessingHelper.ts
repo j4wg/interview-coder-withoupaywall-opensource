@@ -8,6 +8,13 @@ import { app, BrowserWindow, dialog } from "electron"
 import { OpenAI } from "openai"
 import { configHelper } from "./ConfigHelper"
 import Anthropic from '@anthropic-ai/sdk';
+import { jsonrepair } from 'jsonrepair';
+
+// API URL constants for Chinese AI providers
+const API_URLS = {
+  deepseek: 'https://api.deepseek.com',
+  zhipu: 'https://open.bigmodel.cn/api/paas/v4'
+} as const;
 
 // Interface for Gemini API requests
 interface GeminiMessage {
@@ -73,52 +80,68 @@ export class ProcessingHelper {
   private initializeAIClient(): void {
     try {
       const config = configHelper.loadConfig();
-      
+      const apiKey = configHelper.getApiKeyForProvider();
+
+      // Reset all clients first
+      this.openaiClient = null;
+      this.geminiApiKey = null;
+      this.anthropicClient = null;
+
       if (config.apiProvider === "openai") {
-        if (config.apiKey) {
-          this.openaiClient = new OpenAI({ 
-            apiKey: config.apiKey,
+        if (apiKey) {
+          this.openaiClient = new OpenAI({
+            apiKey: apiKey,
             timeout: 60000, // 60 second timeout
             maxRetries: 2   // Retry up to 2 times
           });
-          this.geminiApiKey = null;
-          this.anthropicClient = null;
           console.log("OpenAI client initialized successfully");
         } else {
-          this.openaiClient = null;
-          this.geminiApiKey = null;
-          this.anthropicClient = null;
           console.warn("No API key available, OpenAI client not initialized");
         }
-      } else if (config.apiProvider === "gemini"){
+      } else if (config.apiProvider === "gemini") {
         // Gemini client initialization
-        this.openaiClient = null;
-        this.anthropicClient = null;
-        if (config.apiKey) {
-          this.geminiApiKey = config.apiKey;
+        if (apiKey) {
+          this.geminiApiKey = apiKey;
           console.log("Gemini API key set successfully");
         } else {
-          this.openaiClient = null;
-          this.geminiApiKey = null;
-          this.anthropicClient = null;
           console.warn("No API key available, Gemini client not initialized");
         }
       } else if (config.apiProvider === "anthropic") {
-        // Reset other clients
-        this.openaiClient = null;
-        this.geminiApiKey = null;
-        if (config.apiKey) {
+        if (apiKey) {
           this.anthropicClient = new Anthropic({
-            apiKey: config.apiKey,
+            apiKey: apiKey,
             timeout: 60000,
             maxRetries: 2
           });
           console.log("Anthropic client initialized successfully");
         } else {
-          this.openaiClient = null;
-          this.geminiApiKey = null;
-          this.anthropicClient = null;
           console.warn("No API key available, Anthropic client not initialized");
+        }
+      } else if (config.apiProvider === "deepseek") {
+        // Deepseek uses OpenAI-compatible API
+        if (apiKey) {
+          this.openaiClient = new OpenAI({
+            apiKey: apiKey,
+            baseURL: API_URLS.deepseek,
+            timeout: 60000,
+            maxRetries: 2
+          });
+          console.log("Deepseek client initialized successfully (OpenAI-compatible)");
+        } else {
+          console.warn("No API key available, Deepseek client not initialized");
+        }
+      } else if (config.apiProvider === "zhipu") {
+        // Zhipu/GLM uses OpenAI-compatible API
+        if (apiKey) {
+          this.openaiClient = new OpenAI({
+            apiKey: apiKey,
+            baseURL: API_URLS.zhipu,
+            timeout: 60000,
+            maxRetries: 2
+          });
+          console.log("Zhipu/GLM client initialized successfully (OpenAI-compatible)");
+        } else {
+          console.warn("No API key available, Zhipu client not initialized");
         }
       }
     } catch (error) {
@@ -127,6 +150,144 @@ export class ProcessingHelper {
       this.geminiApiKey = null;
       this.anthropicClient = null;
     }
+  }
+
+  /**
+   * Fix malformed JSON from GLM API:
+   * 1. Single-quoted string values: "key": 'value' -> "key": "value"
+   * 2. Unescaped quotes inside string values: "例如："abc"" -> "例如：\"abc\""
+   * 3. Chinese curly quotes: " " -> escaped regular quotes
+   */
+  private fixChineseQuotesInJson(text: string): string {
+    // Step 1: Replace single-quoted values with double-quoted values
+    let result = '';
+    let i = 0;
+
+    while (i < text.length) {
+      if (text[i] === ':') {
+        result += ':';
+        i++;
+
+        // Skip whitespace after colon
+        while (i < text.length && /\s/.test(text[i])) {
+          result += text[i];
+          i++;
+        }
+
+        // Check if the value starts with a single quote
+        if (i < text.length && text[i] === "'") {
+          // Find the matching closing single quote (followed by , } ] or end)
+          let endPos = -1;
+          let j = i + 1;
+          while (j < text.length) {
+            if (text[j] === "'") {
+              let k = j + 1;
+              while (k < text.length && /\s/.test(text[k])) k++;
+              if (k >= text.length || text[k] === ',' || text[k] === '}' || text[k] === ']') {
+                endPos = j;
+                break;
+              }
+            }
+            j++;
+          }
+
+          if (endPos !== -1) {
+            const content = text.substring(i + 1, endPos);
+            const escaped = content.replace(/"/g, '\\"');
+            result += '"' + escaped + '"';
+            i = endPos + 1;
+            continue;
+          }
+        }
+      } else {
+        result += text[i];
+        i++;
+      }
+    }
+
+    // Step 2: Fix unescaped quotes inside JSON string values
+    // This handles cases like: "problem": "例如："0.1" 和 "1.2""
+    // The inner quotes need to be escaped
+    let finalResult = '';
+    let inString = false;
+    i = 0;
+
+    while (i < result.length) {
+      const char = result[i];
+
+      if (char === '"') {
+        // Check if this quote is escaped
+        let backslashCount = 0;
+        let j = i - 1;
+        while (j >= 0 && result[j] === '\\') {
+          backslashCount++;
+          j--;
+        }
+        const isEscaped = backslashCount % 2 === 1;
+
+        if (!isEscaped) {
+          if (!inString) {
+            // Starting a string
+            inString = true;
+            finalResult += char;
+          } else {
+            // This might be the end of string OR an unescaped quote inside
+            // Look ahead to determine if this is really the end of the string
+            let k = i + 1;
+            while (k < result.length && /\s/.test(result[k])) k++;
+
+            // If followed by : , } ] or end of input, it's a real string end
+            if (k >= result.length || result[k] === ':' || result[k] === ',' ||
+                result[k] === '}' || result[k] === ']') {
+              inString = false;
+              finalResult += char;
+            } else {
+              // This is an unescaped quote inside the string - escape it
+              finalResult += '\\"';
+            }
+          }
+        } else {
+          finalResult += char;
+        }
+      }
+      // Replace Chinese curly quotes with escaped regular quotes
+      else if (inString && (char === '\u201C' || char === '\u201D')) {
+        finalResult += '\\"';
+      }
+      // Replace Chinese single quotes
+      else if (inString && (char === '\u2018' || char === '\u2019')) {
+        finalResult += "'";
+      }
+      else {
+        finalResult += char;
+      }
+      i++;
+    }
+
+    return finalResult;
+  }
+
+  /**
+   * Make a Zhipu API call using native HTTP (bypasses OpenAI SDK quirks)
+   */
+  private async callZhipuAPI(
+    messages: Array<{ role: string; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }>,
+    model: string,
+    timeout: number = 60000
+  ): Promise<{ choices: Array<{ message: { content: string } }> }> {
+    const zhipuApiKey = configHelper.getApiKeyForProvider("zhipu");
+    const response = await axios.default.post(
+      `${API_URLS.zhipu}/chat/completions`,
+      { model, messages },
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${zhipuApiKey}`
+        },
+        timeout
+      }
+    );
+    return response.data;
   }
 
   private async waitForInitialization(
@@ -459,63 +620,120 @@ export class ProcessingHelper {
       }
 
       let problemInfo;
-      
-      if (config.apiProvider === "openai") {
-        // Verify OpenAI client
+
+      // OpenAI, Deepseek, and Zhipu all use OpenAI-compatible API
+      if (config.apiProvider === "openai" || config.apiProvider === "deepseek" || config.apiProvider === "zhipu") {
+        // Verify OpenAI-compatible client
         if (!this.openaiClient) {
           this.initializeAIClient(); // Try to reinitialize
-          
+
           if (!this.openaiClient) {
+            const providerName = config.apiProvider === "deepseek" ? "Deepseek" :
+                                 config.apiProvider === "zhipu" ? "Zhipu/GLM" : "OpenAI";
             return {
               success: false,
-              error: "OpenAI API key not configured or invalid. Please check your settings."
+              error: `${providerName} API key not configured or invalid. Please check your settings.`
             };
           }
         }
 
-        // Use OpenAI for processing
-        const messages = [
-          {
-            role: "system" as const, 
-            content: "You are a coding challenge interpreter. Analyze the screenshot of the coding problem and extract all relevant information. Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output. Just return the structured JSON without any other text."
-          },
-          {
-            role: "user" as const,
-            content: [
-              {
-                type: "text" as const, 
-                text: `Extract the coding problem details from these screenshots. Return in JSON format. Preferred coding language we gonna use for this problem is ${language}.`
-              },
-              ...imageDataList.map(data => ({
-                type: "image_url" as const,
-                image_url: { url: `data:image/png;base64,${data}` }
-              }))
-            ]
-          }
-        ];
+        // Get the appropriate model for the provider
+        let extractionModel = config.extractionModel;
+        if (config.apiProvider === "deepseek") {
+          extractionModel = extractionModel || "deepseek-chat";
+        } else if (config.apiProvider === "zhipu") {
+          // GLM-4V models support vision
+          extractionModel = extractionModel || "glm-4v-flash";
+        } else {
+          extractionModel = extractionModel || "gpt-4o";
+        }
 
-        // Send to OpenAI Vision API
-        const extractionResponse = await this.openaiClient.chat.completions.create({
-          model: config.extractionModel || "gpt-4o",
-          messages: messages,
-          max_tokens: 4000,
-          temperature: 0.2
-        });
+        // Build messages based on provider
+        let messages;
+
+        let extractionResponse;
+
+        if (config.apiProvider === "zhipu") {
+          // Zhipu GLM-4V: Use native HTTP request to bypass OpenAI SDK quirks
+          const systemPrompt = "You are a coding challenge interpreter. Analyze the screenshot of the coding problem and extract all relevant information. Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output. Just return the structured JSON without any other text.";
+
+          // For Zhipu, use only the first image if multiple
+          const firstImage = imageDataList[0];
+          const imageUrl = firstImage.startsWith('data:') ? firstImage : `data:image/png;base64,${firstImage}`;
+
+          const zhipuMessages = [
+            {
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text: `${systemPrompt}\n\nExtract the coding problem details from this screenshot. Return in JSON format. Preferred coding language we gonna use for this problem is ${language}.`
+                },
+                {
+                  type: "image_url",
+                  image_url: { url: imageUrl }
+                }
+              ]
+            }
+          ];
+
+          extractionResponse = await this.callZhipuAPI(zhipuMessages, extractionModel, 60000);
+        } else {
+          // OpenAI and Deepseek: standard format via OpenAI SDK
+          messages = [
+            {
+              role: "system" as const,
+              content: "You are a coding challenge interpreter. Analyze the screenshot of the coding problem and extract all relevant information. Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output. Just return the structured JSON without any other text."
+            },
+            {
+              role: "user" as const,
+              content: [
+                {
+                  type: "text" as const,
+                  text: `Extract the coding problem details from these screenshots. Return in JSON format. Preferred coding language we gonna use for this problem is ${language}.`
+                },
+                ...imageDataList.map(data => ({
+                  type: "image_url" as const,
+                  image_url: { url: `data:image/png;base64,${data}` }
+                }))
+              ]
+            }
+          ];
+
+          // Send to OpenAI-compatible Vision API
+          extractionResponse = await this.openaiClient.chat.completions.create({
+            model: extractionModel,
+            messages: messages,
+            max_tokens: 4000,
+            temperature: 0.2
+          });
+        }
 
         // Parse the response
         try {
           const responseText = extractionResponse.choices[0].message.content;
-          // Handle when OpenAI might wrap the JSON in markdown code blocks
-          const jsonText = responseText.replace(/```json|```/g, '').trim();
-          problemInfo = JSON.parse(jsonText);
+          // Handle when AI might wrap the JSON in markdown code blocks
+          let jsonText = responseText.replace(/```json\n?|```\n?/g, '').trim();
+          // Also try to extract JSON from text if AI added extra content
+          const jsonMatch = jsonText.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            jsonText = jsonMatch[0];
+          }
+          // Fix Chinese quotes and single-quoted arrays using character traversal
+          // This safely handles Chinese quotes (U+201C, U+201D) inside JSON strings
+          jsonText = this.fixChineseQuotesInJson(jsonText);
+
+          // Use jsonrepair to fix remaining issues (handles single quotes, trailing commas, etc.)
+          const repairedJson = jsonrepair(jsonText);
+          problemInfo = JSON.parse(repairedJson);
         } catch (error) {
-          console.error("Error parsing OpenAI response:", error);
+          console.error("Error parsing API response:", error);
           return {
             success: false,
             error: "Failed to parse problem information. Please try again or use clearer screenshots."
           };
         }
-      } else if (config.apiProvider === "gemini")  {
+      } else if (config.apiProvider === "gemini") {
         // Use Gemini API
         if (!this.geminiApiKey) {
           return {
@@ -735,57 +953,86 @@ export class ProcessingHelper {
 
       // Create prompt for solution generation
       const promptText = `
-Generate a detailed solution for the following coding problem:
+请为以下编程题目提供详细的解答。**重要：除了代码本身，所有文字说明必须使用中文！**
 
-PROBLEM STATEMENT:
+【题目描述】
 ${problemInfo.problem_statement}
 
-CONSTRAINTS:
-${problemInfo.constraints || "No specific constraints provided."}
+【约束条件】
+${problemInfo.constraints || "未提供具体约束条件。"}
 
-EXAMPLE INPUT:
-${problemInfo.example_input || "No example input provided."}
+【输入示例】
+${problemInfo.example_input || "未提供输入示例。"}
 
-EXAMPLE OUTPUT:
-${problemInfo.example_output || "No example output provided."}
+【输出示例】
+${problemInfo.example_output || "未提供输出示例。"}
 
-LANGUAGE: ${language}
+【编程语言】${language}
 
-I need the response in the following format:
-1. Code: A clean, optimized implementation in ${language}
-2. Your Thoughts: A list of key insights and reasoning behind your approach
-3. Time complexity: O(X) with a detailed explanation (at least 2 sentences)
-4. Space complexity: O(X) with a detailed explanation (at least 2 sentences)
+请严格按以下格式回答：
+1. **代码**：提供一个简洁、高效的 ${language} 实现（代码注释用中文）
+2. **解题思路**：用中文列出你的关键思路和推理过程，例如：
+   - **回溯法**：我们使用回溯法探索所有可能的组合...
+   - **剪枝优化**：当某个条件不满足时提前终止...
+3. **时间复杂度**：O(X)，用中文详细解释原因（至少2句话）
+4. **空间复杂度**：O(X)，用中文详细解释原因（至少2句话）
 
-For complexity explanations, please be thorough. For example: "Time complexity: O(n) because we iterate through the array only once. This is optimal as we need to examine each element at least once to find the solution." or "Space complexity: O(n) because in the worst case, we store all elements in the hashmap. The additional space scales linearly with the input size."
-
-Your solution should be efficient, well-commented, and handle edge cases.
+**注意**：解题思路、复杂度分析等所有说明文字必须是中文！代码中的注释也要用中文！
 `;
 
       let responseContent;
-      
-      if (config.apiProvider === "openai") {
-        // OpenAI processing
+
+      // OpenAI, Deepseek, and Zhipu all use OpenAI-compatible API
+      if (config.apiProvider === "openai" || config.apiProvider === "deepseek" || config.apiProvider === "zhipu") {
         if (!this.openaiClient) {
+          const providerName = config.apiProvider === "deepseek" ? "Deepseek" :
+                               config.apiProvider === "zhipu" ? "Zhipu/GLM" : "OpenAI";
           return {
             success: false,
-            error: "OpenAI API key not configured. Please check your settings."
+            error: `${providerName} API key not configured. Please check your settings.`
           };
         }
-        
-        // Send to OpenAI API
-        const solutionResponse = await this.openaiClient.chat.completions.create({
-          model: config.solutionModel || "gpt-4o",
-          messages: [
-            { role: "system", content: "You are an expert coding interview assistant. Provide clear, optimal solutions with detailed explanations." },
-            { role: "user", content: promptText }
-          ],
-          max_tokens: 4000,
-          temperature: 0.2
-        });
 
-        responseContent = solutionResponse.choices[0].message.content;
-      } else if (config.apiProvider === "gemini")  {
+        // Get the appropriate model for the provider
+        // Re-read config to get latest solutionModel
+        const latestConfig = configHelper.loadConfig();
+        let solutionModel = latestConfig.solutionModel || config.solutionModel;
+        if (config.apiProvider === "deepseek") {
+          solutionModel = solutionModel || "deepseek-chat";
+        } else if (config.apiProvider === "zhipu") {
+          solutionModel = solutionModel || "glm-4-flash";
+        } else {
+          solutionModel = solutionModel || "gpt-4o";
+        }
+
+        let solutionResponse;
+
+        if (config.apiProvider === "zhipu") {
+          // Zhipu: Use native HTTP request
+          const zhipuMessages = [
+            { role: "user", content: `你是一位资深的编程面试助手。请提供清晰、最优的解决方案，并附带详细的解释。\n\n${promptText}` }
+          ];
+
+          const zhipuResponse = await this.callZhipuAPI(zhipuMessages, solutionModel, 120000);
+          responseContent = zhipuResponse.choices[0].message.content;
+        } else {
+          // OpenAI/Deepseek: Use OpenAI SDK
+          const solutionMessages = [
+            { role: "system" as const, content: "你是一位资深的编程面试助手。请提供清晰、最优的解决方案，并附带详细的解释。" },
+            { role: "user" as const, content: promptText }
+          ];
+
+          // Send to OpenAI-compatible API
+          solutionResponse = await this.openaiClient.chat.completions.create({
+            model: solutionModel,
+            messages: solutionMessages,
+            max_tokens: 4000,
+            temperature: 0.2
+          });
+
+          responseContent = solutionResponse.choices[0].message.content;
+        }
+      } else if (config.apiProvider === "gemini") {
         // Gemini processing
         if (!this.geminiApiKey) {
           return {
@@ -801,7 +1048,7 @@ Your solution should be efficient, well-commented, and handle edge cases.
               role: "user",
               parts: [
                 {
-                  text: `You are an expert coding interview assistant. Provide a clear, optimal solution with detailed explanations for this problem:\n\n${promptText}`
+                  text: `你是一位资深的编程面试助手。请为以下问题提供清晰、最优的解决方案，并附带详细的解释：\n\n${promptText}`
                 }
               ]
             }
@@ -850,7 +1097,7 @@ Your solution should be efficient, well-commented, and handle edge cases.
               content: [
                 {
                   type: "text" as const,
-                  text: `You are an expert coding interview assistant. Provide a clear, optimal solution with detailed explanations for this problem:\n\n${promptText}`
+                  text: `你是一位资深的编程面试助手。请为以下问题提供清晰、最优的解决方案，并附带详细的解释：\n\n${promptText}`
                 }
               ]
             }
@@ -892,32 +1139,40 @@ Your solution should be efficient, well-commented, and handle edge cases.
       const codeMatch = responseContent.match(/```(?:\w+)?\s*([\s\S]*?)```/);
       const code = codeMatch ? codeMatch[1].trim() : responseContent;
       
-      // Extract thoughts, looking for bullet points or numbered lists
-      const thoughtsRegex = /(?:Thoughts:|Key Insights:|Reasoning:|Approach:)([\s\S]*?)(?:Time complexity:|$)/i;
+      // Extract thoughts, looking for bullet points or numbered lists (supports both English and Chinese)
+      const thoughtsRegex = /(?:Thoughts:|Key Insights:|Reasoning:|Approach:|解题思路|思路|关键思路)[：:]?\s*([\s\S]*?)(?:Time complexity:|时间复杂度|$)/i;
       const thoughtsMatch = responseContent.match(thoughtsRegex);
       let thoughts: string[] = [];
-      
+
       if (thoughtsMatch && thoughtsMatch[1]) {
-        // Extract bullet points or numbered items
-        const bulletPoints = thoughtsMatch[1].match(/(?:^|\n)\s*(?:[-*•]|\d+\.)\s*(.*)/g);
+        // Extract bullet points - be careful not to match markdown bold (**text**)
+        // Only match single dash/asterisk at line start, not double asterisks
+        const bulletPoints = thoughtsMatch[1].match(/(?:^|\n)\s*(?:[-•]|\d+\.)\s+(.+)/g);
         if (bulletPoints) {
-          thoughts = bulletPoints.map(point => 
-            point.replace(/^\s*(?:[-*•]|\d+\.)\s*/, '').trim()
+          thoughts = bulletPoints.map(point =>
+            point.replace(/^\s*(?:[-•]|\d+\.)\s+/, '').trim()
           ).filter(Boolean);
         } else {
           // If no bullet points found, split by newlines and filter empty lines
+          // Keep markdown formatting intact
           thoughts = thoughtsMatch[1].split('\n')
             .map((line) => line.trim())
-            .filter(Boolean);
+            .filter(line => {
+              // Filter out empty lines, code blocks, and orphaned markdown markers
+              if (!line || line.startsWith('```')) return false;
+              // Filter out lines that are only asterisks or markdown markers
+              if (/^[\*\-_]+$/.test(line)) return false;
+              return true;
+            });
         }
       }
       
-      // Extract complexity information
-      const timeComplexityPattern = /Time complexity:?\s*([^\n]+(?:\n[^\n]+)*?)(?=\n\s*(?:Space complexity|$))/i;
-      const spaceComplexityPattern = /Space complexity:?\s*([^\n]+(?:\n[^\n]+)*?)(?=\n\s*(?:[A-Z]|$))/i;
+      // Extract complexity information (supports both English and Chinese)
+      const timeComplexityPattern = /(?:Time complexity|时间复杂度)[：:]?\s*([^\n]+(?:\n[^\n]+)*?)(?=\n\s*(?:Space complexity|空间复杂度|$))/i;
+      const spaceComplexityPattern = /(?:Space complexity|空间复杂度)[：:]?\s*([^\n]+(?:\n[^\n]+)*?)(?=\n\s*(?:[A-Z#]|$))/i;
       
-      let timeComplexity = "O(n) - Linear time complexity because we only iterate through the array once. Each element is processed exactly one time, and the hashmap lookups are O(1) operations.";
-      let spaceComplexity = "O(n) - Linear space complexity because we store elements in the hashmap. In the worst case, we might need to store all elements before finding the solution pair.";
+      let timeComplexity = "O(n) - 线性时间复杂度，因为我们只遍历数组一次。每个元素只处理一次，哈希表查找是 O(1) 操作。";
+      let spaceComplexity = "O(n) - 线性空间复杂度，因为我们在哈希表中存储元素。最坏情况下需要存储所有元素。";
       
       const timeMatch = responseContent.match(timeComplexityPattern);
       if (timeMatch && timeMatch[1]) {
@@ -951,7 +1206,7 @@ Your solution should be efficient, well-commented, and handle edge cases.
 
       const formattedResponse = {
         code: code,
-        thoughts: thoughts.length > 0 ? thoughts : ["Solution approach based on efficiency and readability"],
+        thoughts: thoughts.length > 0 ? thoughts : ["基于效率和可读性的解题方法"],
         time_complexity: timeComplexity,
         space_complexity: spaceComplexity
       };
@@ -1008,19 +1263,30 @@ Your solution should be efficient, well-commented, and handle edge cases.
       const imageDataList = screenshots.map(screenshot => screenshot.data);
       
       let debugContent;
-      
-      if (config.apiProvider === "openai") {
+
+      // OpenAI, Deepseek, and Zhipu all use OpenAI-compatible API
+      if (config.apiProvider === "openai" || config.apiProvider === "deepseek" || config.apiProvider === "zhipu") {
         if (!this.openaiClient) {
+          const providerName = config.apiProvider === "deepseek" ? "Deepseek" :
+                               config.apiProvider === "zhipu" ? "Zhipu/GLM" : "OpenAI";
           return {
             success: false,
-            error: "OpenAI API key not configured. Please check your settings."
+            error: `${providerName} API key not configured. Please check your settings.`
           };
         }
-        
-        const messages = [
-          {
-            role: "system" as const, 
-            content: `You are a coding interview assistant helping debug and improve solutions. Analyze these screenshots which include either error messages, incorrect outputs, or test cases, and provide detailed debugging help.
+
+        // Get the appropriate model for the provider
+        let debuggingModel = config.debuggingModel;
+        if (config.apiProvider === "deepseek") {
+          debuggingModel = debuggingModel || "deepseek-chat";
+        } else if (config.apiProvider === "zhipu") {
+          // GLM-4V models support vision
+          debuggingModel = debuggingModel || "glm-4v-flash";
+        } else {
+          debuggingModel = debuggingModel || "gpt-4o";
+        }
+
+        const systemPrompt = `You are a coding interview assistant helping debug and improve solutions. Analyze these screenshots which include either error messages, incorrect outputs, or test cases, and provide detailed debugging help.
 
 Your response MUST follow this exact structure with these section headers (use ### for headers):
 ### Issues Identified
@@ -1038,26 +1304,13 @@ Here provide a clear explanation of why the changes are needed
 ### Key Points
 - Summary bullet points of the most important takeaways
 
-If you include code examples, use proper markdown code blocks with language specification (e.g. \`\`\`java).`
-          },
-          {
-            role: "user" as const,
-            content: [
-              {
-                type: "text" as const, 
-                text: `I'm solving this coding problem: "${problemInfo.problem_statement}" in ${language}. I need help with debugging or improving my solution. Here are screenshots of my code, the errors or test cases. Please provide a detailed analysis with:
+If you include code examples, use proper markdown code blocks with language specification (e.g. \`\`\`java).`;
+
+        const userPrompt = `I'm solving this coding problem: "${problemInfo.problem_statement}" in ${language}. I need help with debugging or improving my solution. Here are screenshots of my code, the errors or test cases. Please provide a detailed analysis with:
 1. What issues you found in my code
 2. Specific improvements and corrections
 3. Any optimizations that would make the solution better
-4. A clear explanation of the changes needed` 
-              },
-              ...imageDataList.map(data => ({
-                type: "image_url" as const,
-                image_url: { url: `data:image/png;base64,${data}` }
-              }))
-            ]
-          }
-        ];
+4. A clear explanation of the changes needed`;
 
         if (mainWindow) {
           mainWindow.webContents.send("processing-status", {
@@ -1066,15 +1319,61 @@ If you include code examples, use proper markdown code blocks with language spec
           });
         }
 
-        const debugResponse = await this.openaiClient.chat.completions.create({
-          model: config.debuggingModel || "gpt-4o",
-          messages: messages,
-          max_tokens: 4000,
-          temperature: 0.2
-        });
-        
-        debugContent = debugResponse.choices[0].message.content;
-      } else if (config.apiProvider === "gemini")  {
+        if (config.apiProvider === "zhipu") {
+          // Zhipu: Use native HTTP request for vision
+          const firstImage = imageDataList[0];
+          const imageUrl = firstImage.startsWith('data:') ? firstImage : `data:image/png;base64,${firstImage}`;
+
+          const zhipuMessages = [
+            {
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text: `${systemPrompt}\n\n${userPrompt}`
+                },
+                {
+                  type: "image_url",
+                  image_url: { url: imageUrl }
+                }
+              ]
+            }
+          ];
+
+          const zhipuResponse = await this.callZhipuAPI(zhipuMessages, debuggingModel, 120000);
+          debugContent = zhipuResponse.choices[0].message.content;
+        } else {
+          // OpenAI/Deepseek: Use OpenAI SDK
+          const debugMessages = [
+            {
+              role: "system" as const,
+              content: systemPrompt
+            },
+            {
+              role: "user" as const,
+              content: [
+                {
+                  type: "text" as const,
+                  text: userPrompt
+                },
+                ...imageDataList.map(data => ({
+                  type: "image_url" as const,
+                  image_url: { url: `data:image/png;base64,${data}` }
+                }))
+              ]
+            }
+          ];
+
+          const debugResponse = await this.openaiClient.chat.completions.create({
+            model: debuggingModel,
+            messages: debugMessages,
+            max_tokens: 4000,
+            temperature: 0.2
+          });
+
+          debugContent = debugResponse.choices[0].message.content;
+        }
+      } else if (config.apiProvider === "gemini") {
         if (!this.geminiApiKey) {
           return {
             success: false,
