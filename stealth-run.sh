@@ -38,7 +38,8 @@ echo "=== Step 4: Launching in stealth mode... ==="
 echo "Remember: Cmd+B to make it visible, Cmd+[ and Cmd+] to adjust opacity!"
 echo
 export NODE_ENV=production
-npx electron ./dist-electron/main.js &
+# Redirect stdout/stderr to avoid EIO when running in background (broken pipe to terminal)
+npx electron ./dist-electron/main.js >/dev/null 2>&1 &
 
 echo "App is now running invisibly! Press Cmd+B to make it visible."
 echo
