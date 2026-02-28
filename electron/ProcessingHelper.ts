@@ -752,7 +752,7 @@ ${problemInfo.example_output || "No example output provided."}
 LANGUAGE: ${language}
 
 I need the response in the following format:
-1. Code: A clean, optimized implementation in ${language}
+1. Code: A clean, easy to understand, optimized implementation in ${language}
 2. Your Thoughts: A list of key insights and reasoning behind your approach
 3. Time complexity: O(X) with a detailed explanation (at least 2 sentences)
 4. Space complexity: O(X) with a detailed explanation (at least 2 sentences)

@@ -1,0 +1,9 @@
+{
+  "apiKey": "",
+  "apiProvider": "gemini",
+  "extractionModel": "gemini-2.0-flash",
+  "solutionModel": "gemini-2.0-flash",
+  "debuggingModel": "gemini-2.0-flash",
+  "language": "python",
+  "opacity": 1
+}
