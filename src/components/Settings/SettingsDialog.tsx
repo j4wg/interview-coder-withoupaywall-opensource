@@ -50,13 +50,13 @@ const modelCategories: ModelCategory[] = [
     ],
     geminiModels: [
       {
-        id: "gemini-1.5-pro",
-        name: "Gemini 1.5 Pro",
+        id: "gemini-2.5-flash",
+        name: "gemini 2.5 flash",
         description: "Best overall performance for problem extraction"
       },
       {
-        id: "gemini-2.0-flash",
-        name: "Gemini 2.0 Flash",
+        id: "gemini-2.5-flash-lite",
+        name: "gemini 2.5 flash Lite",
         description: "Faster, more cost-effective option"
       }
     ],
@@ -96,13 +96,13 @@ const modelCategories: ModelCategory[] = [
     ],
     geminiModels: [
       {
-        id: "gemini-1.5-pro",
-        name: "Gemini 1.5 Pro",
+        id: "gemini-2.5-flash",
+        name: "gemini 2.5 flash",
         description: "Strong overall performance for coding tasks"
       },
       {
-        id: "gemini-2.0-flash",
-        name: "Gemini 2.0 Flash",
+        id: "gemini-2.5-flash-lite",
+        name: "gemini 2.5 flash Lite",
         description: "Faster, more cost-effective option"
       }
     ],
@@ -142,13 +142,13 @@ const modelCategories: ModelCategory[] = [
     ],
     geminiModels: [
       {
-        id: "gemini-1.5-pro",
-        name: "Gemini 1.5 Pro",
+        id: "gemini-2.5-flash",
+        name: "gemini 2.5 flash",
         description: "Best for analyzing code and error messages"
       },
       {
-        id: "gemini-2.0-flash",
-        name: "Gemini 2.0 Flash",
+        id: "gemini-2.5-flash-lite",
+        name: "gemini 2.5 flash Lite",
         description: "Faster, more cost-effective option"
       }
     ],
@@ -244,9 +244,9 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
       setSolutionModel("gpt-4o");
       setDebuggingModel("gpt-4o");
     } else if (provider === "gemini") {
-      setExtractionModel("gemini-1.5-pro");
-      setSolutionModel("gemini-1.5-pro");
-      setDebuggingModel("gemini-1.5-pro");
+      setExtractionModel("gemini-2.5-flash");
+      setSolutionModel("gemini-2.5-flash");
+      setDebuggingModel("gemini-2.5-flash");
     } else if (provider === "anthropic") {
       setExtractionModel("claude-3-7-sonnet-20250219");
       setSolutionModel("claude-3-7-sonnet-20250219");
