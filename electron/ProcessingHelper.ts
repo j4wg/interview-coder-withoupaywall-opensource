@@ -8,6 +8,7 @@ import { app, BrowserWindow, dialog } from "electron"
 import { OpenAI } from "openai"
 import { configHelper } from "./ConfigHelper"
 import Anthropic from '@anthropic-ai/sdk';
+import { ClaudeCodeBridge } from "./ClaudeCodeBridge"
 
 // Interface for Gemini API requests
 interface GeminiMessage {
@@ -104,7 +105,6 @@ export class ProcessingHelper {
           console.warn("No API key available, Gemini client not initialized");
         }
       } else if (config.apiProvider === "anthropic") {
-        // Reset other clients
         this.openaiClient = null;
         this.geminiApiKey = null;
         if (config.apiKey) {
@@ -120,6 +120,11 @@ export class ProcessingHelper {
           this.anthropicClient = null;
           console.warn("No API key available, Anthropic client not initialized");
         }
+      } else if (config.apiProvider === "claude-code") {
+        this.openaiClient = null;
+        this.geminiApiKey = null;
+        this.anthropicClient = null;
+        console.log("Claude Code CLI provider selected — no API key needed");
       }
     } catch (error) {
       console.error("Failed to initialize AI client:", error);
@@ -224,17 +229,14 @@ export class ProcessingHelper {
         return;
       }
     } else if (config.apiProvider === "anthropic" && !this.anthropicClient) {
-      // Add check for Anthropic client
       this.initializeAIClient();
-      
       if (!this.anthropicClient) {
         console.error("Anthropic client not initialized");
-        mainWindow.webContents.send(
-          this.deps.PROCESSING_EVENTS.API_KEY_INVALID
-        );
+        mainWindow.webContents.send(this.deps.PROCESSING_EVENTS.API_KEY_INVALID);
         return;
       }
     }
+    // claude-code needs no client check — ClaudeCodeBridge calls the CLI directly
 
     const view = this.deps.getView()
     console.log("Processing screenshots in view:", view)
@@ -634,8 +636,21 @@ export class ProcessingHelper {
             error: "Failed to process with Anthropic API. Please check your API key or try again later."
           };
         }
+      } else if (config.apiProvider === "claude-code") {
+        try {
+          const prompt = `You are a coding challenge interpreter. Analyze these screenshots of a coding problem and extract all relevant information. Return ONLY a JSON object with these fields: problem_statement, constraints, example_input, example_output. No markdown, no extra text. Preferred language: ${language}.`;
+          const responseText = await ClaudeCodeBridge.sendMessage(prompt, config.extractionModel || "claude-sonnet-4-6", imageDataList);
+          const jsonText = responseText.replace(/```json|```/g, '').trim();
+          problemInfo = JSON.parse(jsonText);
+        } catch (error: any) {
+          console.error("Error using Claude Code for extraction:", error);
+          return {
+            success: false,
+            error: `Claude Code error: ${error.message || "Failed to extract problem. Make sure Claude Code is installed and authenticated."}`
+          };
+        }
       }
-      
+
       // Update the user on progress
       if (mainWindow) {
         mainWindow.webContents.send("processing-status", {
@@ -886,8 +901,21 @@ Your solution should be efficient, well-commented, and handle edge cases.
             error: "Failed to generate solution with Anthropic API. Please check your API key or try again later."
           };
         }
+      } else if (config.apiProvider === "claude-code") {
+        try {
+          responseContent = await ClaudeCodeBridge.sendMessage(
+            `You are an expert coding interview assistant. Provide a clear, optimal solution with detailed explanations for this problem:\n\n${promptText}`,
+            config.solutionModel || "claude-sonnet-4-6"
+          );
+        } catch (error: any) {
+          console.error("Error using Claude Code for solution:", error);
+          return {
+            success: false,
+            error: `Claude Code error: ${error.message || "Failed to generate solution."}`
+          };
+        }
       }
-      
+
       // Extract parts from the response
       const codeMatch = responseContent.match(/```(?:\w+)?\s*([\s\S]*?)```/);
       const code = codeMatch ? codeMatch[1].trim() : responseContent;
@@ -1244,9 +1272,23 @@ If you include code examples, use proper markdown code blocks with language spec
             error: "Failed to process debug request with Anthropic API. Please check your API key or try again later."
           };
         }
+      } else if (config.apiProvider === "claude-code") {
+        try {
+          const claudeCodeDebugPrompt = `You are a coding interview assistant helping debug and improve solutions. Analyze these screenshots which include error messages, incorrect outputs, or test cases. I'm solving this coding problem: "${problemInfo.problem_statement}" in ${language}. Provide detailed debugging help with: what issues you found, specific corrections, any optimizations, and a clear explanation of the changes needed.`;
+          debugContent = await ClaudeCodeBridge.sendMessage(
+            claudeCodeDebugPrompt,
+            config.debuggingModel || "claude-sonnet-4-6",
+            imageDataList
+          );
+        } catch (error: any) {
+          console.error("Error using Claude Code for debugging:", error);
+          return {
+            success: false,
+            error: `Claude Code error: ${error.message || "Failed to generate debug analysis."}`
+          };
+        }
       }
-      
-      
+
       if (mainWindow) {
         mainWindow.webContents.send("processing-status", {
           message: "Debug analysis complete",

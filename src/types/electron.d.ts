@@ -61,6 +61,13 @@ export interface ElectronAPI {
   openLink: (url: string) => void
   onApiKeyInvalid: (callback: () => void) => () => void
   removeListener: (eventName: string, callback: (...args: any[]) => void) => void
+  checkClaudeCodeStatus: () => Promise<{
+    installed: boolean
+    authenticated: boolean
+    email?: string
+    subscriptionType?: string
+    error?: string
+  }>
 }
 
 declare global {

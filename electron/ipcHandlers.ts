@@ -4,6 +4,7 @@ import { ipcMain, shell, dialog } from "electron"
 import { randomBytes } from "crypto"
 import { IIpcHandlerDeps } from "./main"
 import { configHelper } from "./ConfigHelper"
+import { ClaudeCodeBridge } from "./ClaudeCodeBridge"
 
 export function initializeIpcHandlers(deps: IIpcHandlerDeps): void {
   console.log("Initializing IPC handlers")
@@ -347,5 +348,9 @@ export function initializeIpcHandlers(deps: IIpcHandlerDeps): void {
       console.error("Error deleting last screenshot:", error)
       return { success: false, error: "Failed to delete last screenshot" }
     }
+  })
+
+  ipcMain.handle("check-claude-code-status", async () => {
+    return ClaudeCodeBridge.getStatus()
   })
 }

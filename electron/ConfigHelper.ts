@@ -7,7 +7,7 @@ import { OpenAI } from "openai"
 
 interface Config {
   apiKey: string;
-  apiProvider: "openai" | "gemini" | "anthropic";  // Added provider selection
+  apiProvider: "openai" | "gemini" | "anthropic" | "claude-code";
   extractionModel: string;
   solutionModel: string;
   debuggingModel: string;
@@ -19,8 +19,8 @@ export class ConfigHelper extends EventEmitter {
   private configPath: string;
   private defaultConfig: Config = {
     apiKey: "",
-    apiProvider: "gemini", // Default to Gemini
-    extractionModel: "gemini-2.0-flash", // Default to Flash for faster responses
+    apiProvider: "gemini",
+    extractionModel: "gemini-2.0-flash",
     solutionModel: "gemini-2.0-flash",
     debuggingModel: "gemini-2.0-flash",
     language: "python",
@@ -58,7 +58,7 @@ export class ConfigHelper extends EventEmitter {
   /**
    * Validate and sanitize model selection to ensure only allowed models are used
    */
-  private sanitizeModelSelection(model: string, provider: "openai" | "gemini" | "anthropic"): string {
+  private sanitizeModelSelection(model: string, provider: "openai" | "gemini" | "anthropic" | "claude-code"): string {
     if (provider === "openai") {
       // Only allow gpt-4o and gpt-4o-mini for OpenAI
       const allowedModels = ['gpt-4o', 'gpt-4o-mini'];
@@ -75,12 +75,21 @@ export class ConfigHelper extends EventEmitter {
         return 'gemini-2.0-flash'; // Changed default to flash
       }
       return model;
-    }  else if (provider === "anthropic") {
-      // Only allow Claude models
-      const allowedModels = ['claude-3-7-sonnet-20250219', 'claude-3-5-sonnet-20241022', 'claude-3-opus-20240229'];
+    } else if (provider === "anthropic") {
+      const allowedModels = [
+        'claude-opus-4-8', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001',
+        'claude-3-7-sonnet-20250219', 'claude-3-5-sonnet-20241022', 'claude-3-opus-20240229'
+      ];
       if (!allowedModels.includes(model)) {
-        console.warn(`Invalid Anthropic model specified: ${model}. Using default model: claude-3-7-sonnet-20250219`);
-        return 'claude-3-7-sonnet-20250219';
+        console.warn(`Invalid Anthropic model specified: ${model}. Defaulting to claude-sonnet-4-6`);
+        return 'claude-sonnet-4-6';
+      }
+      return model;
+    } else if (provider === "claude-code") {
+      const allowedModels = ['claude-opus-4-8', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001'];
+      if (!allowedModels.includes(model)) {
+        console.warn(`Invalid Claude Code model: ${model}. Defaulting to claude-sonnet-4-6`);
+        return 'claude-sonnet-4-6';
       }
       return model;
     }
@@ -95,8 +104,9 @@ export class ConfigHelper extends EventEmitter {
         const config = JSON.parse(configData);
         
         // Ensure apiProvider is a valid value
-        if (config.apiProvider !== "openai" && config.apiProvider !== "gemini"  && config.apiProvider !== "anthropic") {
-          config.apiProvider = "gemini"; // Default to Gemini if invalid
+        const validProviders = ["openai", "gemini", "anthropic", "claude-code"];
+        if (!validProviders.includes(config.apiProvider)) {
+          config.apiProvider = "gemini";
         }
         
         // Sanitize model selections to ensure only allowed models are used
@@ -175,9 +185,13 @@ export class ConfigHelper extends EventEmitter {
           updates.solutionModel = "gpt-4o";
           updates.debuggingModel = "gpt-4o";
         } else if (updates.apiProvider === "anthropic") {
-          updates.extractionModel = "claude-3-7-sonnet-20250219";
-          updates.solutionModel = "claude-3-7-sonnet-20250219";
-          updates.debuggingModel = "claude-3-7-sonnet-20250219";
+          updates.extractionModel = "claude-sonnet-4-6";
+          updates.solutionModel = "claude-sonnet-4-6";
+          updates.debuggingModel = "claude-sonnet-4-6";
+        } else if (updates.apiProvider === "claude-code") {
+          updates.extractionModel = "claude-sonnet-4-6";
+          updates.solutionModel = "claude-sonnet-4-6";
+          updates.debuggingModel = "claude-sonnet-4-6";
         } else {
           updates.extractionModel = "gemini-2.0-flash";
           updates.solutionModel = "gemini-2.0-flash";
@@ -219,6 +233,8 @@ export class ConfigHelper extends EventEmitter {
    */
   public hasApiKey(): boolean {
     const config = this.loadConfig();
+    // claude-code authenticates via the Claude Code CLI — no API key required
+    if (config.apiProvider === "claude-code") return true;
     return !!config.apiKey && config.apiKey.trim().length > 0;
   }
   

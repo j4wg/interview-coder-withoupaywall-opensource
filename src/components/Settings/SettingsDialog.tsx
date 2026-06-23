@@ -13,7 +13,7 @@ import { Button } from "../ui/button";
 import { Settings } from "lucide-react";
 import { useToast } from "../../contexts/toast";
 
-type APIProvider = "openai" | "gemini" | "anthropic";
+type APIProvider = "openai" | "gemini" | "anthropic" | "claude-code";
 
 type AIModel = {
   id: string;
@@ -28,6 +28,7 @@ type ModelCategory = {
   openaiModels: AIModel[];
   geminiModels: AIModel[];
   anthropicModels: AIModel[];
+  claudeCodeModels: AIModel[];
 };
 
 // Define available models for each category
@@ -61,21 +62,17 @@ const modelCategories: ModelCategory[] = [
       }
     ],
     anthropicModels: [
-      {
-        id: "claude-3-7-sonnet-20250219",
-        name: "Claude 3.7 Sonnet",
-        description: "Best overall performance for problem extraction"
-      },
-      {
-        id: "claude-3-5-sonnet-20241022",
-        name: "Claude 3.5 Sonnet",
-        description: "Balanced performance and speed"
-      },
-      {
-        id: "claude-3-opus-20240229",
-        name: "Claude 3 Opus",
-        description: "Top-level intelligence, fluency, and understanding"
-      }
+      { id: "claude-opus-4-8", name: "Claude Opus 4", description: "Most capable model for complex problems" },
+      { id: "claude-sonnet-4-6", name: "Claude Sonnet 4", description: "Best balance of speed and intelligence" },
+      { id: "claude-haiku-4-5-20251001", name: "Claude Haiku 4", description: "Fastest model for quick extraction" },
+      { id: "claude-3-7-sonnet-20250219", name: "Claude 3.7 Sonnet", description: "Previous generation flagship" },
+      { id: "claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet", description: "Balanced performance and speed" },
+      { id: "claude-3-opus-20240229", name: "Claude 3 Opus", description: "Top-level intelligence and understanding" }
+    ],
+    claudeCodeModels: [
+      { id: "claude-opus-4-8", name: "Claude Opus 4", description: "Most capable — best for hard problems" },
+      { id: "claude-sonnet-4-6", name: "Claude Sonnet 4 (recommended)", description: "Best balance of speed and quality" },
+      { id: "claude-haiku-4-5-20251001", name: "Claude Haiku 4", description: "Fastest — good for quick answers" }
     ]
   },
   {
@@ -107,21 +104,17 @@ const modelCategories: ModelCategory[] = [
       }
     ],
     anthropicModels: [
-      {
-        id: "claude-3-7-sonnet-20250219",
-        name: "Claude 3.7 Sonnet",
-        description: "Strong overall performance for coding tasks"
-      },
-      {
-        id: "claude-3-5-sonnet-20241022",
-        name: "Claude 3.5 Sonnet",
-        description: "Balanced performance and speed"
-      },
-      {
-        id: "claude-3-opus-20240229",
-        name: "Claude 3 Opus",
-        description: "Top-level intelligence, fluency, and understanding"
-      }
+      { id: "claude-opus-4-8", name: "Claude Opus 4", description: "Most capable model for complex solutions" },
+      { id: "claude-sonnet-4-6", name: "Claude Sonnet 4", description: "Best balance of speed and intelligence" },
+      { id: "claude-haiku-4-5-20251001", name: "Claude Haiku 4", description: "Fastest model for quick solutions" },
+      { id: "claude-3-7-sonnet-20250219", name: "Claude 3.7 Sonnet", description: "Previous generation flagship" },
+      { id: "claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet", description: "Balanced performance and speed" },
+      { id: "claude-3-opus-20240229", name: "Claude 3 Opus", description: "Top-level intelligence and understanding" }
+    ],
+    claudeCodeModels: [
+      { id: "claude-opus-4-8", name: "Claude Opus 4", description: "Most capable — best for hard problems" },
+      { id: "claude-sonnet-4-6", name: "Claude Sonnet 4 (recommended)", description: "Best balance of speed and quality" },
+      { id: "claude-haiku-4-5-20251001", name: "Claude Haiku 4", description: "Fastest — good for quick answers" }
     ]
   },
   {
@@ -153,21 +146,17 @@ const modelCategories: ModelCategory[] = [
       }
     ],
     anthropicModels: [
-      {
-        id: "claude-3-7-sonnet-20250219",
-        name: "Claude 3.7 Sonnet",
-        description: "Best for analyzing code and error messages"
-      },
-      {
-        id: "claude-3-5-sonnet-20241022",
-        name: "Claude 3.5 Sonnet",
-        description: "Balanced performance and speed"
-      },
-      {
-        id: "claude-3-opus-20240229",
-        name: "Claude 3 Opus",
-        description: "Top-level intelligence, fluency, and understanding"
-      }
+      { id: "claude-opus-4-8", name: "Claude Opus 4", description: "Most capable model for deep debugging" },
+      { id: "claude-sonnet-4-6", name: "Claude Sonnet 4", description: "Best balance of speed and intelligence" },
+      { id: "claude-haiku-4-5-20251001", name: "Claude Haiku 4", description: "Fastest model for quick debugging" },
+      { id: "claude-3-7-sonnet-20250219", name: "Claude 3.7 Sonnet", description: "Previous generation flagship" },
+      { id: "claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet", description: "Balanced performance and speed" },
+      { id: "claude-3-opus-20240229", name: "Claude 3 Opus", description: "Top-level intelligence and understanding" }
+    ],
+    claudeCodeModels: [
+      { id: "claude-opus-4-8", name: "Claude Opus 4", description: "Most capable — best for hard problems" },
+      { id: "claude-sonnet-4-6", name: "Claude Sonnet 4 (recommended)", description: "Best balance of speed and quality" },
+      { id: "claude-haiku-4-5-20251001", name: "Claude Haiku 4", description: "Fastest — good for quick answers" }
     ]
   }
 ];
@@ -185,6 +174,10 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
   const [solutionModel, setSolutionModel] = useState("gpt-4o");
   const [debuggingModel, setDebuggingModel] = useState("gpt-4o");
   const [isLoading, setIsLoading] = useState(false);
+  const [claudeCodeStatus, setClaudeCodeStatus] = useState<{
+    installed: boolean; authenticated: boolean; email?: string; error?: string;
+  } | null>(null);
+  const [claudeCodeChecking, setClaudeCodeChecking] = useState(false);
   const { showToast } = useToast();
 
   // Sync with external open state
@@ -234,11 +227,22 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
     }
   }, [open, showToast]);
 
+  // Check Claude Code status when that provider is selected
+  const checkClaudeCodeStatus = async () => {
+    setClaudeCodeChecking(true);
+    try {
+      const status = await window.electronAPI.checkClaudeCodeStatus();
+      setClaudeCodeStatus(status);
+    } catch {
+      setClaudeCodeStatus({ installed: false, authenticated: false, error: "Failed to check status" });
+    } finally {
+      setClaudeCodeChecking(false);
+    }
+  };
+
   // Handle API provider change
   const handleProviderChange = (provider: APIProvider) => {
     setApiProvider(provider);
-    
-    // Reset models to defaults when changing provider
     if (provider === "openai") {
       setExtractionModel("gpt-4o");
       setSolutionModel("gpt-4o");
@@ -248,9 +252,14 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
       setSolutionModel("gemini-1.5-pro");
       setDebuggingModel("gemini-1.5-pro");
     } else if (provider === "anthropic") {
-      setExtractionModel("claude-3-7-sonnet-20250219");
-      setSolutionModel("claude-3-7-sonnet-20250219");
-      setDebuggingModel("claude-3-7-sonnet-20250219");
+      setExtractionModel("claude-sonnet-4-6");
+      setSolutionModel("claude-sonnet-4-6");
+      setDebuggingModel("claude-sonnet-4-6");
+    } else if (provider === "claude-code") {
+      setExtractionModel("claude-sonnet-4-6");
+      setSolutionModel("claude-sonnet-4-6");
+      setDebuggingModel("claude-sonnet-4-6");
+      checkClaudeCodeStatus();
     }
   };
 
@@ -258,7 +267,7 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
     setIsLoading(true);
     try {
       const result = await window.electronAPI.updateConfig({
-        apiKey,
+        apiKey: apiProvider === "claude-code" ? "" : apiKey,
         apiProvider,
         extractionModel,
         solutionModel,
@@ -375,25 +384,40 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
                 onClick={() => handleProviderChange("anthropic")}
               >
                 <div className="flex items-center gap-2">
-                  <div
-                    className={`w-3 h-3 rounded-full ${
-                      apiProvider === "anthropic" ? "bg-white" : "bg-white/20"
-                    }`}
-                  />
+                  <div className={`w-3 h-3 rounded-full ${apiProvider === "anthropic" ? "bg-white" : "bg-white/20"}`} />
                   <div className="flex flex-col">
-                    <p className="font-medium text-white text-sm">Claude</p>
-                    <p className="text-xs text-white/60">Claude 3 models</p>
+                    <p className="font-medium text-white text-sm">Claude API</p>
+                    <p className="text-xs text-white/60">API key required</p>
                   </div>
                 </div>
               </div>
             </div>
+            {/* Claude Code row */}
+            <div
+              className={`w-full p-2 rounded-lg cursor-pointer transition-colors ${
+                apiProvider === "claude-code"
+                  ? "bg-white/10 border border-white/20"
+                  : "bg-black/30 border border-white/5 hover:bg-white/5"
+              }`}
+              onClick={() => handleProviderChange("claude-code")}
+            >
+              <div className="flex items-center gap-2">
+                <div className={`w-3 h-3 rounded-full ${apiProvider === "claude-code" ? "bg-white" : "bg-white/20"}`} />
+                <div className="flex flex-col">
+                  <p className="font-medium text-white text-sm">Claude Code (Pro subscription)</p>
+                  <p className="text-xs text-white/60">Use your Claude Pro subscription via the Claude Code CLI — no API key needed</p>
+                </div>
+              </div>
+            </div>
           </div>
-          
+
+          {/* API key input — hidden for claude-code */}
+          {apiProvider !== "claude-code" ? (
           <div className="space-y-2">
             <label className="text-sm font-medium text-white" htmlFor="apiKey">
-            {apiProvider === "openai" ? "OpenAI API Key" : 
-             apiProvider === "gemini" ? "Gemini API Key" : 
-             "Anthropic API Key"}
+              {apiProvider === "openai" ? "OpenAI API Key" :
+               apiProvider === "gemini" ? "Gemini API Key" :
+               "Anthropic API Key"}
             </label>
             <Input
               id="apiKey"
@@ -401,61 +425,87 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
               placeholder={
-                apiProvider === "openai" ? "sk-..." : 
+                apiProvider === "openai" ? "sk-..." :
                 apiProvider === "gemini" ? "Enter your Gemini API key" :
                 "sk-ant-..."
               }
               className="bg-black/50 border-white/10 text-white"
             />
-            {apiKey && (
-              <p className="text-xs text-white/50">
-                Current: {maskApiKey(apiKey)}
-              </p>
-            )}
+            {apiKey && <p className="text-xs text-white/50">Current: {maskApiKey(apiKey)}</p>}
             <p className="text-xs text-white/50">
-              Your API key is stored locally and never sent to any server except {apiProvider === "openai" ? "OpenAI" : "Google"}
+              Your API key is stored locally and never sent to any server except {apiProvider === "openai" ? "OpenAI" : apiProvider === "gemini" ? "Google" : "Anthropic"}
             </p>
             <div className="mt-2 p-2 rounded-md bg-white/5 border border-white/10">
               <p className="text-xs text-white/80 mb-1">Don't have an API key?</p>
               {apiProvider === "openai" ? (
                 <>
-                  <p className="text-xs text-white/60 mb-1">1. Create an account at <button 
-                    onClick={() => openExternalLink('https://platform.openai.com/signup')} 
-                    className="text-blue-400 hover:underline cursor-pointer">OpenAI</button>
-                  </p>
-                  <p className="text-xs text-white/60 mb-1">2. Go to <button 
-                    onClick={() => openExternalLink('https://platform.openai.com/api-keys')} 
-                    className="text-blue-400 hover:underline cursor-pointer">API Keys</button> section
-                  </p>
+                  <p className="text-xs text-white/60 mb-1">1. Create an account at <button onClick={() => openExternalLink('https://platform.openai.com/signup')} className="text-blue-400 hover:underline cursor-pointer">OpenAI</button></p>
+                  <p className="text-xs text-white/60 mb-1">2. Go to <button onClick={() => openExternalLink('https://platform.openai.com/api-keys')} className="text-blue-400 hover:underline cursor-pointer">API Keys</button> section</p>
                   <p className="text-xs text-white/60">3. Create a new secret key and paste it here</p>
                 </>
-              ) : apiProvider === "gemini" ?  (
+              ) : apiProvider === "gemini" ? (
                 <>
-                  <p className="text-xs text-white/60 mb-1">1. Create an account at <button 
-                    onClick={() => openExternalLink('https://aistudio.google.com/')} 
-                    className="text-blue-400 hover:underline cursor-pointer">Google AI Studio</button>
-                  </p>
-                  <p className="text-xs text-white/60 mb-1">2. Go to the <button 
-                    onClick={() => openExternalLink('https://aistudio.google.com/app/apikey')} 
-                    className="text-blue-400 hover:underline cursor-pointer">API Keys</button> section
-                  </p>
+                  <p className="text-xs text-white/60 mb-1">1. Go to <button onClick={() => openExternalLink('https://aistudio.google.com/')} className="text-blue-400 hover:underline cursor-pointer">Google AI Studio</button></p>
+                  <p className="text-xs text-white/60 mb-1">2. Go to the <button onClick={() => openExternalLink('https://aistudio.google.com/app/apikey')} className="text-blue-400 hover:underline cursor-pointer">API Keys</button> section</p>
                   <p className="text-xs text-white/60">3. Create a new API key and paste it here</p>
                 </>
               ) : (
                 <>
-                  <p className="text-xs text-white/60 mb-1">1. Create an account at <button 
-                    onClick={() => openExternalLink('https://console.anthropic.com/signup')} 
-                    className="text-blue-400 hover:underline cursor-pointer">Anthropic</button>
-                  </p>
-                  <p className="text-xs text-white/60 mb-1">2. Go to the <button 
-                    onClick={() => openExternalLink('https://console.anthropic.com/settings/keys')} 
-                    className="text-blue-400 hover:underline cursor-pointer">API Keys</button> section
-                  </p>
+                  <p className="text-xs text-white/60 mb-1">1. Create an account at <button onClick={() => openExternalLink('https://console.anthropic.com/signup')} className="text-blue-400 hover:underline cursor-pointer">Anthropic</button></p>
+                  <p className="text-xs text-white/60 mb-1">2. Go to the <button onClick={() => openExternalLink('https://console.anthropic.com/settings/keys')} className="text-blue-400 hover:underline cursor-pointer">API Keys</button> section</p>
                   <p className="text-xs text-white/60">3. Create a new API key and paste it here</p>
                 </>
               )}
             </div>
           </div>
+          ) : (
+          /* Claude Code auth status panel */
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-white">Claude Code Status</label>
+            <div className="p-3 rounded-md bg-white/5 border border-white/10 space-y-2">
+              {claudeCodeChecking ? (
+                <p className="text-xs text-white/60">Checking status...</p>
+              ) : claudeCodeStatus ? (
+                <>
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full ${claudeCodeStatus.installed ? "bg-green-400" : "bg-red-400"}`} />
+                    <p className="text-xs text-white/80">{claudeCodeStatus.installed ? "Claude Code CLI installed" : "Claude Code CLI not found"}</p>
+                  </div>
+                  {claudeCodeStatus.installed && (
+                    <div className="flex items-center gap-2">
+                      <div className={`w-2 h-2 rounded-full ${claudeCodeStatus.authenticated ? "bg-green-400" : "bg-yellow-400"}`} />
+                      <p className="text-xs text-white/80">
+                        {claudeCodeStatus.authenticated
+                          ? `Authenticated${claudeCodeStatus.email ? ` as ${claudeCodeStatus.email}` : ""}`
+                          : "Not authenticated"}
+                      </p>
+                    </div>
+                  )}
+                  {claudeCodeStatus.error && <p className="text-xs text-red-400">{claudeCodeStatus.error}</p>}
+                  {!claudeCodeStatus.installed && (
+                    <p className="text-xs text-white/60 mt-1">
+                      Install with: <code className="bg-white/10 px-1 rounded">npm install -g @anthropic-ai/claude-code</code>
+                    </p>
+                  )}
+                  {claudeCodeStatus.installed && !claudeCodeStatus.authenticated && (
+                    <p className="text-xs text-white/60 mt-1">
+                      Authenticate with: <code className="bg-white/10 px-1 rounded">claude auth login</code>
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="text-xs text-white/60">Select this provider to check status</p>
+              )}
+              <button
+                onClick={checkClaudeCodeStatus}
+                className="text-xs text-blue-400 hover:underline cursor-pointer mt-1"
+                disabled={claudeCodeChecking}
+              >
+                {claudeCodeChecking ? "Checking..." : "Refresh status"}
+              </button>
+            </div>
+          </div>
+          )}
           
           <div className="space-y-2 mt-4">
             <label className="text-sm font-medium text-white mb-2 block">Keyboard Shortcuts</label>
@@ -508,9 +558,10 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
             
             {modelCategories.map((category) => {
               // Get the appropriate model list based on selected provider
-              const models = 
-                apiProvider === "openai" ? category.openaiModels : 
+              const models =
+                apiProvider === "openai" ? category.openaiModels :
                 apiProvider === "gemini" ? category.geminiModels :
+                apiProvider === "claude-code" ? category.claudeCodeModels :
                 category.anthropicModels;
               
               return (
@@ -575,7 +626,7 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
           <Button
             className="px-4 py-3 bg-white text-black rounded-xl font-medium hover:bg-white/90 transition-colors"
             onClick={handleSave}
-            disabled={isLoading || !apiKey}
+            disabled={isLoading || (apiProvider !== "claude-code" && !apiKey)}
           >
             {isLoading ? "Saving..." : "Save Settings"}
           </Button>
