@@ -123,6 +123,7 @@
   "description": "An invisible desktop application to help you pass your technical interviews.",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.1116.0",
     "@electron/notarize": "^2.3.0",
     "@emotion/react": "^11.11.0",
     "@emotion/styled": "^11.11.0",
@@ -174,7 +175,7 @@
     "autoprefixer": "^10.4.20",
     "concurrently": "^8.2.2",
     "cross-env": "^7.0.3",
-    "electron": "^29.1.4",
+    "electron": "29.4.6",
     "electron-builder": "^24.13.3",
     "electron-is-dev": "^3.0.1",
     "eslint": "^8.57.1",
@@ -202,5 +203,8 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
+  },
+  "optionalDependencies": {
+    "@rollup/rollup-darwin-arm64": "4.44.3"
   }
 }

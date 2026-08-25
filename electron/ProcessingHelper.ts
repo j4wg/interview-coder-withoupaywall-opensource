@@ -8,6 +8,7 @@ import { app, BrowserWindow, dialog } from "electron"
 import { OpenAI } from "openai"
 import { configHelper } from "./ConfigHelper"
 import Anthropic from '@anthropic-ai/sdk';
+import { BedrockRuntimeClient, ConverseCommand } from "@aws-sdk/client-bedrock-runtime";
 
 // Interface for Gemini API requests
 interface GeminiMessage {
@@ -49,6 +50,7 @@ export class ProcessingHelper {
   private openaiClient: OpenAI | null = null
   private geminiApiKey: string | null = null
   private anthropicClient: Anthropic | null = null
+  private bedrockClient: BedrockRuntimeClient | null = null
 
   // AbortControllers for API requests
   private currentProcessingAbortController: AbortController | null = null
@@ -107,6 +109,7 @@ export class ProcessingHelper {
         // Reset other clients
         this.openaiClient = null;
         this.geminiApiKey = null;
+        this.bedrockClient = null;
         if (config.apiKey) {
           this.anthropicClient = new Anthropic({
             apiKey: config.apiKey,
@@ -118,14 +121,26 @@ export class ProcessingHelper {
           this.openaiClient = null;
           this.geminiApiKey = null;
           this.anthropicClient = null;
+          this.bedrockClient = null;
           console.warn("No API key available, Anthropic client not initialized");
         }
+      } else if (config.apiProvider === "bedrock") {
+        // Reset other clients
+        this.openaiClient = null;
+        this.geminiApiKey = null;
+        this.anthropicClient = null;
+        // Bedrock uses AWS credentials from environment/config
+        this.bedrockClient = new BedrockRuntimeClient({
+          region: config.awsRegion || process.env.AWS_REGION || "us-east-1"
+        });
+        console.log("Bedrock client initialized successfully");
       }
     } catch (error) {
       console.error("Failed to initialize AI client:", error);
       this.openaiClient = null;
       this.geminiApiKey = null;
       this.anthropicClient = null;
+      this.bedrockClient = null;
     }
   }
 
@@ -226,9 +241,19 @@ export class ProcessingHelper {
     } else if (config.apiProvider === "anthropic" && !this.anthropicClient) {
       // Add check for Anthropic client
       this.initializeAIClient();
-      
+
       if (!this.anthropicClient) {
         console.error("Anthropic client not initialized");
+        mainWindow.webContents.send(
+          this.deps.PROCESSING_EVENTS.API_KEY_INVALID
+        );
+        return;
+      }
+    } else if (config.apiProvider === "bedrock" && !this.bedrockClient) {
+      this.initializeAIClient();
+
+      if (!this.bedrockClient) {
+        console.error("Bedrock client not initialized");
         mainWindow.webContents.send(
           this.deps.PROCESSING_EVENTS.API_KEY_INVALID
         );
@@ -634,8 +659,52 @@ export class ProcessingHelper {
             error: "Failed to process with Anthropic API. Please check your API key or try again later."
           };
         }
+      } else if (config.apiProvider === "bedrock") {
+        if (!this.bedrockClient) {
+          return {
+            success: false,
+            error: "Bedrock client not initialized. Please check your AWS credentials."
+          };
+        }
+
+        try {
+          const command = new ConverseCommand({
+            modelId: config.extractionModel || "anthropic.claude-sonnet-4-6",
+            messages: [
+              {
+                role: "user",
+                content: [
+                  {
+                    text: `You are a coding challenge interpreter. Analyze the screenshots of the coding problem and extract all relevant information. Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output. Just return the structured JSON without any other text. Preferred coding language is ${language}.`
+                  },
+                  ...imageDataList.map(data => ({
+                    image: {
+                      format: "png" as const,
+                      source: { bytes: Buffer.from(data, 'base64') }
+                    }
+                  }))
+                ]
+              }
+            ],
+            inferenceConfig: {
+              maxTokens: 4000,
+              temperature: 0.2
+            }
+          });
+
+          const response = await this.bedrockClient.send(command);
+          const responseText = (response.output?.message?.content?.[0] as any)?.text || "";
+          const jsonText = responseText.replace(/```json|```/g, '').trim();
+          problemInfo = JSON.parse(jsonText);
+        } catch (error: any) {
+          console.error("Error using Bedrock API:", error);
+          return {
+            success: false,
+            error: `Failed to process with Bedrock: ${error.message}`
+          };
+        }
       }
-      
+
       // Update the user on progress
       if (mainWindow) {
         mainWindow.webContents.send("processing-status", {
@@ -777,7 +846,7 @@ Your solution should be efficient, well-commented, and handle edge cases.
         const solutionResponse = await this.openaiClient.chat.completions.create({
           model: config.solutionModel || "gpt-4o",
           messages: [
-            { role: "system", content: "You are an expert coding interview assistant. Provide clear, optimal solutions with detailed explanations." },
+            { role: "system", content: "Provide correct, optimal solutions with brief inline comments. Double-check edge cases. Correctness is critical." },
             { role: "user", content: promptText }
           ],
           max_tokens: 4000,
@@ -801,7 +870,7 @@ Your solution should be efficient, well-commented, and handle edge cases.
               role: "user",
               parts: [
                 {
-                  text: `You are an expert coding interview assistant. Provide a clear, optimal solution with detailed explanations for this problem:\n\n${promptText}`
+                  text: `Provide a correct, optimal solution. Add brief inline comments explaining key steps. Double-check edge cases and off-by-one errors. Correctness is critical.\n\n${promptText}`
                 }
               ]
             }
@@ -850,7 +919,7 @@ Your solution should be efficient, well-commented, and handle edge cases.
               content: [
                 {
                   type: "text" as const,
-                  text: `You are an expert coding interview assistant. Provide a clear, optimal solution with detailed explanations for this problem:\n\n${promptText}`
+                  text: `Provide a correct, optimal solution. Add brief inline comments explaining key steps. Double-check edge cases and off-by-one errors. Correctness is critical.\n\n${promptText}`
                 }
               ]
             }
@@ -886,8 +955,44 @@ Your solution should be efficient, well-commented, and handle edge cases.
             error: "Failed to generate solution with Anthropic API. Please check your API key or try again later."
           };
         }
+      } else if (config.apiProvider === "bedrock") {
+        if (!this.bedrockClient) {
+          return {
+            success: false,
+            error: "Bedrock client not initialized. Please check your AWS credentials."
+          };
+        }
+
+        try {
+          const command = new ConverseCommand({
+            modelId: config.solutionModel || "anthropic.claude-sonnet-4-6",
+            messages: [
+              {
+                role: "user",
+                content: [
+                  {
+                    text: `Provide a correct, optimal solution. Add brief inline comments explaining key steps. Double-check edge cases and off-by-one errors. Correctness is critical.\n\n${promptText}`
+                  }
+                ]
+              }
+            ],
+            inferenceConfig: {
+              maxTokens: 4000,
+              temperature: 0.2
+            }
+          });
+
+          const response = await this.bedrockClient.send(command);
+          responseContent = (response.output?.message?.content?.[0] as any)?.text || "";
+        } catch (error: any) {
+          console.error("Error using Bedrock API for solution:", error);
+          return {
+            success: false,
+            error: `Failed to generate solution with Bedrock: ${error.message}`
+          };
+        }
       }
-      
+
       // Extract parts from the response
       const codeMatch = responseContent.match(/```(?:\w+)?\s*([\s\S]*?)```/);
       const code = codeMatch ? codeMatch[1].trim() : responseContent;
@@ -1244,9 +1349,80 @@ If you include code examples, use proper markdown code blocks with language spec
             error: "Failed to process debug request with Anthropic API. Please check your API key or try again later."
           };
         }
+      } else if (config.apiProvider === "bedrock") {
+        if (!this.bedrockClient) {
+          return {
+            success: false,
+            error: "Bedrock client not initialized. Please check your AWS credentials."
+          };
+        }
+
+        try {
+          const debugPrompt = `
+You are a coding interview assistant helping debug and improve solutions. Analyze these screenshots which include either error messages, incorrect outputs, or test cases, and provide detailed debugging help.
+
+I'm solving this coding problem: "${problemInfo.problem_statement}" in ${language}. I need help with debugging or improving my solution.
+
+YOUR RESPONSE MUST FOLLOW THIS EXACT STRUCTURE WITH THESE SECTION HEADERS:
+### Issues Identified
+- List each issue as a bullet point with clear explanation
+
+### Specific Improvements and Corrections
+- List specific code changes needed as bullet points
+
+### Optimizations
+- List any performance optimizations if applicable
+
+### Explanation of Changes Needed
+Here provide a clear explanation of why the changes are needed
+
+### Key Points
+- Summary bullet points of the most important takeaways
+
+If you include code examples, use proper markdown code blocks with language specification.
+`;
+
+          if (mainWindow) {
+            mainWindow.webContents.send("processing-status", {
+              message: "Analyzing code and generating debug feedback with Bedrock...",
+              progress: 60
+            });
+          }
+
+          const command = new ConverseCommand({
+            modelId: config.debuggingModel || "anthropic.claude-sonnet-4-6",
+            messages: [
+              {
+                role: "user",
+                content: [
+                  { text: debugPrompt },
+                  ...imageDataList.map(data => ({
+                    image: {
+                      format: "png" as const,
+                      source: { bytes: Buffer.from(data, 'base64') }
+                    }
+                  }))
+                ]
+              }
+            ],
+            inferenceConfig: {
+              maxTokens: 4000,
+              temperature: 0.2
+            }
+          });
+
+          const response = await this.bedrockClient.send(command);
+          debugContent = (response.output?.message?.content?.[0] as any)?.text || "";
+        } catch (error: any) {
+          console.error("Error using Bedrock API for debugging:", error);
+          return {
+            success: false,
+            error: `Failed to process debug request with Bedrock: ${error.message}`
+          };
+        }
       }
-      
-      
+
+
       if (mainWindow) {
         mainWindow.webContents.send("processing-status", {
           message: "Debug analysis complete",
