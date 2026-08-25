@@ -9,4 +9,5 @@ dist
 **/.idea
 scripts/
 **/scripts/
-scripts/manual-notarize.js
+scripts/manual-notarize.js.migration/
+pnpm-build-config.yaml
