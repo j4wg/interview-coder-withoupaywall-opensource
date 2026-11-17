@@ -1,5 +1,7 @@
 # CodeInterviewAssist
 
+> **Language:** **English** | [简体中文](README.zh-CN.md)
+
 > ## ⚠️ IMPORTANT NOTICE TO THE COMMUNITY ⚠️
 > 
 > **This is a free, open-source initiative - NOT a full-service product!**
@@ -291,7 +293,7 @@ See the [LICENSE-SHORT](LICENSE-SHORT) file for a summary of terms or visit [GNU
 
 ### Contributing
 
-We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for more information.
+We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for more information (Chinese: [贡献指南](CONTRIBUTING.zh-CN.md)).
 
 ## Disclaimer and Ethical Usage
 

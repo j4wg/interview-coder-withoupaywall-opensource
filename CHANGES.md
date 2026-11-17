@@ -1,5 +1,7 @@
 # Interview Coder - Unlocked Edition - Changes
 
+> **Language:** **English** | [简体中文](CHANGES.zh-CN.md)
+
 ## Major Architectural Changes
 
 ### Removal of Supabase Authentication System
