@@ -52,7 +52,10 @@ export const mainZh = {
   "main.config.invalidUiLanguage": "界面语言取值非法（{{value}}），已回落为跟随系统。",
   "main.config.localeUnavailable": "读取系统语言失败，回落到进程语言环境：",
   "main.config.legacyUpdateIgnored": "已忽略旧配置字段（v3 不再写入）：{{keys}}",
+  "main.config.bindingCleared":
+    "服务商 {{providerId}} 已变更，以下用途的绑定已置空，请重新选择模型：{{uses}}",
   "main.config.updateFailed": "更新配置失败：{{message}}",
+  "main.config.keyTest.noProvider": "尚未添加任何服务商，请先在设置里添加一套配置。",
   "main.config.keyTest.missingBaseUrl": "尚未填写 Base URL，请先填写服务地址。",
   "main.config.keyTest.invalidKey": "API Key 无效或未被服务端接受（HTTP {{status}}）。",
   "main.config.keyTest.rateLimited": "请求过于频繁或额度不足（HTTP 429），请稍后重试。",

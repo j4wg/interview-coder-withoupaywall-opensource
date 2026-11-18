@@ -4,18 +4,32 @@
  * 本文件不 import electron、不碰磁盘，可被 `node --test` 直接 require；
  * 文件级动作（创建默认文件、备份损坏文件、原子写盘）在 `./configFile.ts`。
  *
- * 结构（configVersion = 3）：
+ * 结构（configVersion = 3，多套 provider 并存）：
  * ```
  * {
- *   provider: { baseUrl, apiFormat, apiKey, models: [<模型 ID>] },
- *   bindings: { extractionModel, solutionModel, debuggingModel },
+ *   providers: [
+ *     { id, name, baseUrl, apiFormat, apiKey, models: [<模型 ID>] }
+ *   ],
+ *   bindings: {
+ *     extractionModel: { providerId, modelId },
+ *     solutionModel:   { providerId, modelId },
+ *     debuggingModel:  { providerId, modelId }
+ *   },
  *   uiLanguage, language, opacity, configVersion: 3
  * }
  * ```
  *
+ * 口径要点：
+ * - `providers[].id` 稳定不可变（重命名只改 `name`）；`name` 是界面区分多套的显示名。
+ * - 每套 provider 各自持有 `baseUrl` / `apiFormat` / `apiKey` / `models`，互不共用。
+ * - `bindings` 每项必须同时命中"存在的 provider"和"该 provider 下存在的 model"，
+ *   否则归一为 `{ providerId: "", modelId: "" }`（置空，由上层提示重新选择），
+ *   不崩溃、不保留悬空引用。
+ * - 不存在 `activeProviderId`：界面按 provider 卡片列表呈现。
+ *
  * 迁移口径：
  * - 触发条件：`typeof configVersion !== "number" || configVersion < 3`。
- * - `provider.apiKey` 继承旧配置的 `apiKey`（不丢 Key）；旧的内置模型选择
+ * - 旧配置的扁平 `apiKey` 继承进迁移后那条 provider（不丢 Key）；旧的内置模型选择
  *   （`apiProvider` / 三个 `*Model` 键）整体丢弃，`models` 与 `bindings` 置空，
  *   由用户在新设置页重新配置。
  * - 已知 v3 键与旧键之外的自定义键原样保留（前向兼容）。
@@ -49,13 +63,17 @@ export const BINDING_KEYS = [
   "debuggingModel"
 ] as const
 
-/** 旧结构（v2 及更早）里的配置键；迁移时不再写入顶层（`apiKey` 迁入 `provider.apiKey`） */
+/** 旧结构（v2 及更早）里的配置键；迁移时不再写入顶层（`apiKey` 迁入 provider） */
 export const LEGACY_CONFIG_KEYS = [
   "apiKey",
   "apiProvider",
   "extractionModel",
   "solutionModel",
-  "debuggingModel"
+  "debuggingModel",
+  /** 未发布的单套 v3 形状；数组口径下整体丢弃，数据已由 `providers` 承载 */
+  "provider",
+  /** 单套时代讨论过、最终不采用的活动 provider 指针 */
+  "activeProviderId"
 ] as const
 
 /** 旧的内置模型选择键；迁移时丢弃（不含 `apiKey`，它会被继承保留） */
@@ -68,7 +86,7 @@ export const LEGACY_MODEL_KEYS = [
 
 /** v3 的顶层键；迁移时由新结构整体覆盖 */
 export const CONFIG_V3_KEYS = [
-  "provider",
+  "providers",
   "bindings",
   "uiLanguage",
   "language",
@@ -80,6 +98,13 @@ export type BindingKey = (typeof BINDING_KEYS)[number]
 
 /** 服务商配置：一套通用表单，不区分供应商 */
 export interface ProviderConfig {
+  /**
+   * 稳定标识（创建后不可变，重命名只改 `name`）。
+   * 形如 `p_1a2b3c`；手工写坏的配置文件在这里会补一个确定的 `p_auto<n>`。
+   */
+  id: string
+  /** 界面显示名（如「公司 GLM」「个人 OpenAI」）；可为空串，由界面给占位文案 */
+  name: string
   /** 服务地址（含版本路径，如 https://api.example.com/v1）；空串 = 用户尚未配置 */
   baseUrl: string
   apiFormat: ApiFormat
@@ -88,12 +113,37 @@ export interface ProviderConfig {
   models: string[]
 }
 
-/** 三个用途各自指向 provider.models 中的一项 */
-export type ModelBindings = Record<BindingKey, string>
+/** 某个用途的绑定：provider 与 model 必须同时存在且相互匹配 */
+export interface ModelBinding {
+  providerId: string
+  modelId: string
+}
+
+/** 三个用途各自指向"某套 provider 里的某个模型"，允许跨 provider */
+export type ModelBindings = Record<BindingKey, ModelBinding>
+
+/** 空绑定的唯一表示（`providerId` 与 `modelId` 同时为空） */
+export function emptyBinding(): ModelBinding {
+  return { providerId: "", modelId: "" }
+}
+
+/** 是否为"未绑定" */
+export function isBindingEmpty(binding: ModelBinding): boolean {
+  return binding.providerId.length === 0 && binding.modelId.length === 0
+}
+
+/** 三个用途全部未绑定 */
+export function emptyBindings(): ModelBindings {
+  return {
+    extractionModel: emptyBinding(),
+    solutionModel: emptyBinding(),
+    debuggingModel: emptyBinding()
+  }
+}
 
 /** 配置数据的完整形态（与 `ConfigHelper.Config` 逐字段一致，外加运行期兼容桥） */
 export interface ConfigData {
-  provider: ProviderConfig
+  providers: ProviderConfig[]
   bindings: ModelBindings
   uiLanguage: UiLanguageSetting
   language: string
@@ -101,19 +151,10 @@ export interface ConfigData {
   configVersion: number
 }
 
-/** 全新安装 / 损坏文件时写入的完整默认配置 */
+/** 全新安装 / 损坏文件时写入的完整默认配置（无 provider，等待用户添加） */
 export const DEFAULT_CONFIG_DATA: Readonly<ConfigData> = {
-  provider: {
-    baseUrl: "",
-    apiFormat: DEFAULT_API_FORMAT,
-    apiKey: "",
-    models: []
-  },
-  bindings: {
-    extractionModel: "",
-    solutionModel: "",
-    debuggingModel: ""
-  },
+  providers: [],
+  bindings: emptyBindings(),
   uiLanguage: "system",
   language: DEFAULT_LANGUAGE,
   opacity: 1.0,
@@ -163,6 +204,11 @@ export function normalizeBaseUrl(value: unknown): string {
   return value.trim().replace(/\/+$/, "")
 }
 
+/** provider id：非空字符串去空白后即为合法 id；否则视为缺失 */
+export function normalizeProviderId(value: unknown): string {
+  return typeof value === "string" ? value.trim() : ""
+}
+
 /**
  * 模型 ID 列表：只保留非空字符串，去首尾空白、去重（保持原顺序）。
  * 非数组、元素非字符串一律丢弃，不抛错。
@@ -181,63 +227,185 @@ export function normalizeStringList(value: unknown): string[] {
   return models
 }
 
-/** 服务商配置归一：逐字段校验，非法字段回默认值 */
-export function normalizeProviderConfig(raw: unknown): ProviderConfig {
-  if (!isPlainObject(raw)) {
-    return { ...DEFAULT_CONFIG_DATA.provider, models: [] }
+/**
+ * 为缺失/重复 id 的 provider 生成一个**确定的**后备 id。
+ * 用同一份文件反复读配置会得到同一个 id，不会每次启动都变。
+ */
+export function uniqueProviderId(existing: Iterable<string>): string {
+  const seen = new Set(existing)
+  let n = 1
+  while (seen.has(`p_auto${n}`)) n += 1
+  return `p_auto${n}`
+}
+
+/**
+ * 新建 provider 时生成 id（`p_` + 6 位十六进制）。撞车时重试，仍撞车则退回确定序号。
+ * `random` 可注入，便于单测拿到确定的 id。
+ */
+export function createProviderId(
+  existing: Iterable<string>,
+  random: () => number = Math.random
+): string {
+  const seen = new Set(existing)
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    // 夹到 [0, 1)：注入的 random 返回 1 时也不会产生 7 位 id
+    const unit = Math.min(0.999999, Math.max(0, random()))
+    const candidate = `p_${Math.floor(unit * 0x1000000)
+      .toString(16)
+      .padStart(6, "0")}`
+    if (!seen.has(candidate)) return candidate
   }
+  return uniqueProviderId(seen)
+}
+
+/** 单套 provider 归一：逐字段校验，非法字段回默认值；id 缺失时用 `fallbackId` */
+export function normalizeProviderConfig(
+  raw: unknown,
+  fallbackId = ""
+): ProviderConfig {
+  const source = isPlainObject(raw) ? raw : {}
   return {
-    baseUrl: normalizeBaseUrl(raw.baseUrl),
-    apiFormat: isApiFormat(raw.apiFormat)
-      ? raw.apiFormat
+    id: normalizeProviderId(source.id) || fallbackId,
+    name: typeof source.name === "string" ? source.name.trim() : "",
+    baseUrl: normalizeBaseUrl(source.baseUrl),
+    apiFormat: isApiFormat(source.apiFormat)
+      ? source.apiFormat
       : DEFAULT_API_FORMAT,
-    apiKey: typeof raw.apiKey === "string" ? raw.apiKey.trim() : "",
-    models: normalizeStringList(raw.models)
+    apiKey: typeof source.apiKey === "string" ? source.apiKey.trim() : "",
+    models: normalizeStringList(source.models)
   }
 }
 
 /**
- * 三用途绑定归一：每项必须 ∈ models，否则回落列表首项；列表为空则全部留空（不抛错）。
- * 上层据此给出"先配置模型"的可见提示。
+ * provider 列表归一（多套并存）：
+ * - 非数组 → 空列表；
+ * - 数组里的非对象条目丢弃（不崩溃）；
+ * - id 缺失或与前面重复 → 补一个确定的 `p_auto<n>`，既不丢条目也不产生重复 id。
  */
+export function normalizeProviders(raw: unknown): ProviderConfig[] {
+  if (!Array.isArray(raw)) return []
+  const providers: ProviderConfig[] = []
+  const usedIds = new Set<string>()
+  for (const item of raw) {
+    if (!isPlainObject(item)) continue
+    const requestedId = normalizeProviderId(item.id)
+    const id =
+      requestedId.length > 0 && !usedIds.has(requestedId)
+        ? requestedId
+        : uniqueProviderId(usedIds)
+    usedIds.add(id)
+    // 显式带 id 覆盖条目里的 id：重复/非法 id 必须被替换掉，不能靠 fallback 保留
+    providers.push(normalizeProviderConfig({ ...item, id }, id))
+  }
+  return providers
+}
+
+/** 按 id 查 provider（只做查找，不做归一） */
+export function findProvider(
+  providers: readonly ProviderConfig[],
+  providerId: unknown
+): ProviderConfig | undefined {
+  const id = normalizeProviderId(providerId)
+  if (id.length === 0) return undefined
+  return providers.find((provider) => provider.id === id)
+}
+
+/**
+ * 单用途绑定归一。
+ *
+ * - 必须同时给出 `providerId` 与 `modelId`，且 provider 存在、model 在该 provider 的
+ *   `models` 里 → 原样保留（trim 后）；
+ * - 任何一项不满足 → `{ providerId: "", modelId: "" }`（置空，上层据此提示重新选择）；
+ * - 兼容未发布的单套 v3 形状：只有**一套** provider 时，字符串绑定按该 provider 的
+ *   模型列表解析；多套并存时字符串绑定一律置空（避免猜错 provider）。
+ */
+export function normalizeBinding(
+  raw: unknown,
+  providers: readonly ProviderConfig[]
+): ModelBinding {
+  if (typeof raw === "string" && providers.length === 1) {
+    const modelId = raw.trim()
+    return modelId.length > 0 && providers[0].models.includes(modelId)
+      ? { providerId: providers[0].id, modelId }
+      : emptyBinding()
+  }
+  if (!isPlainObject(raw)) return emptyBinding()
+
+  const providerId = normalizeProviderId(raw.providerId)
+  const modelId = typeof raw.modelId === "string" ? raw.modelId.trim() : ""
+  if (providerId.length === 0 || modelId.length === 0) return emptyBinding()
+
+  const provider = providers.find((item) => item.id === providerId)
+  if (!provider || !provider.models.includes(modelId)) return emptyBinding()
+  return { providerId, modelId }
+}
+
+/** 三个用途的绑定归一：逐项走 `normalizeBinding`，不抛错 */
 export function normalizeBindings(
   raw: unknown,
-  models: readonly string[]
+  providers: readonly ProviderConfig[]
 ): ModelBindings {
-  const fallback = models.length > 0 ? models[0] : ""
   const source = isPlainObject(raw) ? raw : {}
   const bindings = {} as ModelBindings
   for (const key of BINDING_KEYS) {
-    const value = source[key]
-    bindings[key] =
-      typeof value === "string" && models.includes(value.trim())
-        ? value.trim()
-        : fallback
+    bindings[key] = normalizeBinding(source[key], providers)
   }
   return bindings
 }
 
+/** 哪些用途引用了指定 provider（删除前提示、删除后告知用） */
+export function findBindingUses(
+  bindings: ModelBindings,
+  providerId: unknown
+): BindingKey[] {
+  const id = normalizeProviderId(providerId)
+  if (id.length === 0) return []
+  return BINDING_KEYS.filter((key) => bindings[key].providerId === id)
+}
+
+/**
+ * 把绑定解析成可直接发起请求的 `{ provider, modelId }`；未绑定或指向非法时返回 null。
+ * 调用层（JUN-48）据此决定用哪套 baseUrl / apiFormat / apiKey。
+ */
+export function resolveBinding(
+  binding: ModelBinding,
+  providers: readonly ProviderConfig[]
+): { provider: ProviderConfig; modelId: string } | null {
+  if (isBindingEmpty(binding)) return null
+  const provider = providers.find((item) => item.id === binding.providerId)
+  if (!provider || !provider.models.includes(binding.modelId)) return null
+  return { provider, modelId: binding.modelId }
+}
+
 /**
  * 读配置时的全量归一：任何外部 JSON 都先过这里，不抛错、不做裸类型断言。
- * 旧结构的扁平 `apiKey` 在 provider 缺失时也会被继承，避免手工拷回旧文件时丢 Key。
+ *
+ * 兼容：未发布的单套 v3 形状（顶层 `provider` 对象）在**内存里**等价于一条 provider，
+ * 归一化不写回文件，用户下次保存设置时自然迁成数组。
  */
 export function normalizeConfigData(raw: unknown): ConfigData {
   if (!isPlainObject(raw)) {
     return {
-      ...DEFAULT_CONFIG_DATA,
-      provider: { ...DEFAULT_CONFIG_DATA.provider, models: [] },
-      bindings: { ...DEFAULT_CONFIG_DATA.bindings }
+      providers: [],
+      bindings: emptyBindings(),
+      uiLanguage: DEFAULT_CONFIG_DATA.uiLanguage,
+      language: DEFAULT_CONFIG_DATA.language,
+      opacity: DEFAULT_CONFIG_DATA.opacity,
+      configVersion: CURRENT_CONFIG_VERSION
     }
   }
 
-  const providerRaw = isPlainObject(raw.provider)
-    ? raw.provider
-    : { apiKey: typeof raw.apiKey === "string" ? raw.apiKey : undefined }
-  const provider = normalizeProviderConfig(providerRaw)
+  const providers = normalizeProviders(
+    Array.isArray(raw.providers)
+      ? raw.providers
+      : isPlainObject(raw.provider)
+        ? [raw.provider]
+        : []
+  )
 
   return {
-    provider,
-    bindings: normalizeBindings(raw.bindings, provider.models),
+    providers,
+    bindings: normalizeBindings(raw.bindings, providers),
     uiLanguage: normalizeUiLanguage(raw.uiLanguage),
     language: normalizeLanguage(raw.language),
     opacity: normalizeOpacity(raw.opacity),
@@ -271,12 +439,14 @@ export function diffNormalizedKeys(
 /**
  * 把一个"部分更新"合并进现有配置（`updateConfig` 的纯函数内核，便于单测）。
  *
- * - `provider` / `bindings` 按字段浅合并；绑定对照**更新后**的模型列表校验，
- *   因此同一次更新里新加的模型可以直接被绑定；
+ * - `providers`：只有给出**数组**时才整体替换（传 `[]` 即清空）；非数组视为未提供，
+ *   避免一次畸形更新把用户的多套配置清空。替换后按新列表重新校验绑定。
+ * - `bindings`：按用途逐项覆盖合并；传 `{ providerId: "", modelId: "" }` 即置空该用途。
+ *   绑定对照**更新后**的 provider 列表校验，因此同一次更新里新加的模型可以直接被绑定。
  * - `uiLanguage` / `language` / `opacity` 只在显式给出时改；
- * - 旧字段（`apiKey` / `apiProvider` / `*Model`）与 `configVersion` 一律忽略，
- *   保证配置文件不会回退到 v2 结构；
- * - 结果再过一次 `normalizeConfigData`，`bindings subset models` 等不变量恒成立。
+ * - 旧字段（`apiKey` / `apiProvider` / `provider` / `*Model`）、`activeProviderId` 与
+ *   `configVersion` 一律忽略，保证配置文件不会回退到旧结构；
+ * - 结果再过一次 `normalizeConfigData`，引用完整性不变量恒成立。
  */
 export function mergeConfigUpdate(
   current: ConfigData,
@@ -284,20 +454,25 @@ export function mergeConfigUpdate(
 ): ConfigData {
   const source = isPlainObject(updates) ? updates : {}
 
-  const provider = isPlainObject(source.provider)
-    ? normalizeProviderConfig({ ...current.provider, ...source.provider })
-    : { ...current.provider, models: [...current.provider.models] }
+  const providers = Array.isArray(source.providers)
+    ? normalizeProviders(source.providers)
+    : normalizeProviders(current.providers)
 
-  const bindings = isPlainObject(source.bindings)
-    ? normalizeBindings(
-        { ...current.bindings, ...source.bindings },
-        provider.models
-      )
-    : normalizeBindings(current.bindings, provider.models)
+  const mergedBindings: Record<string, unknown> = {}
+  for (const key of BINDING_KEYS) {
+    mergedBindings[key] = current.bindings[key]
+  }
+  if (isPlainObject(source.bindings)) {
+    for (const key of BINDING_KEYS) {
+      if (source.bindings[key] !== undefined) {
+        mergedBindings[key] = source.bindings[key]
+      }
+    }
+  }
 
   return normalizeConfigData({
-    provider,
-    bindings,
+    providers,
+    bindings: mergedBindings,
     uiLanguage:
       source.uiLanguage !== undefined
         ? normalizeUiLanguage(source.uiLanguage)
@@ -312,6 +487,145 @@ export function mergeConfigUpdate(
         : current.opacity,
     configVersion: CURRENT_CONFIG_VERSION
   })
+}
+
+/** 新增一套 provider 的结果 */
+export interface AddProviderResult {
+  config: ConfigData
+  /** 新 provider 的 id；`added=false` 时为空串 */
+  providerId: string
+  added: boolean
+}
+
+/**
+ * 新增一套 provider（纯函数）。`options.id` 缺省时生成 `p_xxxxxx`；
+ * id 已存在则不新增（`added=false`），由调用方换个 id 或改为更新。
+ */
+export function addProviderConfig(
+  current: ConfigData,
+  input: unknown,
+  options: { id?: string; random?: () => number } = {}
+): AddProviderResult {
+  const base = normalizeConfigData(current)
+  const source = isPlainObject(input) ? input : {}
+  const requestedId =
+    normalizeProviderId(options.id) || normalizeProviderId(source.id)
+  const providerId =
+    requestedId.length > 0
+      ? requestedId
+      : createProviderId(
+          base.providers.map((provider) => provider.id),
+          options.random
+        )
+
+  if (base.providers.some((provider) => provider.id === providerId)) {
+    return { config: base, providerId: "", added: false }
+  }
+
+  const provider = normalizeProviderConfig({ ...source, id: providerId }, providerId)
+  return {
+    config: normalizeConfigData({
+      ...base,
+      providers: [...base.providers, provider]
+    }),
+    providerId,
+    added: true
+  }
+}
+
+/** 更新一套 provider 的结果 */
+export interface UpdateProviderResult {
+  config: ConfigData
+  updated: boolean
+  /** 因模型列表变化而被置空的用途（上层据此提示"该用途需要重新选择模型"） */
+  clearedBindings: BindingKey[]
+}
+
+/**
+ * 更新一套 provider（纯函数）。
+ *
+ * - `id` 不可变：patch 里带的 `id` 一律忽略（重命名只改 `name`）；
+ * - `models` 给出时整体替换（增删模型都走这里），随后重新校验三个绑定，
+ *   指向被删模型/被清空列表的用途会被置空并出现在 `clearedBindings` 里。
+ */
+export function updateProviderConfig(
+  current: ConfigData,
+  providerId: unknown,
+  patch: unknown
+): UpdateProviderResult {
+  const base = normalizeConfigData(current)
+  const id = normalizeProviderId(providerId)
+  const target = base.providers.find((provider) => provider.id === id)
+  if (!target) {
+    return { config: base, updated: false, clearedBindings: [] }
+  }
+
+  const source = isPlainObject(patch) ? patch : {}
+  const merged: Record<string, unknown> = { ...target }
+  for (const [key, value] of Object.entries(source)) {
+    // id 不可变：忽略 patch 的 id，其余字段按值覆盖
+    if (key === "id") continue
+    merged[key] = value
+  }
+
+  const provider = normalizeProviderConfig(merged, target.id)
+  const config = normalizeConfigData({
+    ...base,
+    providers: base.providers.map((item) =>
+      item.id === target.id ? provider : item
+    )
+  })
+
+  return {
+    config,
+    updated: true,
+    clearedBindings: clearedBindingKeys(base.bindings, config.bindings)
+  }
+}
+
+/** 删除一套 provider 的结果 */
+export interface RemoveProviderResult {
+  config: ConfigData
+  removed: boolean
+  /** 因删除该 provider 而被置空的用途（必须提示用户重新选择模型） */
+  clearedBindings: BindingKey[]
+}
+
+/**
+ * 删除一套 provider（纯函数）。
+ *
+ * 同一份配置里被它引用的绑定会**一并置空**（同一事务，不留悬空引用）；
+ * `clearedBindings` 告诉上层该提示哪几个用途"需要重新选择模型"。
+ * 界面若想先确认，可用 `findBindingUses(config.bindings, providerId)`。
+ */
+export function removeProviderConfig(
+  current: ConfigData,
+  providerId: unknown
+): RemoveProviderResult {
+  const base = normalizeConfigData(current)
+  const id = normalizeProviderId(providerId)
+  const exists = base.providers.some((provider) => provider.id === id)
+  if (!exists || id.length === 0) {
+    return { config: base, removed: false, clearedBindings: [] }
+  }
+
+  const clearedBindings = findBindingUses(base.bindings, id)
+  const config = normalizeConfigData({
+    ...base,
+    providers: base.providers.filter((provider) => provider.id !== id)
+  })
+
+  return { config, removed: true, clearedBindings }
+}
+
+/** 对比前后绑定，找出被置空的用途 */
+function clearedBindingKeys(
+  before: ModelBindings,
+  after: ModelBindings
+): BindingKey[] {
+  return BINDING_KEYS.filter(
+    (key) => !isBindingEmpty(before[key]) && isBindingEmpty(after[key])
+  )
 }
 
 /**
@@ -330,9 +644,12 @@ export function migrateConfigData(raw: unknown): {
   if (!isPlainObject(raw)) {
     return {
       config: {
-        ...DEFAULT_CONFIG_DATA,
-        provider: { ...DEFAULT_CONFIG_DATA.provider, models: [] },
-        bindings: { ...DEFAULT_CONFIG_DATA.bindings }
+        providers: [],
+        bindings: emptyBindings(),
+        uiLanguage: DEFAULT_CONFIG_DATA.uiLanguage,
+        language: DEFAULT_CONFIG_DATA.language,
+        opacity: DEFAULT_CONFIG_DATA.opacity,
+        configVersion: CURRENT_CONFIG_VERSION
       },
       migrated: true,
       droppedLegacyKeys: []
@@ -344,14 +661,6 @@ export function migrateConfigData(raw: unknown): {
     // 一次性：版本已满足，用户手改的任何字段都不会被再次覆盖
     return { config: { ...raw }, migrated: false, droppedLegacyKeys: [] }
   }
-
-  // 旧 Key 优先于 provider.apiKey（v3 之前的文件只有扁平 apiKey）
-  const inheritedApiKey =
-    typeof raw.apiKey === "string"
-      ? raw.apiKey
-      : isPlainObject(raw.provider) && typeof raw.provider.apiKey === "string"
-        ? raw.provider.apiKey
-        : ""
 
   // 只报告"确实被丢弃"的旧模型选择键；apiKey 是继承保留的，不算丢弃
   const droppedLegacyKeys: string[] = LEGACY_MODEL_KEYS.filter(
@@ -366,19 +675,13 @@ export function migrateConfigData(raw: unknown): {
     if (!knownKeys.has(key)) unknownKeys[key] = value
   }
 
-  // 已知键在前、未知键追加在后，保证 diff 稳定可读
+  const providers = providersFromLegacy(raw)
+
+  // 已知键在前、未知键追加在后，保证 diff 稳定可读。
+  // 旧平面 apiKey 已进 providers[0].apiKey；旧模型名不在 providers 里，故 bindings 自然为空。
   const config: Record<string, unknown> = {
-    provider: {
-      baseUrl: "",
-      apiFormat: DEFAULT_API_FORMAT,
-      apiKey: inheritedApiKey,
-      models: []
-    },
-    bindings: {
-      extractionModel: "",
-      solutionModel: "",
-      debuggingModel: ""
-    },
+    providers,
+    bindings: normalizeBindings(raw.bindings, providers),
     uiLanguage: normalizeUiLanguage(raw.uiLanguage),
     language: normalizeLanguage(raw.language),
     opacity: normalizeOpacity(raw.opacity),
@@ -387,4 +690,43 @@ export function migrateConfigData(raw: unknown): {
   }
 
   return { config, migrated: true, droppedLegacyKeys }
+}
+
+/**
+ * 旧结构 → provider 列表：
+ * - 已经是 `providers` 数组（部分迁移过的文件）→ 原样归一；
+ * - 未发布的单套 v3 形状（`provider` 对象）→ 一条 provider，`apiKey` 兜底继承；
+ * - 只有扁平 `apiKey` 的 v2 配置 → 一条只带 Key 的 provider（models 为空，
+ *   等用户在新设置页补 Base URL / API 格式 / 模型）；没有 Key 的旧配置 → 空列表。
+ */
+function providersFromLegacy(raw: Record<string, unknown>): ProviderConfig[] {
+  if (Array.isArray(raw.providers)) {
+    return normalizeProviders(raw.providers)
+  }
+
+  const flatApiKey =
+    typeof raw.apiKey === "string" ? raw.apiKey.trim() : ""
+
+  if (isPlainObject(raw.provider)) {
+    const provider = normalizeProviderConfig(raw.provider, uniqueProviderId([]))
+    return [
+      {
+        ...provider,
+        apiKey: provider.apiKey || flatApiKey
+      }
+    ]
+  }
+
+  if (flatApiKey.length === 0) return []
+  const id = uniqueProviderId([])
+  return [
+    {
+      id,
+      name: "",
+      baseUrl: "",
+      apiFormat: DEFAULT_API_FORMAT,
+      apiKey: flatApiKey,
+      models: []
+    }
+  ]
 }

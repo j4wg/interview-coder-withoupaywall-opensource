@@ -374,20 +374,25 @@ useI18n(): {
 ## 15. 配置结构 v3（JUN-47 追加，取代第 3 / 5 章的配置结构部分）
 
 需求方在 JUN-36 拍板：模型配置改为通用表单（Base URL + API 格式 + API Key + 可增删的模型列表），
-内置模型清单与 openai/gemini/anthropic 三选一**彻底删除**。因此 `config.json` 从 v2 升到 **v3**：
+内置模型清单与 openai/gemini/anthropic 三选一**彻底删除**；2026-11-18 又确认**多套 provider 并存**。
+因此 `config.json` 从 v2 升到 **v3**：
 
 ```json
 {
-  "provider": {
-    "baseUrl": "",
-    "apiFormat": "anthropic-messages | chat-completions | responses",
-    "apiKey": "",
-    "models": ["<模型 ID>"]
-  },
+  "providers": [
+    {
+      "id": "p_1a2b3c",
+      "name": "公司 GLM",
+      "baseUrl": "https://api.example.com/v1",
+      "apiFormat": "anthropic-messages | chat-completions | responses",
+      "apiKey": "",
+      "models": ["<模型 ID>"]
+    }
+  ],
   "bindings": {
-    "extractionModel": "<必须 ∈ provider.models>",
-    "solutionModel": "<必须 ∈ provider.models>",
-    "debuggingModel": "<必须 ∈ provider.models>"
+    "extractionModel": { "providerId": "p_1a2b3c", "modelId": "<模型 ID>" },
+    "solutionModel": { "providerId": "p_1a2b3c", "modelId": "<模型 ID>" },
+    "debuggingModel": { "providerId": "p_1a2b3c", "modelId": "<模型 ID>" }
   },
   "uiLanguage": "system | zh | en",
   "language": "java",
@@ -396,23 +401,44 @@ useI18n(): {
 }
 ```
 
+- `providers[].id` 稳定不可变（重命名只改 `name`）；`name` 是界面区分多套的显示名。
+- 每套 provider 各自持有 `baseUrl` / `apiFormat` / `apiKey` / `models`，互不共用。
+- 没有 `activeProviderId`：设置页按 provider 卡片列表呈现，模型列表与三个用途的选择都在卡片内完成。
+
 ### 15.1 不变量（读配置时强制归一，纯函数 `normalizeConfigData`）
 
-- `provider.models` 只存模型 ID 字符串：去首尾空白、去空串、**去重**（保持原顺序）。
-- `bindings.*` 必须 ∈ `provider.models`：指向不存在的 ID → 回落**列表首项**；列表为空 → 留空（不抛错），
-  由上层给出"先配置模型"的可见提示。
-- `provider.apiFormat` 非法 → 回落默认值 `responses`（与设置页默认选中项一致）。
-- `provider.baseUrl` 非法/缺失 → 空串（上层据此提示"先配置服务地址"）；非空时去首尾空白与末尾斜杠。
+- `providers` 非数组 → 空列表；数组里的非对象条目丢弃；`id` 缺失或重复 → 补确定的
+  `p_auto<n>`（同一份文件反复读得到同一组 id，不随重启变化）。
+- `providers[].models` 只存模型 ID 字符串：去首尾空白、去空串、**去重**（保持原顺序）。
+- `bindings.*` 必须同时命中"存在的 provider"和"该 provider 下存在的 model"：
+  指向不存在的 provider、指向不存在的 model、或把 A 家的 model 绑到 B 家 → 一律归一为
+  `{ providerId: "", modelId: "" }`（置空，由上层提示"该用途需要重新选择模型"），
+  不崩溃、不保留悬空引用、不猜着换 provider。
+- `providers[].apiFormat` 非法 → 回落默认值 `responses`（与设置页默认选中项一致）。
+- `providers[].baseUrl` 非法/缺失 → 空串（上层据此提示"先配置服务地址"）；非空时去首尾空白与末尾斜杠。
 - `uiLanguage` 非法 → `system`；`language` 非法 → `java`；`opacity` 夹到 `[0, 1]`。
 - 归一化**只影响内存**，不写回文件：避免"重启覆盖用户手改"。
 
-### 15.2 迁移（`configVersion < 3`，一次性）
+### 15.2 增删改 provider 与绑定
+
+- 新增：`addProviderConfig` / `ConfigHelper.addProvider`，id 由配置层生成（`p_` + 6 位十六进制），
+  返回的 `providerId` 供界面后续使用；id 撞车不新增。
+- 更新：`updateProviderConfig` / `ConfigHelper.updateProvider`，`id` 不可变（patch 里的 `id` 忽略），
+  `models` 整体替换；随后重新校验绑定，被删模型的用途置空并出现在 `clearedBindings`。
+- 删除：`removeProviderConfig` / `ConfigHelper.removeProvider`，被它引用的绑定在**同一事务**里置空，
+  `clearedBindings` 告诉界面该提示哪几个用途；想先确认可用 `findBindingUses` / `getBindingUses`。
+- 调用层解析：`resolveBinding` / `ConfigHelper.resolveModelBinding` 返回 `{ provider, modelId }` 或 `null`，
+  调用层据此选 baseUrl / apiFormat / apiKey。
+
+### 15.3 迁移（`configVersion < 3`，一次性）
 
 | 旧键 | 处置 |
 |---|---|
-| `apiKey` | **保留**，迁入 `provider.apiKey` |
+| `apiKey` | **保留**，迁入 `providers[0].apiKey`（旧配置有 Key 时生成一条 provider 承载它） |
 | `apiProvider` | 丢弃 |
-| `extractionModel` / `solutionModel` / `debuggingModel` | 丢弃；`provider.models` 与 `bindings` 置空 |
+| `extractionModel` / `solutionModel` / `debuggingModel` | 丢弃；`providers[].models` 与 `bindings` 置空 |
+| `provider`（未发布的单套 v3 形状） | 丢弃顶层键；数据在内存里等价于一条 provider（不丢 Key/models） |
+| `activeProviderId`（未采用） | 丢弃 |
 | `uiLanguage` / `language` / `opacity` | 合法值原样保留，缺失时取默认（`system` / `java` / `1.0`） |
 | 未知键 | 原样保留（前向兼容） |
 
@@ -421,12 +447,13 @@ useI18n(): {
 - 迁移/丢弃旧模型各输出一条**当前语言**的日志（`main.config.migrated` / `main.config.legacyModelsDropped`）。
 - 损坏文件：先备份 `config.invalid-<ISO>.json`，再写默认值，不崩溃（`configFile.ts`）。
 
-### 15.3 代码落点
+### 15.4 代码落点
 
-- `electron/configMigrations.ts`：类型、默认值、`normalizeConfigData` / `normalizeProviderConfig` /
-  `normalizeBindings` / `mergeConfigUpdate` / `migrateConfigData`（纯函数，零 electron 依赖）。
+- `electron/configMigrations.ts`：类型、默认值、`normalizeProviders` / `normalizeProviderConfig` /
+  `normalizeBinding(s)` / `mergeConfigUpdate` / `addProviderConfig` / `updateProviderConfig` /
+  `removeProviderConfig` / `resolveBinding` / `migrateConfigData`（纯函数，零 electron 依赖）。
 - `electron/configFile.ts`：读文件、创建默认文件、备份损坏文件、原子写（只依赖 `node:fs`，可直接单测）。
-- `electron/ConfigHelper.ts`：接 electron 的薄壳（路径、日志、事件、内存兜底）。
+- `electron/ConfigHelper.ts`：接 electron 的薄壳（路径、日志、事件、内存兜底、CRUD 与落盘）。
 - 兼容桥：`Config` 上仍声明旧字段（`apiKey` / `apiProvider` / `*Model`）为 `@deprecated` 可选属性，
   仅为让尚未迁移的调用层（`ProcessingHelper`）通过 `tsc`；v3 **不读取也不写入**它们，调用层 issue 落地后删除。
-- 这三种结构之外的字段名（如 `provider.models` 改叫 `modelList`）**不得**由其它 issue 自行改名。
+- 这些字段名（如 `providers[].models` 改叫 `modelList`）**不得**由其它 issue 自行改名。

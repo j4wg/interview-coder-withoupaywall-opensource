@@ -64,7 +64,11 @@ export const mainEn: Record<MainMessageKeys, string> = {
     "Failed to read system locale, falling back to process locale:",
   "main.config.legacyUpdateIgnored":
     "Ignored legacy config fields (v3 no longer writes them): {{keys}}",
+  "main.config.bindingCleared":
+    "Provider {{providerId}} changed; these uses were unbound and need a model picked again: {{uses}}",
   "main.config.updateFailed": "Failed to update config: {{message}}",
+  "main.config.keyTest.noProvider":
+    "No provider configured yet. Add one in settings first.",
   "main.config.keyTest.missingBaseUrl":
     "Base URL is not set yet. Please fill in the service address first.",
   "main.config.keyTest.invalidKey":
