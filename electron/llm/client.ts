@@ -15,7 +15,7 @@ import {
   buildModelListRequest,
 } from "./requestBuilders"
 import {
-  resolveModelForPurpose,
+  resolveTargetForPurpose,
   isValidBaseUrl,
 } from "./providerConfig"
 import {
@@ -33,7 +33,7 @@ import {
   type ModelBindings,
   type ModelListResult,
   type ModelPurpose,
-  type ProviderSettings,
+  type ProviderConfig,
 } from "./types"
 
 /** 补全请求默认超时：与改动前 SDK 的 60s 一致 */
@@ -63,22 +63,33 @@ function failure(
 }
 
 /**
- * 调用前的配置检查：baseUrl / apiKey / 该用途的模型是否已就绪。
- * `purpose` 为 null 表示只检查连接级配置（例如拉取模型列表）。
+ * 连接级配置检查：baseUrl / apiKey 是否就绪。
+ * 多套配置下每套各自持有 baseUrl/apiKey，只校验本次选中那一套。
  */
-export function providerSetupError(
-  provider: ProviderSettings,
-  bindings: ModelBindings,
-  purpose: ModelPurpose | null,
+export function connectionSetupError(
+  provider: ProviderConfig,
   locale: Locale
 ): LlmFailure | null {
   if (!provider.baseUrl) return failure(locale, "base-url-missing")
   if (!isValidBaseUrl(provider.baseUrl)) return failure(locale, "base-url-invalid")
   if (!provider.apiKey) return failure(locale, "api-key-missing")
-  if (purpose && !resolveModelForPurpose(provider, bindings, purpose)) {
-    return failure(locale, "model-missing")
-  }
   return null
+}
+
+/**
+ * 调用前的配置检查：该用途是否绑定了「存在的 provider + 该 provider 下的模型」，
+ * 以及那一套配置的连接信息是否完整。
+ * 绑定缺失/悬空 → `binding-missing`（提示重新选择模型），不崩溃。
+ */
+export function providerSetupError(
+  providers: readonly ProviderConfig[],
+  bindings: ModelBindings,
+  purpose: ModelPurpose,
+  locale: Locale
+): LlmFailure | null {
+  const target = resolveTargetForPurpose({ providers, bindings }, purpose)
+  if (!target) return failure(locale, "binding-missing")
+  return connectionSetupError(target.provider, locale)
 }
 
 interface HttpResponse {
@@ -213,12 +224,13 @@ function mapHttpFailure(
 }
 
 /**
- * 按用途发一次补全请求：模型 ID 由 `bindings.<purpose>` 决定（缺失时回落列表首项）。
+ * 按用途发一次补全请求：provider 与模型 ID 由 `bindings.<purpose>` 的
+ * `{ providerId, modelId }` 决定（允许三个用途指向不同 provider）。
  * 这是三类业务请求（解析题面 / 生成方案 / debug）共用的唯一出口。
  */
 export async function completeForPurpose(opts: {
   purpose: ModelPurpose
-  provider: ProviderSettings
+  providers: readonly ProviderConfig[]
   bindings: ModelBindings
   system?: string
   user: string
@@ -229,13 +241,12 @@ export async function completeForPurpose(opts: {
   signal?: AbortSignal
   timeoutMs?: number
 }): Promise<LlmResult> {
-  const setup = providerSetupError(
-    opts.provider,
-    opts.bindings,
-    opts.purpose,
-    opts.locale
+  const target = resolveTargetForPurpose(
+    { providers: opts.providers, bindings: opts.bindings },
+    opts.purpose
   )
-  if (setup) {
+  if (!target) {
+    const setup = failure(opts.locale, "binding-missing")
     console.error(pt(opts.locale, "processing.log.llm.failed", {
       code: setup.code,
       status: "-",
@@ -244,11 +255,10 @@ export async function completeForPurpose(opts: {
     return setup
   }
 
-  const model = resolveModelForPurpose(opts.provider, opts.bindings, opts.purpose)
   return completeText({
-    provider: opts.provider,
+    provider: target.provider,
     request: {
-      model,
+      model: target.modelId,
       system: opts.system,
       user: opts.user,
       images: opts.images,
@@ -264,7 +274,7 @@ export async function completeForPurpose(opts: {
 
 /** 发一次补全请求（模型由调用方显式给出）；三种格式在这里合流 */
 export async function completeText(opts: {
-  provider: ProviderSettings
+  provider: ProviderConfig
   request: LlmTextRequest
   locale: Locale
   purpose?: ModelPurpose
@@ -272,13 +282,13 @@ export async function completeText(opts: {
   const { provider, request, locale } = opts
 
   if (!request.model) return failure(locale, "model-missing")
-  if (!provider.baseUrl) return failure(locale, "base-url-missing")
-  if (!isValidBaseUrl(provider.baseUrl)) return failure(locale, "base-url-invalid")
-  if (!provider.apiKey) return failure(locale, "api-key-missing")
+  const setup = connectionSetupError(provider, locale)
+  if (setup) return setup
 
   const built = buildCompletionRequest(provider, request)
   console.log(
     pt(locale, "processing.log.llm.call", {
+      provider: provider.name || provider.id || "-",
       format: provider.apiFormat,
       purpose: opts.purpose ?? "-",
       model: request.model,
@@ -340,23 +350,18 @@ export async function completeText(opts: {
 }
 
 /**
- * 拉取模型列表：`GET {baseUrl}/models`。
+ * 拉取模型列表：`GET {baseUrl}/models`（用传入那一套配置的 baseUrl / apiFormat / apiKey）。
  * 失败时返回空列表 + 本地化错误文案（绝不抛异常），
  * 因此设置页可以继续手工填写模型 ID。
  */
 export async function listModels(opts: {
-  provider: ProviderSettings
+  provider: ProviderConfig
   locale: Locale
   timeoutMs?: number
   signal?: AbortSignal
 }): Promise<ModelListResult> {
   const { provider, locale } = opts
-  const setup = providerSetupError(
-    provider,
-    { extractionModel: "", solutionModel: "", debuggingModel: "" },
-    null,
-    locale
-  )
+  const setup = connectionSetupError(provider, locale)
   if (setup) {
     console.error(
       pt(locale, "processing.log.llm.modelsFailed", {
@@ -372,6 +377,7 @@ export async function listModels(opts: {
       code: setup.code,
       message: setup.message,
       detail: setup.detail,
+      providerId: provider.id,
     }
   }
 
@@ -400,6 +406,7 @@ export async function listModels(opts: {
       message: sent.message,
       status: sent.status,
       detail: sent.detail,
+      providerId: provider.id,
     }
   }
 
@@ -421,6 +428,7 @@ export async function listModels(opts: {
       message: httpFailure.message,
       status: response.status,
       detail: httpFailure.detail,
+      providerId: provider.id,
     }
   }
   if (!response.jsonParsed) {
@@ -440,10 +448,11 @@ export async function listModels(opts: {
       message: llmErrorMessage(locale, "invalid-response"),
       status: response.status,
       detail,
+      providerId: provider.id,
     }
   }
 
   const models = extractModelIds(response.payload)
   console.log(pt(locale, "processing.log.llm.modelsFetched", { count: String(models.length) }))
-  return { kind: "success", ok: true, models }
+  return { kind: "success", ok: true, models, providerId: provider.id }
 }

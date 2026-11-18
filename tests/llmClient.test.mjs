@@ -1,12 +1,15 @@
 // `electron/llm/client.ts` + `electron/llm/modelListIpc.ts` 的集成单测：
 // 用 `node:http` 启一个本地 mock server（零新依赖、不联网、不需要真 Key），
-// 逐条验证 JUN-48 验收里的链路与错误归一。
+// 逐条验证 JUN-48 验收里的链路与错误归一（多套 provider 并存口径）。
 //
 // 覆盖：
-//   1. 三种格式各跑通 解析题面 → 生成方案 → debug，三次请求的 body.model 分别等于 bindings 里的配置值；
-//   2. 401 / 429 / 500 / 非 JSON 正文 四种错误在中英两态各自给出当前语言的文案，且不抛未捕获异常；
-//   3. 断网 / 超时 / 用户取消 的归一；
-//   4. `/models` 返回 3 个 ID 时 IPC 返回 3 个；401 / 超时给出当前语言的错误；拉取失败不影响手工填写模型。
+//   1. 三种格式各跑通 解析题面 → 生成方案 → debug，三次请求的 body.model 分别等于对应 binding 的 modelId；
+//   2. 跨 provider：三个用途分别绑定到不同 provider（可混合 API 格式），各自打到自己的 baseUrl；
+//   3. 悬空引用 / 删除 provider（先解绑）：归一为 binding-missing，不发请求、不抛异常，其余用途不受影响；
+//   4. 401 / 429 / 500 / 非 JSON 正文 四种错误在中英两态各自给出当前语言的文案；
+//   5. 断网 / 超时 / 用户取消 的归一；
+//   6. `/models` 返回 3 个 ID 时返回 3 个；401 / 超时给出当前语言错误；拉取失败不影响手工填写模型；
+//   7. IPC 多套配置：按 providerId 选卡片、未保存的新卡片、provider 不存在。
 import test from "node:test"
 import assert from "node:assert/strict"
 import fs from "node:fs"
@@ -28,7 +31,12 @@ if (!fs.existsSync(path.join(llmDir, "client.js"))) {
 const { completeText, completeForPurpose, listModels } = require(
   path.join(llmDir, "client.js")
 )
-const { handleListModels } = require(path.join(llmDir, "modelListIpc.js"))
+const { handleListModels, selectProviderForModelList } = require(
+  path.join(llmDir, "modelListIpc.js")
+)
+const { detachProviderBindings, resolveProviderConfig } = require(
+  path.join(llmDir, "providerConfig.js")
+)
 const { t } = require(path.resolve(here, "../dist-electron/i18n/index.js"))
 
 const FORMATS = ["anthropic-messages", "chat-completions", "responses"]
@@ -101,22 +109,27 @@ async function quiet(fn) {
   }
 }
 
-const bindingsWith = (extraction, solution, debugging) => ({
-  extractionModel: extraction,
-  solutionModel: solution,
-  debuggingModel: debugging,
-})
-
-const providerFor = (apiFormat, baseUrl, models) => ({
+/** 一套 provider 配置（多套并存时每套各有 id/name/baseUrl/apiFormat/apiKey/models） */
+const providerOf = (id, apiFormat, baseUrl, models, name = id) => ({
+  id,
+  name,
   baseUrl,
   apiFormat,
-  apiKey: `key-${apiFormat}`,
+  apiKey: `key-${id}`,
   models,
+})
+
+const bindingOf = (providerId, modelId) => ({ providerId, modelId })
+
+const bindingsFor = (providerId, models) => ({
+  extractionModel: bindingOf(providerId, models[0]),
+  solutionModel: bindingOf(providerId, models[1]),
+  debuggingModel: bindingOf(providerId, models[2]),
 })
 
 // ---------------------------------------------------------------- 完整链路（三格式 × 三用途）
 
-test("完整链路：三种格式各跑 解析题面 → 生成方案 → debug，body.model 分别取 bindings 的三项", async () => {
+test("完整链路：三种格式各跑 解析题面 → 生成方案 → debug，body.model 分别取各用途 binding 的 modelId", async () => {
   const expectedPath = {
     "anthropic-messages": "/v1/messages",
     "chat-completions": "/chat/completions",
@@ -131,12 +144,19 @@ test("完整链路：三种格式各跑 解析题面 → 生成方案 → debug�
     })
 
     try {
-      const provider = providerFor(apiFormat, mock.baseUrl, [
+      const provider = providerOf(
+        "p_main",
+        apiFormat,
+        mock.baseUrl,
+        ["extract-model", "solution-model", "debug-model"],
+        "主配置"
+      )
+      const providers = [provider]
+      const bindings = bindingsFor("p_main", [
         "extract-model",
         "solution-model",
         "debug-model",
       ])
-      const bindings = bindingsWith("extract-model", "solution-model", "debug-model")
 
       const calls = [
         {
@@ -157,7 +177,7 @@ test("完整链路：三种格式各跑 解析题面 → 生成方案 → debug�
       const texts = []
       for (const call of calls) {
         const { value: result } = await quiet(() =>
-          completeForPurpose({ ...call, provider, bindings, locale: "zh" })
+          completeForPurpose({ ...call, providers, bindings, locale: "zh" })
         )
         assert.equal(
           result.kind,
@@ -179,7 +199,7 @@ test("完整链路：三种格式各跑 解析题面 → 生成方案 → debug�
       assert.deepEqual(
         mock.requests.map((r) => r.body.model),
         ["extract-model", "solution-model", "debug-model"],
-        "请求体里的 model 必须等于 bindings 里对应用途的值"
+        "请求体里的 model 必须等于 bindings 里对应用途的 modelId"
       )
 
       if (apiFormat === "anthropic-messages") {
@@ -190,7 +210,6 @@ test("完整链路：三种格式各跑 解析题面 → 生成方案 → debug�
           assert.ok(Array.isArray(request.body.messages))
           assert.equal(typeof request.body.max_tokens, "number")
         }
-        // 解析题面那一次要带图（Anthropic 的 image block）
         assert.equal(mock.requests[0].body.messages[0].content[1].type, "image")
       } else {
         for (const request of mock.requests) {
@@ -206,7 +225,6 @@ test("完整链路：三种格式各跑 解析题面 → 生成方案 → debug�
         }
       }
 
-      // 三次响应各自解析成功且互不串味
       assert.equal(new Set(texts).size, 3)
       assert.match(texts[0], new RegExp(`^reply-${apiFormat}-1$`))
     } finally {
@@ -215,23 +233,206 @@ test("完整链路：三种格式各跑 解析题面 → 生成方案 → debug�
   }
 })
 
-test("完整链路：bindings 指向不存在的模型时回落 models 首项（与配置层归一一致）", async () => {
+test("跨 provider：三个用途分别绑定到不同配置（混合三种 API 格式），各打各的 baseUrl", async () => {
+  const mocks = {}
+  for (const apiFormat of FORMATS) {
+    mocks[apiFormat] = await startMock((req, res) => {
+      sendJson(res, 200, replyFor(apiFormat, `reply-${apiFormat}`))
+    })
+  }
+
+  try {
+    const providers = [
+      providerOf("p_chat", "chat-completions", mocks["chat-completions"].baseUrl, ["glm-4.6v"], "公司 GLM"),
+      providerOf("p_anthropic", "anthropic-messages", mocks["anthropic-messages"].baseUrl, ["claude-4-5"], "个人 Claude"),
+      providerOf("p_responses", "responses", mocks.responses.baseUrl, ["gpt-5"], "个人 OpenAI"),
+    ]
+    const bindings = {
+      extractionModel: bindingOf("p_chat", "glm-4.6v"),
+      solutionModel: bindingOf("p_anthropic", "claude-4-5"),
+      debuggingModel: bindingOf("p_responses", "gpt-5"),
+    }
+
+    const calls = [
+      ["extraction", "user: extract the problem"],
+      ["solution", "user: solve it"],
+      ["debugging", "user: debug my code"],
+    ]
+    const texts = []
+    for (const [purpose, user] of calls) {
+      const { value: result } = await quiet(() =>
+        completeForPurpose({ purpose, providers, bindings, user, locale: "zh" })
+      )
+      assert.equal(result.kind, "success", `${purpose} 失败：${result.message ?? ""}`)
+      texts.push(result.text)
+    }
+
+    assert.deepEqual(texts, [
+      "reply-chat-completions",
+      "reply-anthropic-messages",
+      "reply-responses",
+    ])
+
+    const chat = mocks["chat-completions"].requests
+    const anthropic = mocks["anthropic-messages"].requests
+    const responses = mocks.responses.requests
+    assert.equal(chat.length, 1, "解析题面打到 GLM 那套")
+    assert.equal(chat[0].body.model, "glm-4.6v")
+    assert.equal(chat[0].headers.authorization, "Bearer key-p_chat")
+    assert.equal(chat[0].url, "/chat/completions")
+
+    assert.equal(anthropic.length, 1, "生成方案打到 Claude 那套（跨 provider）")
+    assert.equal(anthropic[0].body.model, "claude-4-5")
+    assert.equal(anthropic[0].headers["x-api-key"], "key-p_anthropic")
+    assert.equal(anthropic[0].headers.authorization, undefined)
+    assert.equal(anthropic[0].url, "/v1/messages")
+
+    assert.equal(responses.length, 1, "debug 打到 OpenAI 那套")
+    assert.equal(responses[0].body.model, "gpt-5")
+    assert.equal(responses[0].headers.authorization, "Bearer key-p_responses")
+    assert.equal(responses[0].url, "/responses")
+  } finally {
+    for (const mock of Object.values(mocks)) await mock.close()
+  }
+})
+
+// ---------------------------------------------------------------- 引用完整性
+
+test("引用完整性：绑定指向已删除的 provider → binding-missing，不发请求、不抛异常；其余用途照常", async () => {
   const mock = await startMock((req, res) => {
     sendJson(res, 200, replyFor("chat-completions", "ok"))
   })
   try {
-    const provider = providerFor("chat-completions", mock.baseUrl, ["first-model"])
-    const { value: result } = await quiet(() =>
+    const providers = [
+      providerOf("p_alive", "chat-completions", mock.baseUrl, ["m-solution"], "还在的配置"),
+    ]
+    const rawConfig = {
+      providers: [
+        providerOf("p_alive", "chat-completions", mock.baseUrl, ["m-solution"], "还在的配置"),
+        providerOf("p_gone", "chat-completions", "https://gone.example.com", ["m-gone"], "已删除的配置"),
+      ],
+      bindings: {
+        extractionModel: bindingOf("p_gone", "m-gone"),
+        solutionModel: bindingOf("p_alive", "m-solution"),
+        debuggingModel: bindingOf("p_gone", "m-gone"),
+      },
+    }
+    const { providers: alive } = resolveProviderConfig({
+      providers: providers.concat({
+        id: "p_gone",
+        name: "已删除的配置",
+        baseUrl: "https://gone.example.com",
+        apiFormat: "chat-completions",
+        apiKey: "key-gone",
+        models: ["m-gone"],
+      }),
+      bindings: rawConfig.bindings,
+    })
+    // 删除 p_gone 后重新读取配置：归一阶段自动置空，不留悬空引用
+    const { bindings } = resolveProviderConfig({
+      providers: alive.filter((provider) => provider.id !== "p_gone"),
+      bindings: rawConfig.bindings,
+    })
+    assert.equal(bindings.extractionModel, null)
+    assert.equal(bindings.debuggingModel, null)
+
+    for (const locale of ["zh", "en"]) {
+      const { value: extraction } = await quiet(() =>
+        completeForPurpose({
+          purpose: "extraction",
+          providers,
+          bindings,
+          user: "u",
+          locale,
+        })
+      )
+      assert.equal(extraction.kind, "failure")
+      assert.equal(extraction.code, "binding-missing")
+      assert.match(
+        extraction.message,
+        locale === "zh" ? /还没有绑定模型/ : /No model is bound/
+      )
+    }
+    assert.equal(mock.requests.length, 0, "绑定缺失不应发出任何请求")
+
+    const { value: solution } = await quiet(() =>
       completeForPurpose({
         purpose: "solution",
-        provider,
-        bindings: bindingsWith("gone-model", "gone-model", "gone-model"),
+        providers,
+        bindings,
         user: "u",
         locale: "zh",
       })
     )
-    assert.equal(result.kind, "success")
-    assert.equal(mock.requests[0].body.model, "first-model")
+    assert.equal(solution.kind, "success", "另一个用途不受影响")
+    assert.equal(mock.requests[0].body.model, "m-solution")
+  } finally {
+    await mock.close()
+  }
+})
+
+test("引用完整性：模型不在该 provider 的 models 里 → 归一为未绑定（不静默保留悬空引用）", async () => {
+  const mock = await startMock((req, res) => {
+    sendJson(res, 200, replyFor("responses", "ok"))
+  })
+  try {
+    const providers = [
+      providerOf("p_a", "responses", mock.baseUrl, ["a-1"], "A"),
+      providerOf("p_b", "responses", mock.baseUrl, ["b-1"], "B"),
+    ]
+    // 模型属于 p_b，却绑在 p_a 上：归一阶段置空
+    const { bindings, issues } = resolveProviderConfig({
+      providers,
+      bindings: {
+        extractionModel: bindingOf("p_a", "b-1"),
+        solutionModel: bindingOf("p_a", "a-1"),
+        debuggingModel: bindingOf("p_b", "b-1"),
+      },
+    })
+    assert.equal(bindings.extractionModel, null)
+    assert.ok(issues.includes("binding-model-missing"))
+
+    const { value: extraction } = await quiet(() =>
+      completeForPurpose({ purpose: "extraction", providers, bindings, user: "u", locale: "zh" })
+    )
+    assert.equal(extraction.code, "binding-missing")
+    assert.equal(mock.requests.length, 0)
+
+    const { value: solution } = await quiet(() =>
+      completeForPurpose({ purpose: "solution", providers, bindings, user: "u", locale: "zh" })
+    )
+    assert.equal(solution.kind, "success")
+    assert.equal(mock.requests[0].body.model, "a-1")
+  } finally {
+    await mock.close()
+  }
+})
+
+test("删除 provider：先 detachProviderBindings 再删，被解绑的用途提示重选，其他用途保留", async () => {
+  const mock = await startMock((req, res) => {
+    sendJson(res, 200, replyFor("chat-completions", "ok"))
+  })
+  try {
+    const bindings = {
+      extractionModel: bindingOf("p_keep", "keep-1"),
+      solutionModel: bindingOf("p_drop", "drop-1"),
+      debuggingModel: bindingOf("p_drop", "drop-1"),
+    }
+    const { bindings: next, detached } = detachProviderBindings(bindings, "p_drop")
+    assert.deepEqual(detached, ["solution", "debugging"])
+    assert.deepEqual(next.extractionModel, bindingOf("p_keep", "keep-1"))
+
+    const providers = [providerOf("p_keep", "chat-completions", mock.baseUrl, ["keep-1"], "保留的配置")]
+    const { value: solution } = await quiet(() =>
+      completeForPurpose({ purpose: "solution", providers, bindings: next, user: "u", locale: "zh" })
+    )
+    assert.equal(solution.code, "binding-missing")
+
+    const { value: extraction } = await quiet(() =>
+      completeForPurpose({ purpose: "extraction", providers, bindings: next, user: "u", locale: "zh" })
+    )
+    assert.equal(extraction.kind, "success")
+    assert.equal(mock.requests[0].body.model, "keep-1")
   } finally {
     await mock.close()
   }
@@ -281,13 +482,13 @@ for (const testCase of HTTP_ERROR_CASES) {
         sendJson(res, testCase.status, testCase.body)
       })
       try {
-        const provider = providerFor(apiFormat, mock.baseUrl, ["model-a"])
+        const providers = [providerOf("p_err", apiFormat, mock.baseUrl, ["model-a"])]
         for (const locale of ["zh", "en"]) {
           const { value: result } = await quiet(() =>
             completeForPurpose({
               purpose: "extraction",
-              provider,
-              bindings: bindingsWith("model-a", "model-a", "model-a"),
+              providers,
+              bindings: bindingsFor("p_err", ["model-a", "model-a", "model-a"]),
               user: "u",
               locale,
             })
@@ -313,17 +514,20 @@ test("错误归一：错误文案与日志都跟随当前语言（中文态取�
     sendJson(res, 401, { error: { message: "invalid api key" } })
   })
   try {
-    const provider = providerFor("responses", mock.baseUrl, ["model-a"])
+    const providers = [providerOf("p_zh", "responses", mock.baseUrl, ["model-a"])]
     const { value: result, lines } = await quiet(() =>
       completeForPurpose({
         purpose: "solution",
-        provider,
-        bindings: bindingsWith("model-a", "model-a", "model-a"),
+        providers,
+        bindings: bindingsFor("p_zh", ["model-a", "model-a", "model-a"]),
         user: "u",
         locale: "zh",
       })
     )
-    assert.equal(result.message, t("processing", "zh", "processing.error.llm.auth", { status: "401" }))
+    assert.equal(
+      result.message,
+      t("processing", "zh", "processing.error.llm.auth", { status: "401" })
+    )
     assert.ok(
       lines.some((line) => line.includes("模型接口调用失败")),
       `日志应为中文，实际：${lines.join(" | ")}`
@@ -340,11 +544,12 @@ test("错误归一：断网给出本地化提示，不抛未捕获异常", async
   await mock.close() // 端口已关闭：模拟断网 / Base URL 不可达
 
   for (const locale of ["zh", "en"]) {
+    const providers = [providerOf("p_net", "chat-completions", baseUrl, ["model-a"])]
     const { value: result } = await quiet(() =>
       completeForPurpose({
         purpose: "solution",
-        provider: providerFor("chat-completions", baseUrl, ["model-a"]),
-        bindings: bindingsWith("model-a", "model-a", "model-a"),
+        providers,
+        bindings: bindingsFor("p_net", ["model-a", "model-a", "model-a"]),
         user: "u",
         locale,
       })
@@ -363,7 +568,7 @@ test("错误归一：超时给出本地化提示（含超时秒数）", async ()
     for (const locale of ["zh", "en"]) {
       const { value: result } = await quiet(() =>
         completeText({
-          provider: providerFor("chat-completions", mock.baseUrl, ["model-a"]),
+          provider: providerOf("p_slow", "chat-completions", mock.baseUrl, ["model-a"]),
           request: { model: "model-a", user: "u", timeoutMs: 80 },
           locale,
         })
@@ -386,7 +591,7 @@ test("错误归一：用户取消映射为既有「已取消」文案", async ()
     const controller = new AbortController()
     const pending = quiet(() =>
       completeText({
-        provider: providerFor("chat-completions", mock.baseUrl, ["model-a"]),
+        provider: providerOf("p_cancel", "chat-completions", mock.baseUrl, ["model-a"]),
         request: { model: "model-a", user: "u", signal: controller.signal },
         locale: "zh",
       })
@@ -406,11 +611,12 @@ test("错误归一：配置缺失不发起请求，直接给出当前语言提�
     ["zh", /尚未配置 API Base URL/],
     ["en", /No API Base URL configured/],
   ]) {
+    const providers = [providerOf("p_empty", "responses", "", ["m"])]
     const { value: baseUrlMissing } = await quiet(() =>
       completeForPurpose({
         purpose: "extraction",
-        provider: providerFor("responses", "", ["m"]),
-        bindings: bindingsWith("m", "m", "m"),
+        providers,
+        bindings: bindingsFor("p_empty", ["m", "m", "m"]),
         user: "u",
         locale,
       })
@@ -418,17 +624,29 @@ test("错误归一：配置缺失不发起请求，直接给出当前语言提�
     assert.equal(baseUrlMissing.code, "base-url-missing")
     assert.match(baseUrlMissing.message, pattern)
 
-    const { value: noModel } = await quiet(() =>
+    const noKey = [{ ...providers[0], baseUrl: "https://gw.example.com/v1", apiKey: "" }]
+    const { value: keyMissing } = await quiet(() =>
       completeForPurpose({
         purpose: "debugging",
-        provider: providerFor("responses", "https://gw.example.com/v1", []),
-        bindings: bindingsWith("", "", ""),
+        providers: noKey,
+        bindings: bindingsFor("p_empty", ["m", "m", "m"]),
         user: "u",
         locale,
       })
     )
-    assert.equal(noModel.code, "model-missing")
-    assert.match(noModel.message, locale === "zh" ? /尚未选择该用途的模型/ : /No model selected/)
+    assert.equal(keyMissing.code, "api-key-missing")
+
+    const { value: noProvider } = await quiet(() =>
+      completeForPurpose({
+        purpose: "debugging",
+        providers: [],
+        bindings: bindingsFor("p_empty", ["m", "m", "m"]),
+        user: "u",
+        locale,
+      })
+    )
+    assert.equal(noProvider.code, "binding-missing")
+    assert.match(noProvider.message, locale === "zh" ? /还没有绑定模型/ : /No model is bound/)
   }
 })
 
@@ -442,10 +660,11 @@ test("模型列表：mock /models 返回 3 个 ID 时返回这 3 个（三种鉴
       })
     })
     try {
-      const provider = providerFor(apiFormat, `${mock.baseUrl}/v1`, [])
+      const provider = providerOf("p_models", apiFormat, `${mock.baseUrl}/v1`, [], "拉取用")
       const { value: result } = await quiet(() => listModels({ provider, locale: "zh" }))
       assert.equal(result.kind, "success")
       assert.deepEqual(result.models, ["glm-4.6v-flash", "qwen3-coder", "glm-5"])
+      assert.equal(result.providerId, "p_models")
       assert.equal(mock.requests.length, 1)
       assert.equal(mock.requests[0].method, "GET")
       assert.equal(mock.requests[0].url, "/v1/models")
@@ -472,7 +691,7 @@ test("模型列表：401 与超时给出当前语言提示，且不抛异常", a
     ]) {
       const { value: result } = await quiet(() =>
         listModels({
-          provider: providerFor("chat-completions", unauthorized.baseUrl, []),
+          provider: providerOf("p_401", "chat-completions", unauthorized.baseUrl, []),
           locale,
         })
       )
@@ -491,7 +710,7 @@ test("模型列表：401 与超时给出当前语言提示，且不抛异常", a
   try {
     const { value: timedOut } = await quiet(() =>
       listModels({
-        provider: providerFor("responses", slow.baseUrl, []),
+        provider: providerOf("p_slow", "responses", slow.baseUrl, []),
         locale: "zh",
         timeoutMs: 80,
       })
@@ -515,20 +734,20 @@ test("模型列表：拉取失败不影响手工填写模型（失败后仍可�
     sendJson(res, 200, replyFor("responses", "手工模型的回答"))
   })
   try {
-    const provider = providerFor("responses", mock.baseUrl, [])
+    const provider = providerOf("p_manual", "responses", mock.baseUrl, [])
     const { value: listResult } = await quiet(() => listModels({ provider, locale: "zh" }))
     assert.equal(listResult.kind, "failure")
 
     // 用户在设置页手工添加模型 ID 后，bindings 生效、请求照常发出
     const withManual = { ...provider, models: ["manual-model"] }
+    const providers = [withManual]
+    const bindings = {
+      extractionModel: null,
+      solutionModel: bindingOf("p_manual", "manual-model"),
+      debuggingModel: null,
+    }
     const { value: callResult } = await quiet(() =>
-      completeForPurpose({
-        purpose: "solution",
-        provider: withManual,
-        bindings: bindingsWith("", "manual-model", ""),
-        user: "u",
-        locale: "zh",
-      })
+      completeForPurpose({ purpose: "solution", providers, bindings, user: "u", locale: "zh" })
     )
     assert.equal(callResult.kind, "success")
     assert.equal(callResult.text, "手工模型的回答")
@@ -539,28 +758,132 @@ test("模型列表：拉取失败不影响手工填写模型（失败后仍可�
 
 // ---------------------------------------------------------------- IPC 处理函数
 
-test("IPC list-models：已保存配置返回 3 个 ID；401 时返回空列表 + 当前语言 error", async () => {
-  const okMock = await startMock((req, res) => {
-    sendJson(res, 200, { data: [{ id: "m-1" }, { id: "m-2" }, { id: "m-3" }] })
+const twoProviderConfig = (glmBaseUrl, openaiBaseUrl) => ({
+  providers: [
+    providerOf("p_glm", "chat-completions", glmBaseUrl, ["glm-5"], "公司 GLM"),
+    providerOf("p_openai", "responses", openaiBaseUrl, ["gpt-5"], "个人 OpenAI"),
+  ],
+  bindings: {
+    extractionModel: bindingOf("p_glm", "glm-5"),
+    solutionModel: bindingOf("p_openai", "gpt-5"),
+    debuggingModel: bindingOf("p_glm", "glm-5"),
+  },
+})
+
+test("IPC list-models：多套配置下按 providerId 选卡片，各用各自的 baseUrl / 鉴权头", async () => {
+  const glm = await startMock((req, res) => {
+    sendJson(res, 200, { data: [{ id: "glm-5" }, { id: "glm-4.6v" }, { id: "qwen3-coder" }] })
+  })
+  const openai = await startMock((req, res) => {
+    sendJson(res, 200, { data: [{ id: "gpt-5" }] })
   })
   try {
-    const rawConfig = {
-      provider: {
-        baseUrl: `${okMock.baseUrl}/v1`,
-        apiFormat: "responses",
-        apiKey: "sk-saved",
-        models: ["m-1"],
-      },
-      bindings: { extractionModel: "m-1", solutionModel: "m-1", debuggingModel: "m-1" },
-    }
-    const { value: result } = await quiet(() =>
+    const rawConfig = twoProviderConfig(glm.baseUrl, openai.baseUrl)
+
+    const { value: glmResult } = await quiet(() =>
+      handleListModels({ rawConfig, providerId: "p_glm", locale: "zh" })
+    )
+    assert.deepEqual(glmResult, {
+      ok: true,
+      models: ["glm-5", "glm-4.6v", "qwen3-coder"],
+      providerId: "p_glm",
+    })
+    assert.equal(glm.requests.length, 1)
+    assert.equal(glm.requests[0].headers.authorization, "Bearer key-p_glm")
+    assert.equal(openai.requests.length, 0, "不应误打到另一套配置")
+
+    // 不带 providerId 时回落到第一套（兼容旧调用）
+    const { value: fallback } = await quiet(() =>
       handleListModels({ rawConfig, locale: "zh" })
     )
-    assert.deepEqual(result, { ok: true, models: ["m-1", "m-2", "m-3"] })
+    assert.deepEqual(fallback.models, ["glm-5", "glm-4.6v", "qwen3-coder"])
   } finally {
-    await okMock.close()
+    await glm.close()
+    await openai.close()
   }
+})
 
+test("IPC list-models：未保存的新卡片用表单值拉取，providerId 原样带回", async () => {
+  const mock = await startMock((req, res) => {
+    sendJson(res, 200, { models: ["draft-a", "draft-b"] })
+  })
+  try {
+    const { value: draft } = await quiet(() =>
+      handleListModels({
+        rawConfig: { providers: [], bindings: {} },
+        providerId: "p_new",
+        overrides: {
+          providerId: "p_new",
+          name: "新建配置",
+          baseUrl: mock.baseUrl,
+          apiFormat: "responses",
+          apiKey: "sk-draft",
+        },
+        locale: "zh",
+      })
+    )
+    assert.deepEqual(draft, {
+      ok: true,
+      models: ["draft-a", "draft-b"],
+      providerId: "p_new",
+    })
+    assert.equal(mock.requests[0].headers.authorization, "Bearer sk-draft")
+    assert.equal(mock.requests[0].url, "/models")
+
+    // 已保存卡片 + 表单覆盖：覆盖 baseUrl 生效，id 仍是已保存的稳定 id
+    const selected = selectProviderForModelList(
+      twoProviderConfig("https://saved.example.com", "https://other.example.com").providers,
+      "p_glm",
+      { baseUrl: mock.baseUrl, apiKey: "sk-override", apiFormat: "anthropic-messages" }
+    )
+    assert.equal(selected.id, "p_glm")
+    assert.equal(selected.baseUrl, mock.baseUrl)
+    assert.equal(selected.apiKey, "sk-override")
+    assert.equal(selected.apiFormat, "anthropic-messages")
+  } finally {
+    await mock.close()
+  }
+})
+
+test("IPC list-models：providerId 不存在给当前语言提示（不崩溃），不影响手工填写", async () => {
+  for (const [locale, pattern] of [
+    ["zh", /没有找到所选的配置/],
+    ["en", /selected provider configuration was not found/],
+  ]) {
+    const { value: result } = await quiet(() =>
+      handleListModels({
+        rawConfig: twoProviderConfig("https://a.example.com", "https://b.example.com"),
+        providerId: "p_deleted",
+        locale,
+      })
+    )
+    assert.equal(result.ok, false)
+    assert.deepEqual(result.models, [])
+    assert.equal(result.code, "provider-missing")
+    assert.match(result.error, pattern)
+
+    // 手工填写的路径不受影响：表单自带 baseUrl 就能拉
+    const mock = await startMock((req, res) => {
+      sendJson(res, 200, { data: [{ id: "manual" }] })
+    })
+    try {
+      const { value: byForm } = await quiet(() =>
+        handleListModels({
+          rawConfig: twoProviderConfig("https://a.example.com", "https://b.example.com"),
+          providerId: "p_deleted",
+          overrides: { baseUrl: mock.baseUrl, apiFormat: "chat-completions", apiKey: "sk-form" },
+          locale,
+        })
+      )
+      assert.equal(byForm.ok, true)
+      assert.deepEqual(byForm.models, ["manual"])
+    } finally {
+      await mock.close()
+    }
+  }
+})
+
+test("IPC list-models：已保存配置 401 时返回空列表 + 当前语言 error", async () => {
   const deniedMock = await startMock((req, res) => {
     sendJson(res, 401, { error: { message: "invalid api key" } })
   })
@@ -572,19 +895,18 @@ test("IPC list-models：已保存配置返回 3 个 ID；401 时返回空列表 
       const { value: result } = await quiet(() =>
         handleListModels({
           rawConfig: {
-            provider: {
-              baseUrl: deniedMock.baseUrl,
-              apiFormat: "chat-completions",
-              apiKey: "sk-bad",
-              models: [],
-            },
+            providers: [
+              providerOf("p_bad", "chat-completions", deniedMock.baseUrl, [], "坏 Key"),
+            ],
           },
+          providerId: "p_bad",
           locale,
         })
       )
       assert.equal(result.ok, false)
       assert.deepEqual(result.models, [])
       assert.equal(result.code, "auth")
+      assert.equal(result.providerId, "p_bad")
       assert.match(result.error, pattern)
     }
   } finally {
@@ -592,39 +914,17 @@ test("IPC list-models：已保存配置返回 3 个 ID；401 时返回空列表 
   }
 })
 
-test("IPC list-models：未保存的表单值可覆盖配置（设置页先填后拉）；缺配置给可见提示", async () => {
-  const mock = await startMock((req, res) => {
-    sendJson(res, 200, { models: ["draft-a", "draft-b"] })
-  })
-  try {
-    const { value: overridden } = await quiet(() =>
-      handleListModels({
-        rawConfig: { provider: { baseUrl: "", apiFormat: "chat-completions", apiKey: "", models: [] } },
-        overrides: {
-          baseUrl: mock.baseUrl,
-          apiFormat: "responses",
-          apiKey: "sk-draft",
-        },
-        locale: "zh",
-      })
+test("IPC list-models：完全没有配置时给当前语言提示", async () => {
+  for (const [locale, pattern] of [
+    ["zh", /没有找到所选的配置/],
+    ["en", /selected provider configuration was not found/],
+  ]) {
+    const { value: result } = await quiet(() =>
+      handleListModels({ rawConfig: { providers: [] }, locale })
     )
-    assert.deepEqual(overridden, { ok: true, models: ["draft-a", "draft-b"] })
-    assert.equal(mock.requests[0].headers.authorization, "Bearer sk-draft")
-
-    const { value: noConfig } = await quiet(() =>
-      handleListModels({ rawConfig: {}, locale: "zh" })
-    )
-    assert.equal(noConfig.ok, false)
-    assert.deepEqual(noConfig.models, [])
-    assert.equal(noConfig.code, "base-url-missing")
-    assert.match(noConfig.error, /API Base URL/)
-
-    const { value: noConfigEn } = await quiet(() =>
-      handleListModels({ rawConfig: {}, locale: "en" })
-    )
-    assert.match(noConfigEn.error, /API Base URL/)
-    assert.notEqual(noConfigEn.error, noConfig.error)
-  } finally {
-    await mock.close()
+    assert.equal(result.ok, false)
+    assert.deepEqual(result.models, [])
+    assert.equal(result.code, "provider-missing")
+    assert.match(result.error, pattern)
   }
 })

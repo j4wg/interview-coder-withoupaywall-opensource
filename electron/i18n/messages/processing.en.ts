@@ -143,7 +143,7 @@ export const processingEn: ProcessingMessages = {
   "processing.log.llm.response":
     "Received response (HTTP {{status}}, {{ms}} ms)",
   "processing.log.llm.call":
-    "Calling the model endpoint: format {{format}}, purpose {{purpose}}, model {{model}}",
+    "Calling the model endpoint: provider {{provider}}, format {{format}}, purpose {{purpose}}, model {{model}}",
   "processing.log.llm.failed":
     "Model endpoint call failed: code {{code}}, HTTP {{status}}, details: {{detail}}",
   "processing.log.llm.configIssues":
@@ -160,6 +160,10 @@ export const processingEn: ProcessingMessages = {
     "The API Base URL is not a valid HTTP(S) address. Please check your settings.",
   "processing.error.llm.apiKeyMissing":
     "No API key configured yet. Please fill it in under Settings.",
+  "processing.error.llm.providerMissing":
+    "The selected provider configuration was not found (it may have been deleted). Please choose or add one in Settings.",
+  "processing.error.llm.bindingMissing":
+    "No model is bound to this purpose yet. Choose a provider and model for it in Settings.",
   "processing.error.llm.modelMissing":
     "No model selected for this purpose yet. Add a model in Settings and select it first.",
   "processing.error.llm.network":
@@ -182,6 +186,13 @@ export const processingEn: ProcessingMessages = {
     "The endpoint response contains no usable text. Check the model ID and API format.",
   "processing.error.llm.unknown":
     "An unknown error occurred while calling the model endpoint. Please try again later.",
+
+  // ---------------------------------------------------------------- 多套配置（provider 卡片）
+  "processing.modelPurpose.extraction": "problem extraction",
+  "processing.modelPurpose.solution": "solution generation",
+  "processing.modelPurpose.debugging": "debugging",
+  "processing.notice.llm.bindingDetached":
+    "Removed the {{purpose}} binding for \"{{provider}}\". That purpose needs a model selected again.",
   "processing.error.extract.parseFailed":
     "Failed to parse the problem information. Please try again or use clearer screenshots.",
   "processing.error.extract.fieldMissing":

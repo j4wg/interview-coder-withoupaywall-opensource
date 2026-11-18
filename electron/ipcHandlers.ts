@@ -48,14 +48,15 @@ export function initializeIpcHandlers(deps: IIpcHandlerDeps): void {
     return configHelper.hasApiKey();
   })
 
-  // 拉取模型列表：GET {baseUrl}/models，鉴权头按 provider.apiFormat 走。
+  // 拉取模型列表：GET {baseUrl}/models，鉴权头按所送 provider 的 apiFormat 走。
+  // 渲染层用 options.providerId 指定是哪一套配置（多套并存），可带未保存的表单值。
   // 失败时返回 { ok: false, models: [], error }（当前语言），不影响渲染层手工填写模型 ID。
-  ipcMain.handle("list-models", async (_event, overrides?: unknown) => {
+  ipcMain.handle("list-models", async (_event, options?: unknown) => {
     const locale = configHelper.getUiLocale().locale;
     console.log(t("main.ipc.listModelsRequest"));
     const result = await handleListModels({
       rawConfig: configHelper.loadConfig(),
-      overrides,
+      overrides: options,
       locale,
     });
     if (result.ok) {

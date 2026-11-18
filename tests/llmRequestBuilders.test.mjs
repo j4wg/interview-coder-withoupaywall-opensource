@@ -29,9 +29,16 @@ const {
   resolveProviderConfig,
   applyProviderOverrides,
   buildEndpoint,
-  resolveModelForPurpose,
+  resolveTargetForPurpose,
+  resolveBindingForPurpose,
+  detachProviderBindings,
+  providerFromOverrides,
+  findProvider,
   isValidBaseUrl,
 } = require(path.join(llmDir, "providerConfig.js"))
+const { detachedBindingNotice, modelPurposeLabel } = require(
+  path.join(llmDir, "messages.js")
+)
 const {
   extractCompletionText,
   extractModelIds,
@@ -40,17 +47,16 @@ const {
 } = require(path.join(llmDir, "responseParsers.js"))
 
 const providerOf = (apiFormat, baseUrl = "https://gw.example.com/v1") => ({
+  id: "p_test",
+  name: "测试配置",
   baseUrl,
   apiFormat,
   apiKey: "sk-test-key",
   models: ["model-a", "model-b", "model-c"],
 })
 
-const bindingsOf = () => ({
-  extractionModel: "model-a",
-  solutionModel: "model-b",
-  debuggingModel: "model-c",
-})
+/** 构造一个绑定对象（多套配置并存：每项都必须带 providerId） */
+const bindingOf = (providerId, modelId) => ({ providerId, modelId })
 
 const requestOf = (overrides = {}) => ({
   model: "model-a",
@@ -200,87 +206,184 @@ test("模型列表：GET {baseUrl}/models，鉴权头按格式走", () => {
   }
 })
 
-// ---------------------------------------------------------------- 配置归一
+// ---------------------------------------------------------------- 配置归一（多套 provider 并存）
 
-test("配置归一：v3 结构原样读出，bindings 按用途命中模型", () => {
-  const resolved = resolveProviderConfig({
-    provider: {
-      baseUrl: " https://gw.example.com/v1 ",
-      apiFormat: "responses",
-      apiKey: " sk-1 ",
-      models: ["m-1", "m-2"],
-    },
-    bindings: {
-      extractionModel: "m-1",
-      solutionModel: "m-2",
-      debuggingModel: "m-2",
-    },
-  })
-
-  assert.deepEqual(resolved.provider, {
-    baseUrl: "https://gw.example.com/v1",
+const providersFixture = () => [
+  {
+    id: "p_glm",
+    name: "公司 GLM",
+    baseUrl: " https://glm.example.com/v1 ",
+    apiFormat: "chat-completions",
+    apiKey: " sk-glm ",
+    models: ["glm-4.6v", "glm-5"],
+  },
+  {
+    id: "p_openai",
+    name: "个人 OpenAI",
+    baseUrl: "https://api.openai.com/v1",
     apiFormat: "responses",
-    apiKey: "sk-1",
-    models: ["m-1", "m-2"],
-  })
-  assert.deepEqual(resolved.issues, [])
-  assert.equal(resolveModelForPurpose(resolved.provider, resolved.bindings, "extraction"), "m-1")
-  assert.equal(resolveModelForPurpose(resolved.provider, resolved.bindings, "solution"), "m-2")
-  assert.equal(resolveModelForPurpose(resolved.provider, resolved.bindings, "debugging"), "m-2")
+    apiKey: "sk-openai",
+    models: ["gpt-5", "gpt-5-mini"],
+  },
+]
+
+const crossProviderBindings = () => ({
+  extractionModel: bindingOf("p_glm", "glm-4.6v"),
+  solutionModel: bindingOf("p_openai", "gpt-5"),
+  debuggingModel: bindingOf("p_glm", "glm-5"),
 })
 
-test("配置归一：旧结构 / 非法 apiFormat / 脏 models 都不抛错并给出 issues", () => {
-  const legacy = resolveProviderConfig({
-    apiKey: "sk-old",
-    apiProvider: "openai",
-    extractionModel: "gpt-x",
+test("配置归一：providers 数组原样读出，id/name 保留，bindings 允许跨 provider", () => {
+  const resolved = resolveProviderConfig({
+    providers: providersFixture(),
+    bindings: crossProviderBindings(),
   })
-  assert.equal(legacy.provider.baseUrl, "")
-  assert.equal(legacy.provider.models.length, 0)
-  assert.ok(legacy.issues.includes("provider-missing"))
+
+  assert.deepEqual(resolved.issues, [])
+  assert.equal(resolved.providers.length, 2)
+  assert.deepEqual(resolved.providers[0], {
+    id: "p_glm",
+    name: "公司 GLM",
+    baseUrl: "https://glm.example.com/v1",
+    apiFormat: "chat-completions",
+    apiKey: "sk-glm",
+    models: ["glm-4.6v", "glm-5"],
+  })
+  assert.equal(resolved.providers[1].name, "个人 OpenAI")
+
+  const extraction = resolveTargetForPurpose(resolved, "extraction")
+  const solution = resolveTargetForPurpose(resolved, "solution")
+  const debugging = resolveTargetForPurpose(resolved, "debugging")
+  assert.equal(extraction.provider.id, "p_glm")
+  assert.equal(extraction.modelId, "glm-4.6v")
+  assert.equal(solution.provider.id, "p_openai", "允许跨 provider")
+  assert.equal(solution.modelId, "gpt-5")
+  assert.equal(debugging.provider.id, "p_glm")
+  assert.equal(debugging.modelId, "glm-5")
+})
+
+test("配置归一：非法 providers / 重复 id / 脏字段都不抛错，给定 issues", () => {
+  for (const raw of [
+    {},
+    { provider: { baseUrl: "https://old.example.com" } },
+    { providers: "nope" },
+    { apiKey: "sk-old", apiProvider: "openai", extractionModel: "gpt-x" },
+  ]) {
+    const resolved = resolveProviderConfig(raw)
+    assert.deepEqual(resolved.providers, [], "旧单套结构未被兼容（迁移归 JUN-47）")
+    assert.ok(resolved.issues.includes("providers-missing"))
+    assert.equal(resolved.bindings.extractionModel, null)
+  }
+
+  // 最小合法项（只给 id）：保留并给安全默认值，不抛错
+  const minimal = resolveProviderConfig({ providers: [{ id: "p" }] })
+  assert.equal(minimal.providers.length, 1)
+  assert.equal(minimal.providers[0].apiFormat, "chat-completions")
+  assert.ok(minimal.issues.includes("provider-name-missing"))
 
   const dirty = resolveProviderConfig({
-    provider: {
-      baseUrl: "not-a-url",
-      apiFormat: "grpc",
-      apiKey: "",
-      models: ["m-1", " m-1 ", "", 42, "m-2"],
-    },
-    bindings: { extractionModel: "gone", solutionModel: 7 },
+    providers: [
+      null,
+      { name: "没有 id" },
+      {
+        id: " p_1 ",
+        baseUrl: "not-a-url",
+        apiFormat: "grpc",
+        apiKey: "",
+        models: ["m-1", " m-1 ", "", 42, "m-2"],
+      },
+      { id: "p_1", name: "重复 id", baseUrl: "https://dup.example.com" },
+      { id: "p_2", name: "  ", baseUrl: "https://ok.example.com", apiFormat: "responses", models: "nope" },
+    ],
+    bindings: { extractionModel: "m-1" },
   })
-  assert.equal(dirty.provider.apiFormat, "chat-completions", "非法 apiFormat 归一为通用格式")
-  assert.deepEqual(dirty.provider.models, ["m-1", "m-2"], "模型 ID 去空、去重、保序")
-  assert.ok(dirty.issues.includes("baseUrl-invalid"))
-  assert.ok(dirty.issues.includes("apiFormat-invalid"))
-  assert.ok(dirty.issues.includes("models-invalid"))
-  assert.equal(dirty.bindings.solutionModel, "", "非字符串 binding 归一为空")
 
-  // bindings 指向不在列表里的 ID 时回落列表首项；列表为空时回落 binding 本身
-  assert.equal(resolveModelForPurpose(dirty.provider, dirty.bindings, "extraction"), "m-1")
-  assert.equal(
-    resolveModelForPurpose(
-      dirty.provider,
-      { extractionModel: "only-binding", solutionModel: "", debuggingModel: "" },
-      "extraction"
-    ),
-    "m-1"
+  assert.deepEqual(
+    dirty.providers.map((provider) => provider.id),
+    ["p_1", "p_2"],
+    "非法项丢弃、重复 id 只保留第一项"
   )
-  assert.equal(
-    resolveModelForPurpose(
-      { ...dirty.provider, models: [] },
-      { extractionModel: "only-binding", solutionModel: "", debuggingModel: "" },
-      "extraction"
-    ),
-    "only-binding"
-  )
-  assert.equal(
-    resolveModelForPurpose(
-      { ...dirty.provider, models: [] },
-      { extractionModel: "", solutionModel: "", debuggingModel: "" },
-      "extraction"
-    ),
-    ""
-  )
+  assert.deepEqual(dirty.providers[0].models, ["m-1", "m-2"], "模型 ID 去空、去重、保序")
+  assert.equal(dirty.providers[0].apiFormat, "chat-completions", "非法 apiFormat 归一为通用格式")
+  for (const issue of [
+    "provider-invalid",
+    "provider-id-duplicate",
+    "provider-name-missing",
+    "baseUrl-invalid",
+    "apiFormat-invalid",
+    "models-invalid",
+    "bindings-invalid",
+  ]) {
+    assert.ok(dirty.issues.includes(issue), `应记录 issue: ${issue}`)
+  }
+  assert.equal(dirty.bindings.extractionModel, null, "旧字符串绑定归一为 null")
+})
+
+test("引用完整性：指向不存在的 provider / 模型一律置空，不留悬空引用", () => {
+  const resolved = resolveProviderConfig({
+    providers: providersFixture(),
+    bindings: {
+      extractionModel: bindingOf("p_deleted", "glm-4.6v"),
+      solutionModel: bindingOf("p_glm", "gpt-5"),
+      debuggingModel: bindingOf("p_openai", "gpt-5"),
+    },
+  })
+
+  assert.equal(resolved.bindings.extractionModel, null)
+  assert.ok(resolved.issues.includes("binding-provider-missing"))
+  assert.equal(resolved.bindings.solutionModel, null, "模型不属于该 provider 也置空")
+  assert.ok(resolved.issues.includes("binding-model-missing"))
+  assert.deepEqual(resolved.bindings.debuggingModel, bindingOf("p_openai", "gpt-5"))
+
+  assert.equal(resolveTargetForPurpose(resolved, "extraction"), null)
+  assert.equal(resolveTargetForPurpose(resolved, "solution"), null)
+  assert.equal(resolveBindingForPurpose(resolved.providers, resolved.bindings, "debugging").modelId, "gpt-5")
+})
+
+test("删除 provider：先用 detachProviderBindings 解除绑定，其余用途不变", () => {
+  const bindings = crossProviderBindings()
+  const { bindings: next, detached } = detachProviderBindings(bindings, "p_glm")
+
+  assert.deepEqual(detached, ["extraction", "debugging"])
+  assert.equal(next.extractionModel, null)
+  assert.equal(next.debuggingModel, null)
+  assert.deepEqual(next.solutionModel, bindingOf("p_openai", "gpt-5"), "另一家的绑定不受影响")
+  assert.deepEqual(bindings, crossProviderBindings(), "纯函数，不修改入参")
+
+  // 删掉 provider 后重新归一：不残留悬空引用
+  const afterRemoval = resolveProviderConfig({
+    providers: providersFixture().filter((provider) => provider.id !== "p_glm"),
+    bindings: next,
+  })
+  assert.equal(afterRemoval.issues.length, 0)
+  assert.equal(afterRemoval.bindings.extractionModel, null)
+  assert.equal(resolveTargetForPurpose(afterRemoval, "extraction"), null)
+  assert.equal(resolveTargetForPurpose(afterRemoval, "solution").provider.id, "p_openai")
+
+  // 未先解绑就删（防御）：归一阶段自动置空 + 记 issue，不崩溃
+  const unsafe = resolveProviderConfig({
+    providers: providersFixture().filter((provider) => provider.id !== "p_glm"),
+    bindings: crossProviderBindings(),
+  })
+  assert.equal(unsafe.bindings.extractionModel, null)
+  assert.equal(unsafe.bindings.debuggingModel, null)
+  assert.ok(unsafe.issues.includes("binding-provider-missing"))
+})
+
+test("解绑提示：按当前语言列出用途，提示重新选择模型", () => {
+  const zh = detachedBindingNotice("zh", "公司 GLM", ["extraction", "debugging"])
+  assert.match(zh, /公司 GLM/)
+  assert.match(zh, /题面解析/)
+  assert.match(zh, /调试/)
+  assert.match(zh, /重新选择模型/)
+
+  const en = detachedBindingNotice("en", "Work GLM", ["solution"])
+  assert.match(en, /Work GLM/)
+  assert.match(en, /solution generation/)
+  assert.match(en, /needs a model selected again/)
+
+  assert.equal(modelPurposeLabel("zh", "solution"), "方案生成")
+  assert.equal(modelPurposeLabel("en", "extraction"), "problem extraction")
 })
 
 test("配置归一：渲染层表单覆盖只接受字符串与合法枚举，其余忽略", () => {
@@ -289,21 +392,48 @@ test("配置归一：渲染层表单覆盖只接受字符串与合法枚举，�
     baseUrl: "https://draft.example.com/v1",
     apiKey: "sk-draft",
     apiFormat: "anthropic-messages",
+    name: "草稿配置",
+    providerId: "p_hacked",
   })
   assert.equal(merged.baseUrl, "https://draft.example.com/v1")
   assert.equal(merged.apiKey, "sk-draft")
   assert.equal(merged.apiFormat, "anthropic-messages")
+  assert.equal(merged.name, "草稿配置")
+  assert.equal(merged.id, "p_test", "id 是稳定标识，不允许表单覆盖")
   assert.deepEqual(merged.models, provider.models, "覆盖不应改模型列表")
 
   const junk = applyProviderOverrides(provider, {
     baseUrl: 123,
     apiKey: null,
     apiFormat: "soap",
+    name: {},
   })
   assert.deepEqual(junk, provider)
 
   assert.equal(applyProviderOverrides(provider, "nope"), provider)
   assert.equal(applyProviderOverrides(provider, undefined), provider)
+})
+
+test("表单构造新配置：缺字段给安全默认值，不抛错", () => {
+  const draft = providerFromOverrides(
+    { providerId: "p_new", name: "新建", baseUrl: "https://new.example.com", apiFormat: "responses", apiKey: "sk-new" },
+    "p_fallback"
+  )
+  assert.deepEqual(draft, {
+    id: "p_new",
+    name: "新建",
+    baseUrl: "https://new.example.com",
+    apiFormat: "responses",
+    apiKey: "sk-new",
+    models: [],
+  })
+  assert.equal(providerFromOverrides({ baseUrl: "https://x" }, "p_fallback").id, "p_fallback")
+  assert.equal(providerFromOverrides(null).apiFormat, "chat-completions")
+  assert.deepEqual(providerFromOverrides(null, "p_only_id").models, [])
+
+  assert.equal(findProvider([draft], "p_new").name, "新建")
+  assert.equal(findProvider([draft], " "), undefined)
+  assert.equal(findProvider([draft], "p_missing"), undefined)
 })
 
 test("baseUrl 校验：只接受 http/https 绝对地址", () => {

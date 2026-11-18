@@ -7,12 +7,14 @@
  */
 import { t } from "../i18n"
 import type { Locale } from "../i18n/types"
-import type { LlmErrorCode } from "./types"
+import type { LlmErrorCode, ModelPurpose } from "./types"
 
 const MESSAGE_KEY: Record<LlmErrorCode, string> = {
   "base-url-missing": "processing.error.llm.baseUrlMissing",
   "base-url-invalid": "processing.error.llm.baseUrlInvalid",
   "api-key-missing": "processing.error.llm.apiKeyMissing",
+  "provider-missing": "processing.error.llm.providerMissing",
+  "binding-missing": "processing.error.llm.bindingMissing",
   "model-missing": "processing.error.llm.modelMissing",
   network: "processing.error.llm.network",
   timeout: "processing.error.llm.timeout",
@@ -36,4 +38,35 @@ export function llmErrorMessage(
 ): string {
   const key = MESSAGE_KEY[code] ?? MESSAGE_KEY.unknown
   return t("processing", locale, key, vars)
+}
+
+/** 用途 → 文案键（设置页与解绑提示共用，避免各处自造中文） */
+const PURPOSE_KEY: Record<ModelPurpose, string> = {
+  extraction: "processing.modelPurpose.extraction",
+  solution: "processing.modelPurpose.solution",
+  debugging: "processing.modelPurpose.debugging",
+}
+
+/** 用途的本地化名称（如「题面解析」/「problem extraction」） */
+export function modelPurposeLabel(
+  locale: Locale,
+  purpose: ModelPurpose
+): string {
+  return t("processing", locale, PURPOSE_KEY[purpose])
+}
+
+/**
+ * 删除 provider 后给界面的提示：列出被解除绑定的用途，
+ * 明确告知「该用途需要重新选择模型」。
+ */
+export function detachedBindingNotice(
+  locale: Locale,
+  providerName: string,
+  purposes: readonly ModelPurpose[]
+): string {
+  const separator = locale === "zh" ? "、" : ", "
+  return t("processing", locale, "processing.notice.llm.bindingDetached", {
+    provider: providerName,
+    purpose: purposes.map((purpose) => modelPurposeLabel(locale, purpose)).join(separator),
+  })
 }

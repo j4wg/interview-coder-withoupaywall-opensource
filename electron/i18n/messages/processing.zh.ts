@@ -135,7 +135,8 @@ export const processingZh = {
   // ---------------------------------------------------------------- 调用层日志（三种 API 格式）
   "processing.log.llm.request": "发出 {{method}} 请求：{{url}}（超时 {{seconds}} 秒）",
   "processing.log.llm.response": "收到响应（HTTP {{status}}，用时 {{ms}} 毫秒）",
-  "processing.log.llm.call": "调用模型接口：格式 {{format}}，用途 {{purpose}}，模型 {{model}}",
+  "processing.log.llm.call":
+    "调用模型接口：配置 {{provider}}，格式 {{format}}，用途 {{purpose}}，模型 {{model}}",
   "processing.log.llm.failed": "模型接口调用失败：错误码 {{code}}，HTTP {{status}}，详情：{{detail}}",
   "processing.log.llm.configIssues": "模型配置存在问题（本次按兜底值继续）：{{issues}}",
   "processing.log.llm.modelsFetched": "拉取模型列表成功，共 {{count}} 个模型",
@@ -145,6 +146,10 @@ export const processingZh = {
   "processing.error.llm.baseUrlMissing": "尚未配置 API Base URL，请先在设置里填写。",
   "processing.error.llm.baseUrlInvalid": "API Base URL 不是合法的 HTTP(S) 地址，请检查设置。",
   "processing.error.llm.apiKeyMissing": "尚未配置 API Key，请先在设置里填写。",
+  "processing.error.llm.providerMissing":
+    "没有找到所选的配置（可能已被删除），请先在设置里选择或新建一套配置。",
+  "processing.error.llm.bindingMissing":
+    "该用途还没有绑定模型，请在设置里为它选择一套配置和模型。",
   "processing.error.llm.modelMissing":
     "尚未选择该用途的模型，请先在设置里添加模型并完成选择。",
   "processing.error.llm.network": "无法连接到模型接口，请检查网络与 Base URL 是否正确。",
@@ -164,6 +169,13 @@ export const processingZh = {
   "processing.error.llm.emptyResponse":
     "接口返回里没有可用的文本内容，请检查模型 ID 与 API 格式。",
   "processing.error.llm.unknown": "调用模型接口时出现未知错误，请稍后重试。",
+
+  // ---------------------------------------------------------------- 多套配置（provider 卡片）
+  "processing.modelPurpose.extraction": "题面解析",
+  "processing.modelPurpose.solution": "方案生成",
+  "processing.modelPurpose.debugging": "调试",
+  "processing.notice.llm.bindingDetached":
+    "已解除「{{provider}}」的{{purpose}}绑定，该用途需要重新选择模型。",
   "processing.error.extract.parseFailed":
     "解析题目信息失败，请重试或改用更清晰的截图。",
   "processing.error.extract.fieldMissing":

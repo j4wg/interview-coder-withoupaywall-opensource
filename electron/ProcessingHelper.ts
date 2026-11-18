@@ -12,7 +12,7 @@ import { resolveProviderConfig } from "./llm/providerConfig"
 import {
   isApiKeyErrorCode,
   type ModelBindings,
-  type ProviderSettings,
+  type ProviderConfig,
 } from "./llm/types"
 import {
   buildExtractionPrompt,
@@ -103,17 +103,17 @@ export class ProcessingHelper {
   }
 
   /**
-   * 读一次当前配置并归一成调用层需要的结构。
+   * 读一次当前配置并归一成调用层需要的结构（多套 provider 并存）。
    * 配置脏/缺字段不会抛错：归一过程中发现的问题只记日志，真正的阻塞由调用层的
    * `providerSetupError` 给出当前语言的可见提示。
    */
   private getProviderContext(): {
     locale: Locale
-    provider: ProviderSettings
+    providers: ProviderConfig[]
     bindings: ModelBindings
   } {
     const locale = this.getLocale()
-    const { provider, bindings, issues } = resolveProviderConfig(
+    const { providers, bindings, issues } = resolveProviderConfig(
       configHelper.loadConfig()
     )
     if (issues.length > 0) {
@@ -121,7 +121,7 @@ export class ProcessingHelper {
         pt("processing.log.llm.configIssues", { issues: issues.join(", ") })
       )
     }
-    return { locale, provider, bindings }
+    return { locale, providers, bindings }
   }
 
   private async waitForInitialization(
@@ -199,10 +199,10 @@ export class ProcessingHelper {
     const mainWindow = this.deps.getMainWindow()
     if (!mainWindow) return
 
-    // 先确认 Base URL / API Key / 模型已就绪，避免白跑一趟截图队列
-    const { locale, provider, bindings } = this.getProviderContext()
+    // 先确认该用途绑定的 Base URL / API Key / 模型已就绪，避免白跑一趟截图队列
+    const { locale, providers, bindings } = this.getProviderContext()
     const setupError = providerSetupError(
-      provider,
+      providers,
       bindings,
       "extraction",
       locale
@@ -454,7 +454,7 @@ export class ProcessingHelper {
       const language = await this.getLanguage();
       const mainWindow = this.deps.getMainWindow();
 
-      // 第一步：用当前配置的模型解析题面（API 格式由 provider.apiFormat 决定）
+      // 第一步：用该用途绑定的模型解析题面（provider 与 API 格式由 bindings 决定）
       const imageDataList = screenshots.map(screenshot => screenshot.data);
       
       // 告知用户当前进度
@@ -466,13 +466,13 @@ export class ProcessingHelper {
       }
 
       // prompt 与日志语言都取当前界面语言，与编程语言正交
-      const { locale, provider, bindings } = this.getProviderContext();
+      const { locale, providers, bindings } = this.getProviderContext();
       const extractionPrompt = buildExtractionPrompt(locale, { language });
 
-      // 模型 ID 由 bindings.extractionModel 决定；请求构造/响应解析由调用层按 apiFormat 分发
+      // provider 与模型 ID 由 bindings.extractionModel 决定；请求构造/响应解析由调用层按 apiFormat 分发
       const extraction = await completeForPurpose({
         purpose: "extraction",
-        provider,
+        providers,
         bindings,
         system: extractionPrompt.system,
         user: extractionPrompt.user,
@@ -580,17 +580,17 @@ export class ProcessingHelper {
       }
 
       // prompt 统一由 electron/i18n/prompts.ts 组装（中英两版，唯一出口）
-      const { locale, provider, bindings } = this.getProviderContext();
+      const { locale, providers, bindings } = this.getProviderContext();
       const promptText = buildSolutionPrompt(locale, {
         language,
         problem: problemInfo,
       });
       const systemText = buildSolutionSystemPrompt(locale);
 
-      // 模型 ID 由 bindings.solutionModel 决定
+      // provider 与模型 ID 由 bindings.solutionModel 决定（允许与解析题面不同的 provider）
       const solution = await completeForPurpose({
         purpose: "solution",
-        provider,
+        providers,
         bindings,
         system: systemText,
         user: promptText,
@@ -662,14 +662,14 @@ export class ProcessingHelper {
       const imageDataList = screenshots.map(screenshot => screenshot.data);
       
       // prompt 同样走唯一出口，与界面语言一致
-      const { locale, provider, bindings } = this.getProviderContext();
+      const { locale, providers, bindings } = this.getProviderContext();
       const debugSystem = buildDebugSystemPrompt(locale);
       const debugUser = buildDebugPrompt(locale, { language, problem: problemInfo });
 
-      // 模型 ID 由 bindings.debuggingModel 决定
+      // provider 与模型 ID 由 bindings.debuggingModel 决定（允许与前面两步不同）
       const debug = await completeForPurpose({
         purpose: "debugging",
-        provider,
+        providers,
         bindings,
         system: debugSystem,
         user: debugUser,

@@ -11,7 +11,7 @@ import {
   type ApiFormat,
   type LlmImage,
   type LlmTextRequest,
-  type ProviderSettings,
+  type ProviderConfig,
 } from "./types"
 import { buildEndpoint } from "./providerConfig"
 
@@ -150,7 +150,7 @@ function buildResponsesBody(request: LlmTextRequest): Record<string, unknown> {
 
 /** 构造一次文本补全请求（方法固定 POST） */
 export function buildCompletionRequest(
-  provider: ProviderSettings,
+  provider: ProviderConfig,
   request: LlmTextRequest
 ): BuiltRequest {
   const body =
@@ -177,7 +177,7 @@ export function buildCompletionRequest(
  * 鉴权头按 `apiFormat` 走（Anthropic 用 x-api-key + anthropic-version）。
  */
 export function buildModelListRequest(
-  provider: ProviderSettings
+  provider: ProviderConfig
 ): BuiltModelListRequest {
   return {
     url: buildEndpoint(provider.baseUrl, provider.apiFormat, "models"),

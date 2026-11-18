@@ -5,8 +5,11 @@
  * 可被 `node --test` 直接引用（`dist-electron/llm/types.js`）。
  *
  * 字段名与 `config.json` 的契约严格一致（JUN-48 / JUN-47 / JUN-49 共用）：
- * `provider.baseUrl` / `provider.apiFormat` / `provider.apiKey` / `provider.models`
- * 与 `bindings.extractionModel` / `solutionModel` / `debuggingModel`，任何一方不得改名。
+ * `providers[]` 里的 `id` / `name` / `baseUrl` / `apiFormat` / `apiKey` / `models`，
+ * 以及 `bindings.extractionModel` / `solutionModel` / `debuggingModel` 的
+ * `{ providerId, modelId }`，任何一方不得改名。
+ *
+ * 多套配置并存：`bindings` 的三项各自指向某个 provider 下的某个模型，允许跨 provider。
  */
 
 /** 三种 API 格式，取值与 `provider.apiFormat` 完全一致 */
@@ -37,8 +40,12 @@ export function isApiFormat(value: unknown): value is ApiFormat {
   )
 }
 
-/** `provider` 段（与 config.json 同构） */
-export interface ProviderSettings {
+/** `providers[]` 的一项（与 config.json 同构） */
+export interface ProviderConfig {
+  /** 稳定标识：创建后不可变，重命名只改 `name` */
+  id: string
+  /** 界面上的显示名，用于区分多套配置（如「公司 GLM」「个人 OpenAI」） */
+  name: string
   baseUrl: string
   apiFormat: ApiFormat
   apiKey: string
@@ -46,27 +53,60 @@ export interface ProviderSettings {
   models: string[]
 }
 
-/** `bindings` 段（与 config.json 同构） */
+/** 一个用途绑定的目标：某个 provider 下的某个模型（允许跨 provider） */
+export interface ModelBinding {
+  providerId: string
+  modelId: string
+}
+
+/** `bindings` 段（与 config.json 同构）；`null` 表示该用途尚未绑定 */
 export interface ModelBindings {
-  extractionModel: string
-  solutionModel: string
-  debuggingModel: string
+  extractionModel: ModelBinding | null
+  solutionModel: ModelBinding | null
+  debuggingModel: ModelBinding | null
+}
+
+/** 归一后的绑定目标：provider 一定存在、模型一定在该 provider 的 models 里 */
+export interface ResolvedBinding {
+  provider: ProviderConfig
+  modelId: string
 }
 
 /** 配置归一后的结果；`issues` 只用于记日志，不阻塞调用 */
 export interface ResolvedProviderConfig {
-  provider: ProviderSettings
+  providers: ProviderConfig[]
   bindings: ModelBindings
   issues: ProviderConfigIssue[]
 }
 
-/** 配置归一过程中发现的问题（已归一，仅用于日志/测试断言） */
+/**
+ * 配置归一过程中发现的问题（已归一，仅用于日志/测试断言）：
+ * - `providers-missing`：顶层没有 `providers` 数组（旧单套结构未迁移也算）；
+ * - `provider-invalid`：数组项不是对象，或缺少非空字符串 `id`；
+ * - `binding-provider-missing` / `binding-model-missing`：绑定指向不存在的 provider / 模型，
+ *   已归一为 `null`，不会留下悬空引用。
+ */
 export type ProviderConfigIssue =
-  | "provider-missing"
+  | "providers-missing"
+  | "provider-invalid"
+  | "provider-id-duplicate"
+  | "provider-name-missing"
   | "baseUrl-invalid"
   | "apiFormat-invalid"
   | "models-invalid"
   | "bindings-invalid"
+  | "binding-provider-missing"
+  | "binding-model-missing"
+
+/** 渲染层「拉取模型列表」时可带未保存的表单值 */
+export interface ProviderOverrides {
+  /** 指定要给哪一套配置拉取；新卡片（尚未保存）也用它携带 id */
+  providerId?: string
+  name?: string
+  baseUrl?: string
+  apiFormat?: ApiFormat
+  apiKey?: string
+}
 
 /** 一张待发送的截图；`data` 是纯 base64，不含 `data:` 前缀 */
 export interface LlmImage {
@@ -96,6 +136,8 @@ export type LlmErrorCode =
   | "base-url-missing"
   | "base-url-invalid"
   | "api-key-missing"
+  | "provider-missing"
+  | "binding-missing"
   | "model-missing"
   | "network"
   | "timeout"
@@ -134,6 +176,8 @@ export interface ModelListSuccess {
   kind: "success"
   ok: true
   models: string[]
+  /** 这次拉取实际使用的配置 id（新卡片可能为空串），便于界面回填到对应卡片 */
+  providerId: string
 }
 
 export interface ModelListFailure {
@@ -144,6 +188,7 @@ export interface ModelListFailure {
   message: string
   status?: number
   detail?: string
+  providerId?: string
 }
 
 export type ModelListResult = ModelListSuccess | ModelListFailure
@@ -153,6 +198,8 @@ export const CONFIG_ERROR_CODES: readonly LlmErrorCode[] = [
   "base-url-missing",
   "base-url-invalid",
   "api-key-missing",
+  "provider-missing",
+  "binding-missing",
   "model-missing",
 ] as const
 
