@@ -6,7 +6,7 @@
     "clean": "npx rimraf dist dist-electron",
     "dev": "cross-env NODE_ENV=development npm run clean && concurrently \"tsc -w -p tsconfig.electron.json\" \"vite\" \"wait-on -t 30000 http://localhost:54321 && electron ./dist-electron/main.js\"",
     "pretest": "tsc -p tsconfig.electron.json",
-    "test": "node --test tests/configMigration.test.mjs tests/resolveLocale.test.mjs tests/mainMessages.test.mjs",
+    "test": "node --test tests/configMigration.test.mjs tests/resolveLocale.test.mjs tests/mainMessages.test.mjs tests/processingPrompts.test.mjs tests/problemInfoParser.test.mjs tests/solutionResponseParser.test.mjs",
     "lint": "npx eslint .",
     "start": "cross-env NODE_ENV=development concurrently \"tsc -p tsconfig.electron.json\" \"vite\" \"wait-on -t 30000 http://localhost:54321 && electron ./dist-electron/main.js\"",
     "build": "cross-env NODE_ENV=production npm run clean && vite build && tsc -p tsconfig.electron.json",

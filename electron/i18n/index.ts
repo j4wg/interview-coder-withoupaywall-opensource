@@ -8,17 +8,21 @@
 import type { Locale, Namespace } from "./types"
 import { mainZh } from "./messages/main.zh"
 import { mainEn } from "./messages/main.en"
+import { processingZh } from "./messages/processing.zh"
+import { processingEn } from "./messages/processing.en"
 
 type MessageTable = Record<string, string>
 
 /**
- * 文案表注册位。本 issue 不提供任何文案，因此保持为空；
- * 缺表时所有键都走缺键兜底（返回键名 + 一次 warn），不会抛错。
+ * 文案表注册位，按命名空间登记。
+ * 未登记的命名空间（或未登记的语言）所有键都走缺键兜底（返回键名 + 一次 warn），不会抛错。
+ * `processing` 由 JUN-41 登记；`ui`（JUN-39）与 `main`（JUN-40）各自补自己那一行。
  */
 const MESSAGE_TABLES: Partial<
   Record<Namespace, Partial<Record<Locale, MessageTable>>>
 > = {
-  main: { zh: mainZh, en: mainEn }
+  main: { zh: mainZh, en: mainEn },
+  processing: { zh: processingZh, en: processingEn },
 }
 
 /** 已告警过的缺键，保证同一个键只 warn 一次，避免日志刷屏 */
