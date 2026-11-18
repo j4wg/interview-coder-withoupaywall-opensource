@@ -1,26 +1,67 @@
 // preload.ts — 通过 contextBridge 暴露受控的 electronAPI
 import { contextBridge, ipcRenderer } from "electron"
-import { createTranslator } from "./i18n"
-import { normalizeLocaleTag } from "./i18n/resolveLocale"
-import type { Locale } from "./i18n/types"
 
-// preload 运行在渲染进程的隔离上下文里，不能 import ConfigHelper（会带入 electron app 依赖），
-// 因此先按系统语言（Intl 回落链，与 resolveLocale 一致）取一个初值，
-// 再异步向主进程要真实设置；拿到后 preload 后续日志立即改为跟随设置。
-let preloadLocale: Locale = normalizeLocaleTag(readIntlLocale())
+/** 实际生效的界面语言 */
+type Locale = "zh" | "en"
 
-function readIntlLocale(): string | null {
+// preload 运行在**沙箱渲染进程**（Electron 20+ 默认 sandbox=true），只能 require("electron")，
+// 无法 require 本地模块，因此这里不能 import ConfigHelper / i18n 内核，文案以字面量内联。
+// 语言仍由主进程 get-ui-locale（唯一判定点）最终确定：模块加载期的两条启动日志用
+// navigator.language（与 resolveLocale 的 system 信号同源），invoke 返回后其余日志跟随用户设置。
+// 内联文案与 electron/i18n/messages/main.*.ts 由 tests/mainMessages.test.mjs 逐条比对。
+const PRELOAD_MESSAGES_ZH: Record<string, string> = {
+  "main.preload.starting": "preload 脚本开始执行…",
+  "main.preload.running": "preload 脚本运行中",
+  "main.preload.toggleCalled": "渲染层调用了 toggleMainWindow",
+  "main.preload.toggleResult": "toggle-window 返回结果：",
+  "main.preload.exposingApi": "即将暴露 electronAPI，方法列表：",
+  "main.preload.apiExposed": "electronAPI 已暴露到 window",
+  "main.error.preloadToggle": "toggleMainWindow 出错："
+}
+
+const PRELOAD_MESSAGES_EN: Record<string, string> = {
+  "main.preload.starting": "Preload script starting...",
+  "main.preload.running": "Preload script is running",
+  "main.preload.toggleCalled": "toggleMainWindow called from preload",
+  "main.preload.toggleResult": "toggle-window result:",
+  "main.preload.exposingApi": "About to expose electronAPI with methods:",
+  "main.preload.apiExposed": "electronAPI exposed to window",
+  "main.error.preloadToggle": "Error in toggleMainWindow:"
+}
+
+const PRELOAD_MESSAGES: Record<Locale, Record<string, string>> = {
+  zh: PRELOAD_MESSAGES_ZH,
+  en: PRELOAD_MESSAGES_EN
+}
+
+/** 从主进程注入的 `--app-ui-locale=zh|en` 里取语言（沙箱 preload 读不到配置，只能走 argv） */
+function readArgvLocale(): Locale | null {
   try {
-    const resolved = Intl.DateTimeFormat().resolvedOptions().locale
-    return typeof resolved === "string" && resolved.trim() ? resolved : null
+    const prefix = "--app-ui-locale="
+    const found = (process.argv || []).find((arg) => arg.startsWith(prefix))
+    if (!found) return null
+    const value = found.slice(prefix.length)
+    return value === "zh" || value === "en" ? value : null
   } catch {
     return null
   }
 }
 
-/** preload 内的日志翻译：命名空间与主进程一致（main），按当前缓存的语言取文案 */
-function tp(key: string, vars?: Record<string, string>): string {
-  return createTranslator("main", preloadLocale)(key, vars)
+/** 从 `navigator.language` 取系统语言，取不到时按英文处理（与 resolveLocale 的回落一致） */
+function readSystemLocale(): Locale {
+  try {
+    const tag = navigator.language || ""
+    return tag.toLowerCase().startsWith("zh") ? "zh" : "en"
+  } catch {
+    return "en"
+  }
+}
+
+let preloadLocale: Locale = readArgvLocale() ?? readSystemLocale()
+
+/** preload 内的日志翻译：按当前缓存的语言取内联文案 */
+function tp(key: string): string {
+  return PRELOAD_MESSAGES[preloadLocale][key] ?? key
 }
 
 console.log(tp("main.preload.starting"))
@@ -47,7 +88,8 @@ export const PROCESSING_EVENTS = {
   DEBUG_ERROR: "debug-error"
 } as const
 
-// 启动时向主进程取一次当前生效语言，之后 preload 日志跟随该设置
+// 启动时向主进程取一次当前生效语言（argv 只是初值，这里以主进程为准）；
+// 之后监听 ui-locale-changed，用户在设置里切换语言时 preload 日志同步跟随。
 ipcRenderer
   .invoke("get-ui-locale")
   .then((result: { locale?: string } | null) => {
@@ -56,8 +98,14 @@ ipcRenderer
     }
   })
   .catch(() => {
-    // 取不到就沿用 Intl 初值，不抛错
+    // 取不到就沿用 argv / navigator 的初值，不抛错
   })
+
+ipcRenderer.on("ui-locale-changed", (_event, data: { locale?: string }) => {
+  if (data && (data.locale === "zh" || data.locale === "en")) {
+    preloadLocale = data.locale
+  }
+})
 
 // 文件开头
 console.log(tp("main.preload.running"))

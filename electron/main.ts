@@ -222,7 +222,12 @@ async function createWindow(): Promise<void> {
       preload: isDev
         ? path.join(__dirname, "../dist-electron/preload.js")
         : path.join(__dirname, "preload.js"),
-      scrollBounce: true
+      scrollBounce: true,
+      // 把当前生效的界面语言传给 preload：沙箱化的 preload 只能读 process.argv，
+      // 这样它的第一条日志就是正确语言，不需要先猜系统语言再纠正
+      additionalArguments: [
+        `--app-ui-locale=${configHelper.getUiLocale().locale}`
+      ]
     },
     show: true,
     frame: false,

@@ -164,6 +164,38 @@ test("源码里用到的 main.* 键全部存在，无残留键名", () => {
   assert.deepEqual(unused, [], `以下键未被任何代码使用：${unused.join(", ")}`)
 })
 
+test("preload 内联文案（受 sandbox 限制）与 main.zh / main.en 逐条一致", () => {
+  const source = read("electron/preload.ts")
+  const zhBlock = source
+    .split("const PRELOAD_MESSAGES_ZH")[1]
+    .split("const PRELOAD_MESSAGES_EN")[0]
+  const enBlock = source
+    .split("const PRELOAD_MESSAGES_EN")[1]
+    .split("const PRELOAD_MESSAGES:")[0]
+
+  const parse = (block) => {
+    const map = {}
+    for (const match of block.matchAll(/"(main\.[A-Za-z0-9_.]+)":\s*"([^"]*)"/g)) {
+      map[match[1]] = match[2]
+    }
+    return map
+  }
+
+  const zh = parse(zhBlock)
+  const en = parse(enBlock)
+
+  const expectedKeys = Object.keys(mainZh)
+    .filter((key) => key.startsWith("main.preload.") || key === "main.error.preloadToggle")
+    .sort()
+
+  assert.deepEqual(Object.keys(zh).sort(), expectedKeys)
+  assert.deepEqual(Object.keys(en).sort(), expectedKeys)
+  for (const key of expectedKeys) {
+    assert.equal(zh[key], mainZh[key], `preload 中文文案与 main.zh.ts 不一致：${key}`)
+    assert.equal(en[key], mainEn[key], `preload 英文文案与 main.en.ts 不一致：${key}`)
+  }
+})
+
 test("stealth-run.sh 的文案与 main.script.* 逐条一致（zh 与 en 两态）", () => {
   for (const key of Object.keys(mainZh).filter(
     (k) =>
