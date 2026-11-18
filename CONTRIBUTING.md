@@ -1,5 +1,7 @@
 # Contributing to Interview Coder - Unlocked Edition
 
+> **Language:** **English** | [简体中文](CONTRIBUTING.zh-CN.md)
+
 Thank you for your interest in contributing to Interview Coder - Unlocked Edition! This free, open-source tool exists to empower the coding community with accessible interview preparation resources, and your efforts can make it even better. We're thrilled to have you join us in this collaborative journey!
 
 ## Our Community Values
