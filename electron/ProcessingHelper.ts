@@ -1015,12 +1015,16 @@ export class ProcessingHelper {
         }
       }
       
-      // 解析方案返回：中英两套分节标题都认，抽不到的项用当前语言的兜底文案
-      const formattedResponse = parseSolutionResponse(responseContent, {
-        thoughts: pt("processing.fallback.thoughts.solution"),
-        timeComplexity: pt("processing.fallback.timeComplexity"),
-        spaceComplexity: pt("processing.fallback.spaceComplexity"),
-      });
+      // 解析方案返回：中英两套分节标题（含全角括号）都认，抽不到的项用当前语言的兜底文案
+      const formattedResponse = parseSolutionResponse(
+        responseContent,
+        {
+          thoughts: pt("processing.fallback.thoughts.solution"),
+          timeComplexity: pt("processing.fallback.timeComplexity"),
+          spaceComplexity: pt("processing.fallback.spaceComplexity"),
+        },
+        locale
+      );
 
       return { success: true, data: formattedResponse };
     } catch (error: any) {
