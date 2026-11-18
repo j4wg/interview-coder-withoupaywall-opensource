@@ -140,6 +140,7 @@ test("英文表不含中日韩文字，中文表每一条都是中文", () => {
 test("源码里用到的 main.* 键全部存在，无残留键名", () => {
   const sources = [
     "electron/main.ts",
+    "electron/ConfigHelper.ts",
     "electron/ipcHandlers.ts",
     "electron/ScreenshotHelper.ts",
     "electron/shortcuts.ts",

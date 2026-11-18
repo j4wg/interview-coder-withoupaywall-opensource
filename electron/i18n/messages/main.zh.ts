@@ -40,6 +40,29 @@ export const mainZh = {
   "main.app.secondInstance": "收到 second-instance 事件：",
   "main.config.noApiKey": "配置中没有 API Key，用户需要先完成设置。",
 
+  // ── 配置层（ConfigHelper.ts / configFile.ts）───────────────────────
+  "main.config.path": "配置文件路径：{{path}}",
+  "main.config.migrated": "配置已升级到 v{{version}}：服务商与模型列表需要重新配置。",
+  "main.config.legacyModelsDropped": "已丢弃旧的内置模型选择：{{keys}}",
+  "main.config.normalized": "配置取值非法，已在内存中归一（未覆盖文件）：{{keys}}",
+  "main.config.invalidBackedUp": "配置文件不是合法 JSON，已备份到：{{path}}",
+  "main.config.invalidReason": "配置解析失败原因：{{message}}",
+  "main.config.readFailed": "读取配置文件失败，本次使用默认值：{{message}}",
+  "main.config.writeFailed": "写入配置文件失败，本次运行以内存配置继续：{{message}}",
+  "main.config.invalidUiLanguage": "界面语言取值非法（{{value}}），已回落为跟随系统。",
+  "main.config.localeUnavailable": "读取系统语言失败，回落到进程语言环境：",
+  "main.config.legacyUpdateIgnored": "已忽略旧配置字段（v3 不再写入）：{{keys}}",
+  "main.config.bindingCleared":
+    "服务商 {{providerId}} 已变更，以下用途的绑定已置空，请重新选择模型：{{uses}}",
+  "main.config.updateFailed": "更新配置失败：{{message}}",
+  "main.config.keyTest.noProvider": "尚未添加任何服务商，请先在设置里添加一套配置。",
+  "main.config.keyTest.missingBaseUrl": "尚未填写 Base URL，请先填写服务地址。",
+  "main.config.keyTest.invalidKey": "API Key 无效或未被服务端接受（HTTP {{status}}）。",
+  "main.config.keyTest.rateLimited": "请求过于频繁或额度不足（HTTP 429），请稍后重试。",
+  "main.config.keyTest.serverError": "服务端错误（HTTP {{status}}），请稍后重试。",
+  "main.config.keyTest.httpError": "服务端返回 HTTP {{status}}，请检查 Base URL 与 API 格式。",
+  "main.config.keyTest.networkError": "无法连接服务地址：{{message}}",
+
   // ── IPC 处理器（ipcHandlers.ts） ─────────────────────────────────────
   "main.ipc.initializing": "正在初始化 IPC 处理器",
   "main.ipc.openingExternalUrl": "正在打开外部链接：{{url}}",
@@ -124,7 +147,7 @@ export const mainZh = {
   "main.error.noMainWindow": "没有可用的主窗口",
   "main.error.screenshotHelperNotInitialized": "截图助手尚未初始化",
   "main.error.resolveUiLocale": "解析界面语言失败：",
-  "main.error.apiKeyFormat": "API Key 格式不正确。OpenAI 的 API Key 以 'sk-' 开头",
+  "main.error.apiKeyFormat": "API Key 格式不正确：不能为空且不能包含空白字符",
   "main.error.setInitialCredits": "设置初始额度失败：",
   "main.error.decrementCredits": "扣减额度失败：",
   "main.error.getScreenshots": "获取截图列表失败：",
