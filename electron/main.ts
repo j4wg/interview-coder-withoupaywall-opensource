@@ -7,14 +7,18 @@ import { ScreenshotHelper } from "./ScreenshotHelper"
 import { ShortcutsHelper } from "./shortcuts"
 import { initAutoUpdater } from "./autoUpdater"
 import { configHelper } from "./ConfigHelper"
+import { mainT } from "./i18n/mainT"
 import * as dotenv from "dotenv"
 
-// Constants
+// 主进程翻译器：每次调用都实时解析当前界面语言，切换语言后日志立即跟随
+const t = mainT("main")
+
+// 常量
 const isDev = process.env.NODE_ENV === "development"
 
-// Application State
+// 应用状态
 const state = {
-  // Window management properties
+  // 窗口管理属性
   mainWindow: null as BrowserWindow | null,
   isWindowVisible: false,
   windowPosition: null as { x: number; y: number } | null,
@@ -25,17 +29,17 @@ const state = {
   currentX: 0,
   currentY: 0,
 
-  // Application helpers
+  // 应用内的辅助模块
   screenshotHelper: null as ScreenshotHelper | null,
   shortcutsHelper: null as ShortcutsHelper | null,
   processingHelper: null as ProcessingHelper | null,
 
-  // View and state management
+  // 视图与状态管理
   view: "queue" as "queue" | "solutions" | "debug",
   problemInfo: null as any,
   hasDebugged: false,
 
-  // Processing events
+  // 处理过程事件
   PROCESSING_EVENTS: {
     UNAUTHORIZED: "processing-unauthorized",
     NO_SCREENSHOTS: "processing-no-screenshots",
@@ -51,7 +55,7 @@ const state = {
   } as const
 }
 
-// Add interfaces for helper classes
+// 辅助类依赖接口
 export interface IProcessingHelperDeps {
   getScreenshotHelper: () => ScreenshotHelper | null
   getMainWindow: () => BrowserWindow | null
@@ -109,7 +113,7 @@ export interface IIpcHandlerDeps {
   moveWindowDown: () => void
 }
 
-// Initialize helpers
+// 初始化各辅助模块
 function initializeHelpers() {
   state.screenshotHelper = new ScreenshotHelper(state.view)
   state.processingHelper = new ProcessingHelper({
@@ -154,9 +158,7 @@ function initializeHelpers() {
   } as IShortcutsHelperDeps)
 }
 
-// Auth callback handler
-
-// Register the interview-coder protocol
+// 注册 interview-coder 协议
 if (process.platform === "darwin") {
   app.setAsDefaultProtocolClient("interview-coder")
 } else {
@@ -165,33 +167,33 @@ if (process.platform === "darwin") {
   ])
 }
 
-// Handle the protocol. In this case, we choose to show an Error Box.
+// 处理协议调用，这里选择弹出一个错误框
 if (process.defaultApp && process.argv.length >= 2) {
   app.setAsDefaultProtocolClient("interview-coder", process.execPath, [
     path.resolve(process.argv[1])
   ])
 }
 
-// Force Single Instance Lock
+// 强制单实例锁
 const gotTheLock = app.requestSingleInstanceLock()
 
 if (!gotTheLock) {
   app.quit()
 } else {
   app.on("second-instance", (event, commandLine) => {
-    // Someone tried to run a second instance, we should focus our window.
+    // 有人又启动了一个实例，这里要把窗口拉到前台
     if (state.mainWindow) {
       if (state.mainWindow.isMinimized()) state.mainWindow.restore()
       state.mainWindow.focus()
 
-      // Protocol handler removed - no longer using auth callbacks
+      // 协议处理器已移除，不再有登录回调
     }
   })
 }
 
-// Auth callback removed as we no longer use Supabase authentication
+// 已移除登录回调，不再使用 Supabase 鉴权
 
-// Window management functions
+// 窗口管理函数
 async function createWindow(): Promise<void> {
   if (state.mainWindow) {
     if (state.mainWindow.isMinimized()) state.mainWindow.restore()
@@ -220,14 +222,19 @@ async function createWindow(): Promise<void> {
       preload: isDev
         ? path.join(__dirname, "../dist-electron/preload.js")
         : path.join(__dirname, "preload.js"),
-      scrollBounce: true
+      scrollBounce: true,
+      // 把当前生效的界面语言传给 preload：沙箱化的 preload 只能读 process.argv，
+      // 这样它的第一条日志就是正确语言，不需要先猜系统语言再纠正
+      additionalArguments: [
+        `--app-ui-locale=${configHelper.getUiLocale().locale}`
+      ]
     },
     show: true,
     frame: false,
     transparent: true,
     fullscreenable: false,
     hasShadow: false,
-    opacity: 1.0,  // Start with full opacity
+    opacity: 1.0,  // 初始为完全不透明
     backgroundColor: "#00000000",
     focusable: true,
     skipTaskbar: true,
@@ -240,20 +247,25 @@ async function createWindow(): Promise<void> {
 
   state.mainWindow = new BrowserWindow(windowSettings)
 
-  // Add more detailed logging for window events
+  // 补充窗口事件的详细日志
   state.mainWindow.webContents.on("did-finish-load", () => {
-    console.log("Window finished loading")
+    console.log(t("main.window.loaded"))
   })
   state.mainWindow.webContents.on(
     "did-fail-load",
     async (event, errorCode, errorDescription) => {
-      console.error("Window failed to load:", errorCode, errorDescription)
+      console.error(
+        t("main.window.loadFailed", {
+          code: String(errorCode),
+          description: String(errorDescription)
+        })
+      )
       if (isDev) {
-        // In development, retry loading after a short delay
-        console.log("Retrying to load development server...")
+        // 开发模式下，短暂延时后重试加载
+        console.log(t("main.window.retryDevServer"))
         setTimeout(() => {
           state.mainWindow?.loadURL("http://localhost:54321").catch((error) => {
-            console.error("Failed to load dev server on retry:", error)
+            console.error(t("main.window.retryDevServerFailed"), error)
           })
         }, 1000)
       }
@@ -261,54 +273,54 @@ async function createWindow(): Promise<void> {
   )
 
   if (isDev) {
-    // In development, load from the dev server
-    console.log("Loading from development server: http://localhost:54321")
+    // 开发模式下从开发服务器加载
+    console.log(t("main.window.loadingDevServer"))
     state.mainWindow.loadURL("http://localhost:54321").catch((error) => {
-      console.error("Failed to load dev server, falling back to local file:", error)
-      // Fallback to local file if dev server is not available
+      console.error(t("main.window.devServerFallback"), error)
+      // 开发服务器不可用时回退到本地文件
       const indexPath = path.join(__dirname, "../dist/index.html")
-      console.log("Falling back to:", indexPath)
+      console.log(t("main.window.fallingBackTo", { path: indexPath }))
       if (fs.existsSync(indexPath)) {
         state.mainWindow.loadFile(indexPath)
       } else {
-        console.error("Could not find index.html in dist folder")
+        console.error(t("main.error.indexHtmlMissing"))
       }
     })
   } else {
-    // In production, load from the built files
+    // 生产模式下从构建产物加载
     const indexPath = path.join(__dirname, "../dist/index.html")
-    console.log("Loading production build:", indexPath)
-    
+    console.log(t("main.window.loadingProductionBuild", { path: indexPath }))
+
     if (fs.existsSync(indexPath)) {
       state.mainWindow.loadFile(indexPath)
     } else {
-      console.error("Could not find index.html in dist folder")
+      console.error(t("main.error.indexHtmlMissing"))
     }
   }
 
-  // Configure window behavior
+  // 配置窗口行为
   state.mainWindow.webContents.setZoomFactor(1)
   if (isDev) {
     state.mainWindow.webContents.openDevTools()
   }
   state.mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    console.log("Attempting to open URL:", url)
+    console.log(t("main.window.openUrlAttempt", { url }))
     try {
       const parsedURL = new URL(url);
       const hostname = parsedURL.hostname;
       const allowedHosts = ["google.com", "supabase.co"];
       if (allowedHosts.includes(hostname) || hostname.endsWith(".google.com") || hostname.endsWith(".supabase.co")) {
         shell.openExternal(url);
-        return { action: "deny" }; // Do not open this URL in a new Electron window
+        return { action: "deny" }; // 不在新的 Electron 窗口里打开该 URL
       }
     } catch (error) {
-      console.error("Invalid URL %d in setWindowOpenHandler: %d" , url , error);
-      return { action: "deny" }; // Deny access as URL string is malformed or invalid
+      console.error(t("main.error.invalidUrl", { url }), error);
+      return { action: "deny" }; // URL 字符串非法，直接拒绝
     }
     return { action: "allow" };
   })
 
-  // Enhanced screen capture resistance
+  // 增强防截屏能力
   state.mainWindow.setContentProtection(true)
 
   state.mainWindow.setVisibleOnAllWorkspaces(true, {
@@ -316,51 +328,51 @@ async function createWindow(): Promise<void> {
   })
   state.mainWindow.setAlwaysOnTop(true, "screen-saver", 1)
 
-  // Additional screen capture resistance settings
+  // 其它防截屏相关设置
   if (process.platform === "darwin") {
-    // Prevent window from being captured in screenshots
+    // 避免窗口出现在截图里
     state.mainWindow.setHiddenInMissionControl(true)
     state.mainWindow.setWindowButtonVisibility(false)
     state.mainWindow.setBackgroundColor("#00000000")
 
-    // Prevent window from being included in window switcher
+    // 避免窗口出现在窗口切换器里
     state.mainWindow.setSkipTaskbar(true)
 
-    // Disable window shadow
+    // 关闭窗口阴影
     state.mainWindow.setHasShadow(false)
   }
 
-  // Prevent the window from being captured by screen recording
+  // 避免窗口被录屏捕获
   state.mainWindow.webContents.setBackgroundThrottling(false)
   state.mainWindow.webContents.setFrameRate(60)
 
-  // Set up window listeners
+  // 挂载窗口监听
   state.mainWindow.on("move", handleWindowMove)
   state.mainWindow.on("resize", handleWindowResize)
   state.mainWindow.on("closed", handleWindowClosed)
 
-  // Initialize window state
+  // 初始化窗口状态
   const bounds = state.mainWindow.getBounds()
   state.windowPosition = { x: bounds.x, y: bounds.y }
   state.windowSize = { width: bounds.width, height: bounds.height }
   state.currentX = bounds.x
   state.currentY = bounds.y
   state.isWindowVisible = true
-  
-  // Set opacity based on user preferences or hide initially
-  // Ensure the window is visible for the first launch or if opacity > 0.1
+
+  // 按用户偏好设置不透明度，或初始即隐藏
+  // 首次启动或 opacity > 0.1 时要保证窗口可见
   const savedOpacity = configHelper.getOpacity();
-  console.log(`Initial opacity from config: ${savedOpacity}`);
-  
-  // Always make sure window is shown first
-  state.mainWindow.showInactive(); // Use showInactive for consistency
-  
+  console.log(t("main.window.initialOpacity", { opacity: String(savedOpacity) }));
+
+  // 先确保窗口被显示出来
+  state.mainWindow.showInactive(); // 统一使用 showInactive
+
   if (savedOpacity <= 0.1) {
-    console.log('Initial opacity too low, setting to 0 and hiding window');
+    console.log(t("main.window.opacityTooLow"));
     state.mainWindow.setOpacity(0);
     state.isWindowVisible = false;
   } else {
-    console.log(`Setting initial opacity to ${savedOpacity}`);
+    console.log(t("main.window.setInitialOpacity", { opacity: String(savedOpacity) }));
     state.mainWindow.setOpacity(savedOpacity);
     state.isWindowVisible = true;
   }
@@ -387,7 +399,7 @@ function handleWindowClosed(): void {
   state.windowSize = null
 }
 
-// Window visibility functions
+// 窗口显示/隐藏相关函数
 function hideMainWindow(): void {
   if (!state.mainWindow?.isDestroyed()) {
     const bounds = state.mainWindow.getBounds();
@@ -396,7 +408,7 @@ function hideMainWindow(): void {
     state.mainWindow.setIgnoreMouseEvents(true, { forward: true });
     state.mainWindow.setOpacity(0);
     state.isWindowVisible = false;
-    console.log('Window hidden, opacity set to 0');
+    console.log(t("main.window.hidden"));
   }
 }
 
@@ -414,16 +426,22 @@ function showMainWindow(): void {
       visibleOnFullScreen: true
     });
     state.mainWindow.setContentProtection(true);
-    state.mainWindow.setOpacity(0); // Set opacity to 0 before showing
-    state.mainWindow.showInactive(); // Use showInactive instead of show+focus
-    state.mainWindow.setOpacity(1); // Then set opacity to 1 after showing
+    state.mainWindow.setOpacity(0); // 显示前先把不透明度设为 0
+    state.mainWindow.showInactive(); // 用 showInactive 而不是 show + focus
+    state.mainWindow.setOpacity(1); // 显示后再把不透明度设为 1
     state.isWindowVisible = true;
-    console.log('Window shown with showInactive(), opacity set to 1');
+    console.log(t("main.window.shown"));
   }
 }
 
 function toggleMainWindow(): void {
-  console.log(`Toggling window. Current state: ${state.isWindowVisible ? 'visible' : 'hidden'}`);
+  console.log(
+    t("main.window.toggleState", {
+      state: state.isWindowVisible
+        ? t("main.window.stateVisible")
+        : t("main.window.stateHidden")
+    })
+  );
   if (state.isWindowVisible) {
     hideMainWindow();
   } else {
@@ -431,7 +449,7 @@ function toggleMainWindow(): void {
   }
 }
 
-// Window movement functions
+// 窗口移动相关函数
 function moveWindowHorizontal(updateFn: (x: number) => number): void {
   if (!state.mainWindow) return
   state.currentX = updateFn(state.currentX)
@@ -445,13 +463,13 @@ function moveWindowVertical(updateFn: (y: number) => number): void {
   if (!state.mainWindow) return
 
   const newY = updateFn(state.currentY)
-  // Allow window to go 2/3 off screen in either direction
+  // 允许窗口有 2/3 移出屏幕，左右方向同理
   const maxUpLimit = (-(state.windowSize?.height || 0) * 2) / 3
   const maxDownLimit =
     state.screenHeight + ((state.windowSize?.height || 0) * 2) / 3
 
-  // Log the current state and limits
-  console.log({
+  // 打印当前状态与上下边界
+  console.log(t("main.window.moveBounds"), {
     newY,
     maxUpLimit,
     maxDownLimit,
@@ -460,7 +478,7 @@ function moveWindowVertical(updateFn: (y: number) => number): void {
     currentY: state.currentY
   })
 
-  // Only update if within bounds
+  // 只有落在边界内才真正移动
   if (newY >= maxUpLimit && newY <= maxDownLimit) {
     state.currentY = newY
     state.mainWindow.setPosition(
@@ -470,7 +488,7 @@ function moveWindowVertical(updateFn: (y: number) => number): void {
   }
 }
 
-// Window dimension functions
+// 窗口尺寸相关函数
 function setWindowDimensions(width: number, height: number): void {
   if (!state.mainWindow?.isDestroyed()) {
     const [currentX, currentY] = state.mainWindow.getPosition()
@@ -487,49 +505,50 @@ function setWindowDimensions(width: number, height: number): void {
   }
 }
 
-// Environment setup
+// 环境变量初始化
 function loadEnvVariables() {
   if (isDev) {
-    console.log("Loading env variables from:", path.join(process.cwd(), ".env"))
+    console.log(
+      t("main.env.loading", { path: path.join(process.cwd(), ".env") })
+    )
     dotenv.config({ path: path.join(process.cwd(), ".env") })
   } else {
     console.log(
-      "Loading env variables from:",
-      path.join(process.resourcesPath, ".env")
+      t("main.env.loading", { path: path.join(process.resourcesPath, ".env") })
     )
     dotenv.config({ path: path.join(process.resourcesPath, ".env") })
   }
-  console.log("Environment variables loaded for open-source version")
+  console.log(t("main.env.loaded"))
 }
 
-// Initialize application
+// 初始化应用
 async function initializeApp() {
   try {
-    // Set custom cache directory to prevent permission issues
+    // 自定义缓存目录，规避权限问题
     const appDataPath = path.join(app.getPath('appData'), 'interview-coder-v1')
     const sessionPath = path.join(appDataPath, 'session')
     const tempPath = path.join(appDataPath, 'temp')
     const cachePath = path.join(appDataPath, 'cache')
-    
-    // Create directories if they don't exist
+
+    // 目录不存在则创建
     for (const dir of [appDataPath, sessionPath, tempPath, cachePath]) {
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true })
       }
     }
-    
+
     app.setPath('userData', appDataPath)
-    app.setPath('sessionData', sessionPath)      
+    app.setPath('sessionData', sessionPath)
     app.setPath('temp', tempPath)
     app.setPath('cache', cachePath)
-      
+
     loadEnvVariables()
-    
-    // Ensure a configuration file exists
+
+    // 确保配置文件存在
     if (!configHelper.hasApiKey()) {
-      console.log("No API key found in configuration. User will need to set up.")
+      console.log(t("main.config.noApiKey"))
     }
-    
+
     initializeHelpers()
     initializeIpcHandlers({
       getMainWindow,
@@ -562,30 +581,30 @@ async function initializeApp() {
     await createWindow()
     state.shortcutsHelper?.registerGlobalShortcuts()
 
-    // Initialize auto-updater regardless of environment
+    // 无论哪个环境都初始化自动更新
     initAutoUpdater()
     console.log(
-      "Auto-updater initialized in",
-      isDev ? "development" : "production",
-      "mode"
+      t("main.update.initialized", {
+        mode: isDev ? t("main.update.modeDev") : t("main.update.modeProd")
+      })
     )
   } catch (error) {
-    console.error("Failed to initialize application:", error)
+    console.error(t("main.error.initFailed"), error)
     app.quit()
   }
 }
 
-// Auth callback handling removed - no longer needed
+// 已移除登录回调处理，不再需要
 app.on("open-url", (event, url) => {
-  console.log("open-url event received:", url)
+  console.log(t("main.app.openUrl", { url }))
   event.preventDefault()
 })
 
-// Handle second instance (removed auth callback handling)
+// 处理第二个实例（已移除登录回调处理）
 app.on("second-instance", (event, commandLine) => {
-  console.log("second-instance event received:", commandLine)
-  
-  // Focus or create the main window
+  console.log(t("main.app.secondInstance"), commandLine)
+
+  // 聚焦或创建主窗口
   if (!state.mainWindow) {
     createWindow()
   } else {
@@ -594,7 +613,7 @@ app.on("second-instance", (event, commandLine) => {
   }
 })
 
-// Prevent multiple instances of the app
+// 防止应用启动多个实例
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
@@ -612,7 +631,7 @@ app.on("activate", () => {
   }
 })
 
-// State getter/setter functions
+// 状态读取/写入函数
 function getMainWindow(): BrowserWindow | null {
   return state.mainWindow
 }
@@ -653,7 +672,7 @@ function clearQueues(): void {
 }
 
 async function takeScreenshot(): Promise<string> {
-  if (!state.mainWindow) throw new Error("No main window available")
+  if (!state.mainWindow) throw new Error(t("main.error.noMainWindow"))
   return (
     state.screenshotHelper?.takeScreenshot(
       () => hideMainWindow(),
@@ -672,7 +691,7 @@ async function deleteScreenshot(
   return (
     state.screenshotHelper?.deleteScreenshot(path) || {
       success: false,
-      error: "Screenshot helper not initialized"
+      error: t("main.error.screenshotHelperNotInitialized")
     }
   )
 }
@@ -685,7 +704,7 @@ function getHasDebugged(): boolean {
   return state.hasDebugged
 }
 
-// Export state and functions for other modules
+// 导出状态与函数，供其它模块使用
 export {
   state,
   createWindow,

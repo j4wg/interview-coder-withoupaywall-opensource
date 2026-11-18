@@ -1,4 +1,4 @@
-// ScreenshotHelper.ts
+// ScreenshotHelper.ts — 截图的采集、队列管理与预览
 
 import path from "node:path";
 import fs from "node:fs";
@@ -8,8 +8,12 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import screenshot from "screenshot-desktop";
 import os from "os";
+import { mainT } from "./i18n/mainT";
 
 const execFileAsync = promisify(execFile);
+
+// 主进程翻译器：每次调用都实时解析当前界面语言
+const t = mainT("main");
 
 export class ScreenshotHelper {
   private screenshotQueue: string[] = [];
@@ -25,7 +29,7 @@ export class ScreenshotHelper {
   constructor(view: "queue" | "solutions" | "debug" = "queue") {
     this.view = view;
 
-    // Initialize directories
+    // 初始化目录
     this.screenshotDir = path.join(app.getPath("userData"), "screenshots");
     this.extraScreenshotDir = path.join(
       app.getPath("userData"),
@@ -36,10 +40,10 @@ export class ScreenshotHelper {
       "interview-coder-screenshots"
     );
 
-    // Create directories if they don't exist
+    // 目录不存在则创建
     this.ensureDirectoriesExist();
 
-    // Clean existing screenshot directories when starting the app
+    // 启动时清空已有的截图目录
     this.cleanScreenshotDirectories();
   }
 
@@ -54,56 +58,59 @@ export class ScreenshotHelper {
       if (!fs.existsSync(dir)) {
         try {
           fs.mkdirSync(dir, { recursive: true });
-          console.log(`Created directory: ${dir}`);
+          console.log(t("main.shot.dirCreated", { path: dir }));
         } catch (err) {
-          console.error(`Error creating directory ${dir}:`, err);
+          console.error(t("main.error.createDir", { path: dir }), err);
         }
       }
     }
   }
 
-  // This method replaces loadExistingScreenshots() to ensure we start with empty queues
+  // 替代原有的 loadExistingScreenshots()，保证每次启动时队列都是空的
   private cleanScreenshotDirectories(): void {
     try {
-      // Clean main screenshots directory
+      // 清理主截图目录
       if (fs.existsSync(this.screenshotDir)) {
         const files = fs
           .readdirSync(this.screenshotDir)
           .filter((file) => file.endsWith(".png"))
           .map((file) => path.join(this.screenshotDir, file));
 
-        // Delete each screenshot file
+        // 逐个删除截图文件
         for (const file of files) {
           try {
             fs.unlinkSync(file);
-            console.log(`Deleted existing screenshot: ${file}`);
+            console.log(t("main.shot.deletedExisting", { path: file }));
           } catch (err) {
-            console.error(`Error deleting screenshot ${file}:`, err);
+            console.error(t("main.error.deleteScreenshot", { path: file }), err);
           }
         }
       }
 
-      // Clean extra screenshots directory
+      // 清理附加截图目录
       if (fs.existsSync(this.extraScreenshotDir)) {
         const files = fs
           .readdirSync(this.extraScreenshotDir)
           .filter((file) => file.endsWith(".png"))
           .map((file) => path.join(this.extraScreenshotDir, file));
 
-        // Delete each screenshot file
+        // 逐个删除截图文件
         for (const file of files) {
           try {
             fs.unlinkSync(file);
-            console.log(`Deleted existing extra screenshot: ${file}`);
+            console.log(t("main.shot.deletedExistingExtra", { path: file }));
           } catch (err) {
-            console.error(`Error deleting extra screenshot ${file}:`, err);
+            console.error(
+              t("main.error.deleteExtraScreenshot", { path: file }),
+              err
+            );
           }
         }
       }
 
-      console.log("Screenshot directories cleaned successfully");
+      console.log(t("main.shot.dirsCleaned"));
     } catch (err) {
-      console.error("Error cleaning screenshot directories:", err);
+      console.error(t("main.error.cleanDirs"), err);
     }
   }
 
@@ -112,12 +119,12 @@ export class ScreenshotHelper {
   }
 
   public setView(view: "queue" | "solutions" | "debug"): void {
-    console.log("Setting view in ScreenshotHelper:", view);
+    console.log(t("main.shot.setView", { view }));
     console.log(
-      "Current queues - Main:",
-      this.screenshotQueue,
-      "Extra:",
-      this.extraScreenshotQueue
+      t("main.shot.queuesState", {
+        main: String(this.screenshotQueue),
+        extra: String(this.extraScreenshotQueue)
+      })
     );
     this.view = view;
   }
@@ -127,26 +134,31 @@ export class ScreenshotHelper {
   }
 
   public getExtraScreenshotQueue(): string[] {
-    console.log("Getting extra screenshot queue:", this.extraScreenshotQueue);
+    console.log(
+      t("main.shot.getExtraQueue", { queue: String(this.extraScreenshotQueue) })
+    );
     return this.extraScreenshotQueue;
   }
 
   public clearQueues(): void {
-    // Clear screenshotQueue
+    // 清空主队列
     this.screenshotQueue.forEach((screenshotPath) => {
       fs.unlink(screenshotPath, (err) => {
         if (err)
-          console.error(`Error deleting screenshot at ${screenshotPath}:`, err);
+          console.error(
+            t("main.error.deleteScreenshotAt", { path: screenshotPath }),
+            err
+          );
       });
     });
     this.screenshotQueue = [];
 
-    // Clear extraScreenshotQueue
+    // 清空附加队列
     this.extraScreenshotQueue.forEach((screenshotPath) => {
       fs.unlink(screenshotPath, (err) => {
         if (err)
           console.error(
-            `Error deleting extra screenshot at ${screenshotPath}:`,
+            t("main.error.deleteExtraScreenshotAt", { path: screenshotPath }),
             err
           );
       });
@@ -156,68 +168,70 @@ export class ScreenshotHelper {
 
   private async captureScreenshot(): Promise<Buffer> {
     try {
-      console.log("Starting screenshot capture...");
+      console.log(t("main.shot.captureStarting"));
 
-      // For Windows, try multiple methods
+      // Windows 上尝试多种方式
       if (process.platform === "win32") {
         return await this.captureWindowsScreenshot();
       }
 
-      // For macOS and Linux, use buffer directly
-      console.log("Taking screenshot on non-Windows platform");
+      // macOS 与 Linux 直接取 buffer
+      console.log(t("main.shot.captureNonWindows"));
       const buffer = await screenshot({ format: "png" });
       console.log(
-        `Screenshot captured successfully, size: ${buffer.length} bytes`
+        t("main.shot.captureSuccess", { bytes: String(buffer.length) })
       );
       return buffer;
     } catch (error) {
-      console.error("Error capturing screenshot:", error);
-      throw new Error(`Failed to capture screenshot: ${error.message}`);
+      console.error(t("main.error.capture"), error);
+      throw new Error(
+        t("main.error.captureFailed", { error: String(error.message) })
+      );
     }
   }
 
   /**
-   * Windows-specific screenshot capture with multiple fallback mechanisms
+   * Windows 专用截图，带多级兜底方案
    */
   private async captureWindowsScreenshot(): Promise<Buffer> {
-    console.log("Attempting Windows screenshot with multiple methods");
+    console.log(t("main.shot.windowsAttempt"));
 
-    // Method 1: Try screenshot-desktop with filename first
+    // 方式 1：先用 screenshot-desktop 写临时文件
     try {
       const tempFile = path.join(this.tempDir, `temp-${uuidv4()}.png`);
-      console.log(
-        `Taking Windows screenshot to temp file (Method 1): ${tempFile}`
-      );
+      console.log(t("main.shot.windowsTempFile", { path: tempFile }));
 
       await screenshot({ filename: tempFile });
 
       if (fs.existsSync(tempFile)) {
         const buffer = await fs.promises.readFile(tempFile);
         console.log(
-          `Method 1 successful, screenshot size: ${buffer.length} bytes`
+          t("main.shot.windowsMethod1Success", {
+            bytes: String(buffer.length)
+          })
         );
 
-        // Cleanup temp file
+        // 清理临时文件
         try {
           await fs.promises.unlink(tempFile);
         } catch (cleanupErr) {
-          console.warn("Failed to clean up temp file:", cleanupErr);
+          console.warn(t("main.error.cleanupTempFile"), cleanupErr);
         }
 
         return buffer;
       } else {
-        console.log("Method 1 failed: File not created");
-        throw new Error("Screenshot file not created");
+        console.log(t("main.shot.windowsMethod1NoFile"));
+        throw new Error(t("main.error.fileNotCreated"));
       }
     } catch (error) {
-      console.warn("Windows screenshot Method 1 failed:", error);
+      console.warn(t("main.error.windowsMethod1Failed"), error);
 
-      // Method 2: Try using PowerShell
+      // 方式 2：改用 PowerShell
       try {
-        console.log("Attempting Windows screenshot with PowerShell (Method 2)");
+        console.log(t("main.shot.windowsMethod2"));
         const tempFile = path.join(this.tempDir, `ps-temp-${uuidv4()}.png`);
 
-        // PowerShell command to take screenshot using .NET classes
+        // 用 .NET 类截屏的 PowerShell 命令
         const psScript = `
         Add-Type -AssemblyName System.Windows.Forms,System.Drawing
         $screens = [System.Windows.Forms.Screen]::AllScreens
@@ -237,7 +251,7 @@ export class ScreenshotHelper {
         $bmp.Dispose()
         `;
 
-        // Execute PowerShell
+        // 执行 PowerShell
         await execFileAsync("powershell", [
           "-NoProfile",
           "-ExecutionPolicy",
@@ -246,43 +260,41 @@ export class ScreenshotHelper {
           psScript,
         ]);
 
-        // Check if file exists and read it
+        // 检查文件是否生成并读取
         if (fs.existsSync(tempFile)) {
           const buffer = await fs.promises.readFile(tempFile);
           console.log(
-            `Method 2 successful, screenshot size: ${buffer.length} bytes`
+            t("main.shot.windowsMethod2Success", {
+              bytes: String(buffer.length)
+            })
           );
 
-          // Cleanup
+          // 清理
           try {
             await fs.promises.unlink(tempFile);
           } catch (err) {
-            console.warn("Failed to clean up PowerShell temp file:", err);
+            console.warn(t("main.error.cleanupPowerShellTemp"), err);
           }
 
           return buffer;
         } else {
-          throw new Error("PowerShell screenshot file not created");
+          throw new Error(t("main.error.powerShellFileNotCreated"));
         }
       } catch (psError) {
-        console.warn("Windows PowerShell screenshot failed:", psError);
+        console.warn(t("main.error.windowsMethod2Failed"), psError);
 
-        // Method 3: Last resort - create a tiny placeholder image
-        console.log(
-          "All screenshot methods failed, creating placeholder image"
-        );
+        // 方式 3：最后的兜底，生成一张极小的占位图
+        console.log(t("main.shot.windowsAllFailed"));
 
-        // Create a 1x1 transparent PNG as fallback
+        // 生成 1x1 透明 PNG 作为兜底
         const fallbackBuffer = Buffer.from(
           "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
           "base64"
         );
-        console.log("Created placeholder image as fallback");
+        console.log(t("main.shot.placeholderCreated"));
 
-        // Show the error but return a valid buffer so the app doesn't crash
-        throw new Error(
-          "Could not capture screenshot with any method. Please check your Windows security settings and try again."
-        );
+        // 把错误暴露出来，但仍返回可用 buffer，避免应用崩溃
+        throw new Error(t("main.error.windowsAllFailed"));
       }
     }
   }
@@ -291,23 +303,23 @@ export class ScreenshotHelper {
     hideMainWindow: () => void,
     showMainWindow: () => void
   ): Promise<string> {
-    console.log("Taking screenshot in view:", this.view);
+    console.log(t("main.shot.takingInView", { view: this.view }));
     hideMainWindow();
 
-    // Increased delay for window hiding on Windows
+    // Windows 上隐藏窗口需要更长的延时
     const hideDelay = process.platform === "win32" ? 500 : 300;
     await new Promise((resolve) => setTimeout(resolve, hideDelay));
 
     let screenshotPath = "";
     try {
-      // Get screenshot buffer using cross-platform method
+      // 用跨平台方式拿到截图 buffer
       const screenshotBuffer = await this.captureScreenshot();
 
       if (!screenshotBuffer || screenshotBuffer.length === 0) {
-        throw new Error("Screenshot capture returned empty buffer");
+        throw new Error(t("main.error.emptyBuffer"));
       }
 
-      // Save and manage the screenshot based on current view
+      // 按当前视图保存并管理截图
       if (this.view === "queue") {
         screenshotPath = path.join(this.screenshotDir, `${uuidv4()}.png`);
         const screenshotDir = path.dirname(screenshotPath);
@@ -315,7 +327,7 @@ export class ScreenshotHelper {
           fs.mkdirSync(screenshotDir, { recursive: true });
         }
         await fs.promises.writeFile(screenshotPath, screenshotBuffer);
-        console.log("Adding screenshot to main queue:", screenshotPath);
+        console.log(t("main.shot.addedToMainQueue", { path: screenshotPath }));
         this.screenshotQueue.push(screenshotPath);
         if (this.screenshotQueue.length > this.MAX_SCREENSHOTS) {
           const removedPath = this.screenshotQueue.shift();
@@ -323,23 +335,22 @@ export class ScreenshotHelper {
             try {
               await fs.promises.unlink(removedPath);
               console.log(
-                "Removed old screenshot from main queue:",
-                removedPath
+                t("main.shot.removedFromMainQueue", { path: removedPath })
               );
             } catch (error) {
-              console.error("Error removing old screenshot:", error);
+              console.error(t("main.error.removeOld"), error);
             }
           }
         }
       } else {
-        // In solutions view, only add to extra queue
+        // 解答视图下只进附加队列
         screenshotPath = path.join(this.extraScreenshotDir, `${uuidv4()}.png`);
         const screenshotDir = path.dirname(screenshotPath);
         if (!fs.existsSync(screenshotDir)) {
           fs.mkdirSync(screenshotDir, { recursive: true });
         }
         await fs.promises.writeFile(screenshotPath, screenshotBuffer);
-        console.log("Adding screenshot to extra queue:", screenshotPath);
+        console.log(t("main.shot.addedToExtraQueue", { path: screenshotPath }));
         this.extraScreenshotQueue.push(screenshotPath);
         if (this.extraScreenshotQueue.length > this.MAX_SCREENSHOTS) {
           const removedPath = this.extraScreenshotQueue.shift();
@@ -347,20 +358,19 @@ export class ScreenshotHelper {
             try {
               await fs.promises.unlink(removedPath);
               console.log(
-                "Removed old screenshot from extra queue:",
-                removedPath
+                t("main.shot.removedFromExtraQueue", { path: removedPath })
               );
             } catch (error) {
-              console.error("Error removing old screenshot:", error);
+              console.error(t("main.error.removeOld"), error);
             }
           }
         }
       }
     } catch (error) {
-      console.error("Screenshot error:", error);
+      console.error(t("main.error.capture"), error);
       throw error;
     } finally {
-      // Increased delay for showing window again
+      // 重新显示窗口同样需要延时
       await new Promise((resolve) => setTimeout(resolve, 200));
       showMainWindow();
     }
@@ -371,14 +381,14 @@ export class ScreenshotHelper {
   public async getImagePreview(filepath: string): Promise<string> {
     try {
       if (!fs.existsSync(filepath)) {
-        console.error(`Image file not found: ${filepath}`);
+        console.error(t("main.error.imageNotFound", { path: filepath }));
         return "";
       }
 
       const data = await fs.promises.readFile(filepath);
       return `data:image/png;base64,${data.toString("base64")}`;
     } catch (error) {
-      console.error("Error reading image:", error);
+      console.error(t("main.error.readImage"), error);
       return "";
     }
   }
@@ -402,19 +412,20 @@ export class ScreenshotHelper {
       }
       return { success: true };
     } catch (error) {
-      console.error("Error deleting file:", error);
+      console.error(t("main.error.deleteFile"), error);
+      // 这里的 error.message 来自 Node fs，是第三方英文原文，保持原样
       return { success: false, error: error.message };
     }
   }
 
   public clearExtraScreenshotQueue(): void {
-    // Clear extraScreenshotQueue
+    // 清空附加队列
     this.extraScreenshotQueue.forEach((screenshotPath) => {
       if (fs.existsSync(screenshotPath)) {
         fs.unlink(screenshotPath, (err) => {
           if (err)
             console.error(
-              `Error deleting extra screenshot at ${screenshotPath}:`,
+              t("main.error.deleteExtraScreenshotAt", { path: screenshotPath }),
               err
             );
         });

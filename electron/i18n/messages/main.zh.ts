@@ -1,0 +1,240 @@
+/**
+ * `main` 命名空间中文文案表（类型真源）。
+ *
+ * 承载范围：主进程（main.ts / ipcHandlers.ts / ScreenshotHelper.ts / shortcuts.ts /
+ * autoUpdater.ts / preload.ts）的日志、错误提示、用户可见的系统对话框/通知，
+ * 以及 `stealth-run.sh/.bat`、`cleanup-for-github.sh/.bat` 的输出文案。
+ *
+ * 键名约定：`main.<区域>.<元素>[.<变体>]`，全小写、段间点分、段内小驼峰。
+ * 一个整句一个键；动态值用 `{{name}}` 占位符（见 electron/i18n/index.ts 的插值实现）。
+ *
+ * 脚本层的 `main.script.*` 是 shell 内联文案的「参考副本」：shell 读不到 TS，
+ * 因此 `stealth-run.sh/.bat`、`cleanup-for-github.sh/.bat` 里保留了同样的字面量，
+ * 由 `tests/mainMessages.test.mjs` 逐条比对，两边不得各改一边。
+ */
+export const mainZh = {
+  // ── 窗口生命周期（main.ts） ──────────────────────────────────────────
+  "main.window.loaded": "窗口加载完成",
+  "main.window.loadFailed": "窗口加载失败：{{code}} {{description}}",
+  "main.window.retryDevServer": "正在重试加载开发服务器…",
+  "main.window.retryDevServerFailed": "重试加载开发服务器失败：",
+  "main.window.loadingDevServer": "正在从开发服务器加载：http://localhost:54321",
+  "main.window.devServerFallback": "开发服务器加载失败，回退到本地文件：",
+  "main.window.fallingBackTo": "回退路径：{{path}}",
+  "main.window.loadingProductionBuild": "正在加载生产构建：{{path}}",
+  "main.window.openUrlAttempt": "尝试打开链接：{{url}}",
+  "main.window.initialOpacity": "配置中的初始不透明度：{{opacity}}",
+  "main.window.opacityTooLow": "初始不透明度过低，设为 0 并隐藏窗口",
+  "main.window.setInitialOpacity": "把初始不透明度设为 {{opacity}}",
+  "main.window.hidden": "窗口已隐藏，不透明度设为 0",
+  "main.window.shown": "窗口已通过 showInactive() 显示，不透明度设为 1",
+  "main.window.toggleState": "切换窗口显示状态。当前状态：{{state}}",
+  "main.window.stateVisible": "显示",
+  "main.window.stateHidden": "隐藏",
+  "main.window.moveBounds": "窗口纵向移动的边界与当前位置：",
+
+  // ── 环境变量与应用事件（main.ts） ────────────────────────────────────
+  "main.env.loading": "正在加载环境变量：{{path}}",
+  "main.env.loaded": "开源版环境变量加载完成",
+  "main.app.openUrl": "收到 open-url 事件：{{url}}",
+  "main.app.secondInstance": "收到 second-instance 事件：",
+  "main.config.noApiKey": "配置中没有 API Key，用户需要先完成设置。",
+
+  // ── IPC 处理器（ipcHandlers.ts） ─────────────────────────────────────
+  "main.ipc.initializing": "正在初始化 IPC 处理器",
+  "main.ipc.openingExternalUrl": "正在打开外部链接：{{url}}",
+
+  // ── 截图（ScreenshotHelper.ts） ──────────────────────────────────────
+  "main.shot.dirCreated": "已创建目录：{{path}}",
+  "main.shot.deletedExisting": "已删除已有截图：{{path}}",
+  "main.shot.deletedExistingExtra": "已删除已有附加截图：{{path}}",
+  "main.shot.dirsCleaned": "截图目录清理完成",
+  "main.shot.setView": "设置 ScreenshotHelper 的视图：{{view}}",
+  "main.shot.queuesState": "当前队列 — 主队列：{{main}} 附加队列：{{extra}}",
+  "main.shot.getExtraQueue": "获取附加截图队列：{{queue}}",
+  "main.shot.captureStarting": "开始截图…",
+  "main.shot.captureNonWindows": "在非 Windows 平台截图",
+  "main.shot.captureSuccess": "截图成功，大小：{{bytes}} 字节",
+  "main.shot.windowsAttempt": "尝试用多种方式在 Windows 上截图",
+  "main.shot.windowsTempFile": "方式 1：把截图写入临时文件：{{path}}",
+  "main.shot.windowsMethod1Success": "方式 1 成功，截图大小：{{bytes}} 字节",
+  "main.shot.windowsMethod1NoFile": "方式 1 失败：文件未创建",
+  "main.shot.windowsMethod2": "方式 2：尝试用 PowerShell 截图",
+  "main.shot.windowsMethod2Success": "方式 2 成功，截图大小：{{bytes}} 字节",
+  "main.shot.windowsAllFailed": "所有截图方式均失败，改为生成占位图片",
+  "main.shot.placeholderCreated": "已生成占位图片作为兜底",
+  "main.shot.takingInView": "在视图 {{view}} 中截图",
+  "main.shot.addedToMainQueue": "截图已加入主队列：{{path}}",
+  "main.shot.removedFromMainQueue": "已从主队列移除旧截图：{{path}}",
+  "main.shot.addedToExtraQueue": "截图已加入附加队列：{{path}}",
+  "main.shot.removedFromExtraQueue": "已从附加队列移除旧截图：{{path}}",
+
+  // ── 快捷键（shortcuts.ts） ───────────────────────────────────────────
+  "main.shortcut.adjustOpacity": "把不透明度从 {{from}} 调整为 {{to}}",
+  "main.shortcut.takingScreenshot": "正在截图…",
+  "main.shortcut.resetPressed":
+    "按下 Command + R，取消进行中的请求并重置队列…",
+  "main.shortcut.queuesCleared": "已清空队列。",
+  "main.shortcut.moveLeft": "按下 Command/Ctrl + 左方向键，向左移动窗口。",
+  "main.shortcut.moveRight": "按下 Command/Ctrl + 右方向键，向右移动窗口。",
+  "main.shortcut.moveDown": "按下 Command/Ctrl + 下方向键，向下移动窗口。",
+  "main.shortcut.moveUp": "按下 Command/Ctrl + 上方向键，向上移动窗口。",
+  "main.shortcut.toggle": "按下 Command/Ctrl + B，切换窗口显示状态。",
+  "main.shortcut.quit": "按下 Command/Ctrl + Q，退出应用。",
+  "main.shortcut.opacityDown": "按下 Command/Ctrl + [，降低不透明度。",
+  "main.shortcut.opacityUp": "按下 Command/Ctrl + ]，提高不透明度。",
+  "main.shortcut.zoomOut": "按下 Command/Ctrl + -，缩小视图。",
+  "main.shortcut.zoomReset": "按下 Command/Ctrl + 0，重置缩放。",
+  "main.shortcut.zoomIn": "按下 Command/Ctrl + =，放大视图。",
+  "main.shortcut.deleteLast": "按下 Command/Ctrl + L，删除最后一张截图。",
+
+  // ── 自动更新（autoUpdater.ts） ───────────────────────────────────────
+  "main.update.initializing": "正在初始化自动更新…",
+  "main.update.initialized": "自动更新已在{{mode}}模式下初始化",
+  "main.update.modeDev": "开发",
+  "main.update.modeProd": "生产",
+  "main.update.skipDev": "开发模式下跳过自动更新",
+  "main.update.loggerConfigured": "自动更新的日志级别已设为：{{level}}",
+  "main.update.checking": "正在检查更新…",
+  "main.update.checkingInterval": "正在检查更新（定时）…",
+  "main.update.available": "发现新版本：",
+  "main.update.notAvailable": "没有可用更新：",
+  "main.update.downloadProgress": "下载进度：",
+  "main.update.downloaded": "更新已下载：",
+  "main.update.sendingAvailable": "正在向窗口发送 update-available",
+  "main.update.sendingDownloaded": "正在向窗口发送 update-downloaded",
+  "main.update.checkResult": "更新检查结果：",
+  "main.update.checkResultInterval": "更新检查结果（定时）：",
+  "main.update.startRequested": "收到开始更新请求",
+  "main.update.downloadCompleted": "更新下载完成",
+  "main.update.installRequested": "收到安装更新请求",
+
+  // ── preload（preload.ts） ────────────────────────────────────────────
+  "main.preload.starting": "preload 脚本开始执行…",
+  "main.preload.running": "preload 脚本运行中",
+  "main.preload.toggleCalled": "渲染层调用了 toggleMainWindow",
+  "main.preload.toggleResult": "toggle-window 返回结果：",
+  "main.preload.exposingApi": "即将暴露 electronAPI，方法列表：",
+  "main.preload.apiExposed": "electronAPI 已暴露到 window",
+
+  // ── 错误提示与错误日志 ───────────────────────────────────────────────
+  "main.error.indexHtmlMissing": "在 dist 目录中找不到 index.html",
+  "main.error.invalidUrl": "setWindowOpenHandler 中的 URL 非法：{{url}}",
+  "main.error.initFailed": "应用初始化失败：",
+  "main.error.noMainWindow": "没有可用的主窗口",
+  "main.error.screenshotHelperNotInitialized": "截图助手尚未初始化",
+  "main.error.resolveUiLocale": "解析界面语言失败：",
+  "main.error.apiKeyFormat": "API Key 格式不正确。OpenAI 的 API Key 以 'sk-' 开头",
+  "main.error.setInitialCredits": "设置初始额度失败：",
+  "main.error.decrementCredits": "扣减额度失败：",
+  "main.error.getScreenshots": "获取截图列表失败：",
+  "main.error.triggerScreenshot": "触发截图失败：",
+  "main.error.triggerScreenshotFailed": "触发截图失败",
+  "main.error.noMainWindowAvailable": "没有可用的主窗口",
+  "main.error.takeScreenshot": "截图失败：",
+  "main.error.takeScreenshotFailed": "截图失败",
+  "main.error.openUrl": "打开链接失败：{{url}}",
+  "main.error.openUrlFailed": "无法打开链接：{{error}}",
+  "main.error.mainWindowNotAvailable": "主窗口不可用",
+  "main.error.toggleWindow": "切换窗口失败：",
+  "main.error.toggleWindowFailed": "切换窗口失败",
+  "main.error.resetQueues": "重置队列失败：",
+  "main.error.resetQueuesFailed": "重置队列失败",
+  "main.error.processScreenshots": "处理截图失败：",
+  "main.error.processScreenshotsFailed": "处理截图失败",
+  "main.error.apiKeyRequired": "需要 API Key",
+  "main.error.triggerReset": "重置失败：",
+  "main.error.triggerResetFailed": "重置失败",
+  "main.error.moveLeft": "向左移动窗口失败：",
+  "main.error.moveLeftFailed": "向左移动窗口失败",
+  "main.error.moveRight": "向右移动窗口失败：",
+  "main.error.moveRightFailed": "向右移动窗口失败",
+  "main.error.moveUp": "向上移动窗口失败：",
+  "main.error.moveUpFailed": "向上移动窗口失败",
+  "main.error.moveDown": "向下移动窗口失败：",
+  "main.error.moveDownFailed": "向下移动窗口失败",
+  "main.error.deleteLastScreenshot": "删除最后一张截图失败：",
+  "main.error.deleteLastScreenshotFailed": "删除最后一张截图失败",
+  "main.error.noScreenshotsToDelete": "没有可删除的截图",
+  "main.error.createDir": "创建目录失败：{{path}}",
+  "main.error.deleteScreenshot": "删除截图失败：{{path}}",
+  "main.error.deleteExtraScreenshot": "删除附加截图失败：{{path}}",
+  "main.error.cleanDirs": "清理截图目录失败：",
+  "main.error.deleteScreenshotAt": "删除截图失败：{{path}}",
+  "main.error.deleteExtraScreenshotAt": "删除附加截图失败：{{path}}",
+  "main.error.capture": "截图出错：",
+  "main.error.captureFailed": "截图失败：{{error}}",
+  "main.error.cleanupTempFile": "清理临时文件失败：",
+  "main.error.cleanupPowerShellTemp": "清理 PowerShell 临时文件失败：",
+  "main.error.windowsMethod1Failed": "Windows 截图方式 1 失败：",
+  "main.error.windowsMethod2Failed": "Windows PowerShell 截图失败：",
+  "main.error.windowsAllFailed":
+    "无法用任何方式完成截图。请检查 Windows 安全设置后重试。",
+  "main.error.emptyBuffer": "截图返回了空缓冲区",
+  "main.error.fileNotCreated": "截图文件未创建",
+  "main.error.powerShellFileNotCreated": "PowerShell 截图文件未创建",
+  "main.error.removeOld": "移除旧截图失败：",
+  "main.error.imageNotFound": "图片文件不存在：{{path}}",
+  "main.error.readImage": "读取图片失败：",
+  "main.error.deleteFile": "删除文件失败：",
+  "main.error.saveOpacity": "把不透明度保存到配置失败：",
+  "main.error.captureShortcut": "快捷键截图失败：",
+  "main.error.ghTokenMissing": "未设置 GH_TOKEN 环境变量",
+  "main.error.updater": "自动更新出错：",
+  "main.error.checkFailed": "检查更新失败：",
+  "main.error.checkFailedInterval": "检查更新失败（定时）：",
+  "main.error.startUpdate": "启动更新失败：",
+  "main.error.preloadToggle": "toggleMainWindow 出错：",
+
+  // ── 脚本输出（stealth-run.sh / stealth-run.bat） ─────────────────────
+  // 英文脚本的键位为 Cmd+（macOS/Linux），Windows 批处理用 Ctrl+，文案表格只收录
+  // macOS/Linux 版本；批处理中的字面量由测试单独比对标签部分。
+  "main.script.stealth.title": "=== Interview Coder —— 隐身版（无付费墙） ===",
+  "main.script.stealth.important": "重要：本应用默认是「不可见」的！",
+  "main.script.stealth.useShortcuts": "用以下快捷键控制它：",
+  "main.script.stealth.shortcutToggle": "- 显示/隐藏窗口：Cmd+B",
+  "main.script.stealth.shortcutScreenshot": "- 截图：Cmd+H",
+  "main.script.stealth.shortcutProcess": "- 处理截图：Cmd+Enter",
+  "main.script.stealth.shortcutMove": "- 移动窗口：Cmd+方向键（左/右/上/下）",
+  "main.script.stealth.shortcutOpacity":
+    "- 降低不透明度：Cmd+[ / 提高不透明度：Cmd+]",
+  "main.script.stealth.shortcutReset": "- 开始新题目：Cmd+R",
+  "main.script.stealth.shortcutQuit": "- 退出：Cmd+Q",
+  "main.script.stealth.toggleHint":
+    "按下 Cmd+B 时，窗口会在可见与不可见之间切换。",
+  "main.script.stealth.moveHint":
+    "如果移动快捷键无效，请先用 Cmd+B 让窗口可见。",
+  "main.script.step.dirs": "=== 第 1 步：创建所需目录… ===",
+  "main.script.step.clean": "=== 第 2 步：清理旧构建… ===",
+  "main.script.step.cleanDetail": "删除旧的构建产物，确保从干净状态开始…",
+  "main.script.step.build": "=== 第 3 步：构建应用… ===",
+  "main.script.step.buildDetail": "这一步可能需要一点时间…",
+  "main.script.step.launch": "=== 第 4 步：以隐身模式启动… ===",
+  "main.script.step.launchHint":
+    "记住：Cmd+B 让窗口可见，Cmd+[ 和 Cmd+] 调整不透明度！",
+  "main.script.stealth.running": "应用已在隐身状态下运行！按 Cmd+B 让它可见。",
+  "main.script.stealth.issues": "如果遇到问题：",
+  "main.script.stealth.issue1": "1. 确认已用 'npm install' 安装依赖",
+  "main.script.stealth.issue2":
+    "2. 确认脚本有执行权限（chmod +x stealth-run.sh）",
+  "main.script.stealth.issue3": "3. 多次按 Cmd+B 切换可见性",
+  "main.script.stealth.issue4": "4. 在活动监视器中确认应用正在运行",
+  "main.script.stealth.batIssue2": "2. 多次按 Ctrl+B 切换可见性",
+  "main.script.stealth.batIssue3": "3. 在任务管理器中确认应用正在运行",
+
+  // ── 脚本输出（cleanup-for-github.sh / .bat） ─────────────────────────
+  "main.script.cleanup.start": "正在清理项目，以便提交到 GitHub…",
+  "main.script.cleanup.rmNodeModules": "正在删除 node_modules 目录…",
+  "main.script.cleanup.rmDist": "正在删除 dist 目录…",
+  "main.script.cleanup.rmDistElectron": "正在删除 dist-electron 目录…",
+  "main.script.cleanup.rmRelease": "正在删除 release 目录…",
+  "main.script.cleanup.rmPackageLock": "正在删除 package-lock.json…",
+  "main.script.cleanup.rmEnv": "正在删除所有 .env 文件…",
+  "main.script.cleanup.done": "清理完成！",
+  "main.script.cleanup.ready": "可以提交到 GitHub 了。",
+  "main.script.cleanup.afterClone": "克隆后请运行 'npm install' 安装依赖。",
+  "main.script.cleanup.pressEnter": "按回车键继续…"
+}
+
+/** 中文表推导出的键集合，英文表必须一字不差地覆盖（缺键/多键都在 tsc 阶段报错） */
+export type MainMessageKeys = keyof typeof mainZh
