@@ -1,13 +1,16 @@
 /**
- * 设置页模型配置的纯函数与契约归一（JUN-49）。
+ * 设置页配置的纯函数与契约归一（配置 v3：多套 provider 并存）。
  *
- * 契约真源：`{ provider: { baseUrl, apiFormat, apiKey, models[] }, bindings: { extractionModel,
- * solutionModel, debuggingModel } }`，字段名由 JUN-47（配置层）与 JUN-48（调用层）共用，
- * 三条 issue 不得各自改名。本文件只做渲染层读写前的归一与增删去重，不碰存储与请求。
+ * 契约真源：`{ providers: [{ id, name, baseUrl, apiFormat, apiKey, models[] }],
+ * bindings: { extractionModel: { providerId, modelId }, … } }`，
+ * 字段名由 JUN-47（配置层）与 JUN-48（调用层）共用，三方不得各自改名。
+ * 本文件只做渲染层读写前的归一、增删去重与绑定校验，不碰存储与请求。
  */
 import type {
   ApiFormat,
+  BindingKey,
   Config,
+  ModelBinding,
   ModelBindings,
   ProviderConfig
 } from "../../types/electron"
@@ -33,7 +36,7 @@ export const DEFAULT_API_FORMAT: ApiFormat = "responses"
 
 /** 三个用途字段与文案 key：控件按此顺序渲染 */
 export const BINDING_FIELDS: Array<{
-  key: keyof ModelBindings
+  key: BindingKey
   titleKey: string
   descriptionKey: string
 }> = [
@@ -54,11 +57,51 @@ export const BINDING_FIELDS: Array<{
   }
 ]
 
-/** 空绑定：列表为空时的合法值（配置层同样把空列表的绑定留空） */
-export const EMPTY_BINDINGS: ModelBindings = {
-  extractionModel: "",
-  solutionModel: "",
-  debuggingModel: ""
+/** 未绑定的唯一表示（与配置层 `emptyBinding()` 一致） */
+export function emptyBinding(): ModelBinding {
+  return { providerId: "", modelId: "" }
+}
+
+/** 三个用途全部未绑定 */
+export function emptyBindings(): ModelBindings {
+  return {
+    extractionModel: emptyBinding(),
+    solutionModel: emptyBinding(),
+    debuggingModel: emptyBinding()
+  }
+}
+
+/** 绑定是否为"未绑定" */
+export function isBindingEmpty(binding: ModelBinding): boolean {
+  return !binding.providerId && !binding.modelId
+}
+
+/**
+ * 生成一套新 provider 的稳定 id：`p_` + 6 位十六进制，撞车时重试。
+ * 与配置层 `createProviderId` 同形；渲染层先算好 id，绑定才能在保存前指向它。
+ */
+export function createProviderId(existing: readonly string[]): string {
+  const used = new Set(existing)
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const suffix = Math.floor(Math.random() * 0x1000000)
+      .toString(16)
+      .padStart(6, "0")
+    const id = `p_${suffix}`
+    if (!used.has(id)) return id
+  }
+  return `p_auto${used.size + 1}`
+}
+
+/** 新建一套空 provider（界面点「添加配置」时用） */
+export function createEmptyProvider(existingIds: readonly string[]): ProviderConfig {
+  return {
+    id: createProviderId(existingIds),
+    name: "",
+    baseUrl: "",
+    apiFormat: DEFAULT_API_FORMAT,
+    apiKey: "",
+    models: []
+  }
 }
 
 /** 把任意输入归一成合法 API 格式，非法值回落默认项（不抛错） */
@@ -96,70 +139,122 @@ export function removeModel(models: string[], id: string): string[] {
   return models.filter((model) => model !== id)
 }
 
+function asString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : ""
+}
+
 /**
- * 归一三个用途的绑定：每个值必须 ∈ models，否则回落为列表首项；
- * 列表为空时全部留空（由上层给出"先添加模型"的可见提示）。
+ * 把 `getConfig()` 返回的 `providers` 归一成设置页可编辑的卡片列表。
+ * - 非对象 / 缺 id 的条目丢弃（与配置层一致，id 是稳定标识）；
+ * - id 重复时保留第一条；
+ * - 字符串字段 trim，`models` 去重，`apiFormat` 非法回落默认项。
+ */
+export function normalizeProviders(value: unknown): ProviderConfig[] {
+  if (!Array.isArray(value)) return []
+  const seen = new Set<string>()
+  const providers: ProviderConfig[] = []
+  for (const entry of value) {
+    if (typeof entry !== "object" || entry === null) continue
+    const raw = entry as Record<string, unknown>
+    const id = asString(raw.id)
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+    providers.push({
+      id,
+      name: asString(raw.name),
+      baseUrl: asString(raw.baseUrl),
+      apiFormat: normalizeApiFormat(raw.apiFormat),
+      apiKey: asString(raw.apiKey),
+      models: normalizeModels(raw.models)
+    })
+  }
+  return providers
+}
+
+/**
+ * 校验并归一三个用途的绑定：
+ * 每个绑定必须同时命中"存在的 provider"和"该 provider 下存在的 model"，
+ * 否则置空（由上层提示重新选择），绝不留悬空引用。
  */
 export function normalizeBindings(
-  bindings: Partial<ModelBindings> | null | undefined,
-  models: string[]
+  bindings: unknown,
+  providers: readonly ProviderConfig[]
 ): ModelBindings {
-  const fallback = models[0] ?? ""
-  const pick = (value: unknown) =>
-    typeof value === "string" && models.includes(value) ? value : fallback
+  const result = emptyBindings()
+  if (typeof bindings !== "object" || bindings === null) return result
+  const raw = bindings as Record<string, unknown>
 
-  return {
-    extractionModel: pick(bindings?.extractionModel),
-    solutionModel: pick(bindings?.solutionModel),
-    debuggingModel: pick(bindings?.debuggingModel)
+  for (const field of BINDING_FIELDS) {
+    const entry = raw[field.key]
+    if (typeof entry !== "object" || entry === null) continue
+    const binding = entry as Record<string, unknown>
+    const providerId = asString(binding.providerId)
+    const modelId = asString(binding.modelId)
+    if (!providerId || !modelId) continue
+    const provider = providers.find((item) => item.id === providerId)
+    if (!provider || !provider.models.includes(modelId)) continue
+    result[field.key] = { providerId, modelId }
   }
+  return result
 }
 
 /**
  * 从 `getConfig()` 的返回值归一出设置页需要的两部分。
- *
- * JUN-47 落地前主进程仍返回旧结构（`apiKey` + 三个旧模型字段），这里做一次兜底：
- * 旧结构只继承 `apiKey`，不继承任何内置模型名（内置清单已按要求彻底删除）。
+ * v3 之前的旧结构（扁平 `apiKey` / `provider` / 字符串绑定）由主进程一次性迁移，
+ * 这里不再兼容，只保证"字段缺失也不崩"。
  */
-export function normalizeProviderConfig(config: Config | null | undefined): {
-  provider: ProviderConfig
+export function normalizeConfig(config: Config | null | undefined): {
+  providers: ProviderConfig[]
   bindings: ModelBindings
 } {
-  const rawProvider = config?.provider
-  const provider: ProviderConfig = {
-    baseUrl:
-      typeof rawProvider?.baseUrl === "string" ? rawProvider.baseUrl : "",
-    apiFormat: normalizeApiFormat(rawProvider?.apiFormat),
-    apiKey:
-      typeof rawProvider?.apiKey === "string"
-        ? rawProvider.apiKey
-        : typeof config?.apiKey === "string"
-          ? config.apiKey
-          : "",
-    models: normalizeModels(rawProvider?.models)
-  }
-
+  const providers = normalizeProviders(config?.providers)
   return {
-    provider,
-    bindings: normalizeBindings(config?.bindings, provider.models)
+    providers,
+    bindings: normalizeBindings(config?.bindings, providers)
   }
+}
+
+/**
+ * 保存前把卡片列表收敛成可提交的 `providers`：
+ * trim 字符串、去重模型、剔除 id 为空的脏数据（不会发生，防御性保留）。
+ */
+export function normalizeProviderDrafts(
+  providers: readonly ProviderConfig[]
+): ProviderConfig[] {
+  return normalizeProviders(providers)
+}
+
+/** 判断绑定是否仍指向存在的 provider 与模型（UI 在每次编辑后自检） */
+export function isBindingValid(
+  binding: ModelBinding,
+  providers: readonly ProviderConfig[]
+): boolean {
+  if (!binding.providerId || !binding.modelId) return false
+  const provider = providers.find((item) => item.id === binding.providerId)
+  return Boolean(provider && provider.models.includes(binding.modelId))
 }
 
 /**
  * 解析"拉取模型列表"通道的返回值。
  *
- * 兼容调用层（JUN-48）的两种返回：`{ ok, models, error?, code? }`（实际实现）
+ * 兼容调用层（JUN-48）的两种返回：`{ ok, models, providerId?, error?, code? }`（实际实现）
  * 与直接返回 `string[]`。失败时 `error` 已由主进程按当前语言本地化，这里只负责抛出，
  * 让调用方拼到可见提示里；解析不出来时同样抛错，不静默当成空列表。
  */
-export function parseListModels(result: unknown): string[] {
-  if (Array.isArray(result)) return normalizeModels(result)
+export function parseListModels(result: unknown): {
+  models: string[]
+  providerId: string
+} {
+  if (Array.isArray(result)) {
+    return { models: normalizeModels(result), providerId: "" }
+  }
 
   if (result && typeof result === "object") {
     const payload = result as {
       ok?: boolean
       success?: boolean
       models?: unknown
+      providerId?: unknown
       error?: unknown
     }
 
@@ -172,7 +267,12 @@ export function parseListModels(result: unknown): string[] {
       )
     }
 
-    if (Array.isArray(payload.models)) return normalizeModels(payload.models)
+    if (Array.isArray(payload.models)) {
+      return {
+        models: normalizeModels(payload.models),
+        providerId: asString(payload.providerId)
+      }
+    }
 
     if (typeof payload.error === "string" && payload.error) {
       throw new Error(payload.error)
@@ -180,4 +280,50 @@ export function parseListModels(result: unknown): string[] {
   }
 
   throw new Error("unexpected list-models response")
+}
+
+/** 去掉首尾空白与尾部斜杠（与配置层 `normalizeBaseUrl` 同口径，保存前先归一以便比对） */
+export function normalizeBaseUrl(value: string): string {
+  return value.trim().replace(/\/+$/, "")
+}
+
+/** baseUrl 必须是 http(s) 绝对地址；空串由调用方决定是否允许（未配置） */
+export function isValidBaseUrl(value: string): boolean {
+  const trimmed = value.trim()
+  if (!trimmed) return false
+  try {
+    const url = new URL(trimmed)
+    return url.protocol === "http:" || url.protocol === "https:"
+  } catch {
+    return false
+  }
+}
+
+/** 判断两个绑定是否逐项相同（避免 setState 自激） */
+export function bindingsEqual(a: ModelBindings, b: ModelBindings): boolean {
+  return BINDING_FIELDS.every(
+    (field) =>
+      a[field.key].providerId === b[field.key].providerId &&
+      a[field.key].modelId === b[field.key].modelId
+  )
+}
+
+/** 判断两组 provider 卡片是否逐项相同（保存后校验是否真的落盘） */
+export function providersEqual(
+  a: readonly ProviderConfig[],
+  b: readonly ProviderConfig[]
+): boolean {
+  if (a.length !== b.length) return false
+  return a.every((left, index) => {
+    const right = b[index]
+    return (
+      left.id === right.id &&
+      left.name === right.name &&
+      left.baseUrl === right.baseUrl &&
+      left.apiFormat === right.apiFormat &&
+      left.apiKey === right.apiKey &&
+      left.models.length === right.models.length &&
+      left.models.every((model, i) => model === right.models[i])
+    )
+  })
 }

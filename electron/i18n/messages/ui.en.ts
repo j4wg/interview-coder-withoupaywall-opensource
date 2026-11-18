@@ -186,11 +186,11 @@ export const uiEn: typeof uiZh = {
   "ui.settings.models.fetchAdded": "Added {{count}} model(s) to the list",
   "ui.settings.bindings.title": "Model Usage",
   "ui.settings.bindings.description":
-    "Pick one model from the list above for each usage",
+    "For each usage, pick a configuration and one of its models",
   "ui.settings.bindings.emptyOption": "Add a model first",
   "ui.settings.bindings.selectPlaceholder": "Select a model",
   "ui.settings.bindings.addFirst":
-    "Add a model first, then choose one for each usage",
+    "Add a configuration and models first, then choose one for each usage",
   "ui.settings.models.extraction.title": "Problem Extraction",
   "ui.settings.models.extraction.description":
     "Model used to analyze screenshots and extract problem details",
@@ -200,6 +200,31 @@ export const uiEn: typeof uiZh = {
   "ui.settings.models.debugging.title": "Debugging",
   "ui.settings.models.debugging.description":
     "Model used to debug and improve solutions",
+  "ui.settings.providers.title": "API Configurations",
+  "ui.settings.providers.description":
+    "Add multiple configurations; each usage can pick its own configuration and model.",
+  "ui.settings.providers.add": "Add Configuration",
+  "ui.settings.providers.empty":
+    "No API configuration yet. Click \"Add Configuration\" to start.",
+  "ui.settings.providers.nameLabel": "Configuration Name",
+  "ui.settings.providers.namePlaceholder": "e.g. Work GLM (optional)",
+  "ui.settings.providers.untitled": "Untitled configuration",
+  "ui.settings.providers.remove": "Remove this configuration",
+  "ui.settings.providers.removeConfirm":
+    "Remove \"{{name}}\"? Usages that reference it will be cleared.",
+  "ui.settings.bindings.providerLabel": "Configuration",
+  "ui.settings.bindings.modelLabel": "Model",
+  "ui.settings.bindings.providerPlaceholder": "Select a configuration",
+  "ui.settings.bindings.modelPlaceholder": "Select a model",
+  "ui.settings.bindings.noModels": "This configuration has no models yet",
+  "ui.settings.bindings.cleared":
+    "Some usages referenced models that no longer exist and were cleared. Please select again.",
+  "ui.settings.validation.baseUrl":
+    "The Base URL of \"{{name}}\" is not a valid http(s) address.",
+  "ui.settings.toast.savedWithCleared":
+    "Settings saved, but some usages need a model selected again",
+  "ui.settings.toast.saveFailed": "Save failed. Please try again",
+  "ui.settings.toast.saveNoEffect": "The save did not take effect. Please try again",
   "ui.settings.saving": "Saving...",
   "ui.settings.save": "Save Settings",
   "ui.settings.toast.saved": "Settings saved successfully",

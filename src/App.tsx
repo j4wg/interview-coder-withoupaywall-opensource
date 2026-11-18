@@ -49,7 +49,6 @@ function App() {
   const [currentLanguage, setCurrentLanguage] = useState<string>("java")
   const [isInitialized, setIsInitialized] = useState(false)
   const [hasApiKey, setHasApiKey] = useState(false)
-  const [apiKeyDialogOpen, setApiKeyDialogOpen] = useState(false)
   // 模型选择在设置对话框内分别配置（提取 / 解答 / 调试），这里不再持有单一模型
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
@@ -190,7 +189,8 @@ function App() {
         tRef.current("ui.app.toast.apiKeyInvalid.description"),
         "error"
       )
-      setApiKeyDialogOpen(true)
+      // 直接打开设置对话框，让用户补填/更换 API Key（配置 v3 统一在设置里维护）
+      setIsSettingsOpen(true)
     }
 
     // 订阅 API Key 失效事件
@@ -223,32 +223,6 @@ function App() {
     setIsSettingsOpen(open);
   }, []);
 
-  // 保存 API Key：成功提示并短暂延迟后重载，让主进程用新 Key 重新初始化
-  const handleApiKeySave = useCallback(
-    async (apiKey: string) => {
-      try {
-        await window.electronAPI.updateConfig({ apiKey })
-        setHasApiKey(true)
-        showToast(
-          t("ui.common.success"),
-          t("ui.app.toast.apiKeySaved"),
-          "success"
-        )
-
-        setTimeout(() => {
-          window.location.reload()
-        }, 1500)
-      } catch (error) {
-        console.error("保存 API Key 失败：", error)
-        showToast(
-          t("ui.common.error"),
-          t("ui.app.toast.apiKeySaveFailed"),
-          "error"
-        )
-      }
-    },
-    [showToast, t]
-  )
 
   return (
     <QueryClientProvider client={queryClient}>

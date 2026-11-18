@@ -115,7 +115,19 @@ export interface UpdateConfigOutcome {
 }
 
 export class ConfigHelper extends EventEmitter {
-  private configPath: string;
+  /** 配置文件绝对路径；首次 ensureBooted() 时才解析（见该方法的说明） */
+  private configPath = "";
+  /** 是否退回到 `process.cwd()`（ready 前 `app.getPath('userData')` 不可用时会发生） */
+  private usedFallbackConfigPath = false;
+  /** 首次读盘/迁移是否已完成 */
+  private booted = false;
+  /** 已完成 boot 的路径，路径变了（兜底 → userData）需要重新读一遍 */
+  private bootedPath = "";
+  /**
+   * 解析界面语言时的重入保护：`t()` 需要 locale，而读配置/读系统语言失败的日志又要用 `t()`，
+   * 两者会互相递归直到栈溢出（启动期 `app.getLocale()` 抛错就会触发，应用直接起不来）。
+   */
+  private resolvingLocale = false;
   private defaultConfig: Config = normalizeConfigData(DEFAULT_CONFIG_DATA);
   /** 写盘失败/读盘失败时的内存落地态：本次运行继续可用，下次启动重试（幂等） */
   private inMemoryConfig: Config | null = null;
@@ -126,17 +138,65 @@ export class ConfigHelper extends EventEmitter {
 
   constructor() {
     super();
-    // Use the app's user data directory to store the config
+    // 构造发生在主进程模块加载期（`app` ready 之前）。此时 `app.getPath('userData')`
+    // 与 `app.getLocale()` 都可能抛错，一旦在这里读盘，配置会被写到工作目录、
+    // 用户的旧配置则永远读不到。因此构造只登记一次"ready 后启动"，不碰 IO。
     try {
-      this.configPath = path.join(app.getPath('userData'), 'config.json');
-    } catch (err) {
-      console.warn('Could not access user data path, using fallback');
+      if (app.isReady()) {
+        this.ensureBooted();
+      } else {
+        void app.whenReady().then(() => this.ensureBooted());
+      }
+    } catch {
+      // 不在 Electron 主进程里（例如被普通 node 直接 require）时 `app` 不存在：
+      // 保持懒启动，等首次真正要读配置时再由 ensureBooted() 处理
+    }
+  }
+
+  /**
+   * 解析配置文件路径（优先 userData；ready 前拿不到时退回 cwd 并在此后重试）。
+   *
+   * 重试很重要：兜底一次之后只要 userData 变可用就切回去，否则整个进程生命周期
+   * 都会读写 `./config.json`，表现为"设置保存了但下次打开又没了"。
+   */
+  private resolveConfigPath(): string {
+    if (this.configPath && !this.usedFallbackConfigPath) {
+      return this.configPath;
+    }
+    try {
+      const userData = app.getPath('userData');
+      if (userData) {
+        this.configPath = path.join(userData, 'config.json');
+        this.usedFallbackConfigPath = false;
+        return this.configPath;
+      }
+    } catch {
+      // 交给下面的 cwd 兜底
+    }
+    if (!this.configPath) {
       this.configPath = path.join(process.cwd(), 'config.json');
     }
+    if (!this.usedFallbackConfigPath) {
+      this.usedFallbackConfigPath = true;
+      console.warn(
+        'Could not access user data path, using fallback:',
+        this.configPath
+      );
+    }
+    return this.configPath;
+  }
 
-    // 启动即完成：创建默认文件 / 备份损坏文件 / 一次性迁移（失败则回落内存态）
+  /**
+   * 首次读盘/迁移（幂等）。推迟到真正要用配置时执行，确保 `app` 已经 ready、
+   * userData 路径可用；路径从兜底切回 userData 时会重新读一次。
+   */
+  private ensureBooted(): void {
+    const resolved = this.resolveConfigPath();
+    if (this.booted && resolved === this.bootedPath) return;
+    this.booted = true;
+    this.bootedPath = resolved;
     this.boot();
-    console.log(this.t("main.config.path", { path: this.configPath }));
+    console.log(this.t("main.config.path", { path: resolved }));
   }
 
   /** 当前界面语言的翻译函数：与 mainT 同源（createTranslator + getUiLocale），但不引入循环依赖 */
@@ -213,6 +273,8 @@ export class ConfigHelper extends EventEmitter {
     try {
       return app.getLocale();
     } catch (err) {
+      // 走 t() 记录，但 getUiLocale() 有重入保护：此刻 locale 正在解析中，
+      // 翻译会退回英文而不是再次进入 loadConfig()（否则无限递归）
       console.warn(this.t("main.config.localeUnavailable"), err);
       return null;
     }
@@ -224,6 +286,8 @@ export class ConfigHelper extends EventEmitter {
    * `baseUrl` 空值等不变量在这里保证。
    */
   public loadConfig(): Config {
+    // 首次用到配置时才启动（此时 app 通常已 ready，userData 路径可用）
+    this.ensureBooted();
     // 写盘失败时的内存态优先：保证目录只读时界面与语言仍可用
     if (this.inMemoryConfig) {
       return normalizeConfigData(this.inMemoryConfig);
@@ -250,6 +314,7 @@ export class ConfigHelper extends EventEmitter {
    * @returns 是否成功落盘；失败时本次运行改用内存态，下次启动重试
    */
   public saveConfig(config: Config): boolean {
+    this.ensureBooted();
     const normalized = normalizeConfigData(config);
     const written = writeConfigFileAtomic(this.configPath, normalized);
     if (written) {
@@ -384,8 +449,18 @@ export class ConfigHelper extends EventEmitter {
    * 取当前生效的界面语言。每次调用都即时解析（不缓存），因此改设置后主进程日志立即跟随。
    */
   public getUiLocale(): { setting: UiLanguageSetting; locale: Locale } {
-    const setting = this.loadConfig().uiLanguage;
-    return { setting, locale: resolveLocale(setting, this.readAppLocale()) };
+    // 重入：说明当前是在"解析语言"的过程中又要翻译一条日志（例如系统语言读取失败），
+    // 直接给默认值，绝不能再去 loadConfig()，否则无限递归
+    if (this.resolvingLocale) {
+      return { setting: "system", locale: "en" };
+    }
+    this.resolvingLocale = true;
+    try {
+      const setting = this.loadConfig().uiLanguage;
+      return { setting, locale: resolveLocale(setting, this.readAppLocale()) };
+    } finally {
+      this.resolvingLocale = false;
+    }
   }
 
   /**

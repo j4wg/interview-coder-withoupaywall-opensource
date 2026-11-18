@@ -21,44 +21,61 @@ export type ApiFormat =
   | "chat-completions"
   | "responses"
 
-/** 供应商配置（配置层 v3 契约）；`models` 里只存模型 ID 字符串 */
+/** 三个用途 → `bindings` 的键名（与主进程契约逐字一致） */
+export type BindingKey =
+  | "extractionModel"
+  | "solutionModel"
+  | "debuggingModel"
+
+/** 一套供应商配置（配置层 v3 契约）；`models` 里只存模型 ID 字符串 */
 export interface ProviderConfig {
+  /** 稳定标识（`p_` + 6 位十六进制）；创建后不可变，重命名只改 `name` */
+  id: string
+  /** 界面显示名；空串表示未命名，由界面给占位文案 */
+  name: string
+  /** 服务地址（含版本路径）；空串 = 尚未配置 */
   baseUrl: string
   apiFormat: ApiFormat
   apiKey: string
   models: string[]
 }
 
-/** 三个用途各绑定的模型 ID，必须 ∈ `provider.models` */
-export interface ModelBindings {
-  extractionModel: string
-  solutionModel: string
-  debuggingModel: string
+/** 某个用途的绑定：provider 与 model 必须同时存在且相互匹配 */
+export interface ModelBinding {
+  providerId: string
+  modelId: string
 }
 
-/** 与 `electron/ConfigHelper.ts` 中 Config 逐字段一致 */
+/** 三个用途各自指向"某套 provider 里的某个模型"，允许跨 provider */
+export type ModelBindings = Record<BindingKey, ModelBinding>
+
+/** 与 `electron/ConfigHelper.ts` 中 Config 逐字段一致（v3：多套 provider 并存） */
 export interface Config {
-  /** @deprecated v3 起由 `provider.apiKey` 取代；JUN-47 落地前仍需兜底读取 */
-  apiKey: string
-  /** @deprecated v3 起由 `provider.apiFormat` 取代（不再区分供应商预设） */
-  apiProvider: "openai" | "gemini" | "anthropic"
-  /** @deprecated v3 起由 `bindings.extractionModel` 取代 */
-  extractionModel: string
-  /** @deprecated v3 起由 `bindings.solutionModel` 取代 */
-  solutionModel: string
-  /** @deprecated v3 起由 `bindings.debuggingModel` 取代 */
-  debuggingModel: string
+  providers: ProviderConfig[]
+  bindings: ModelBindings
   /** 编程语言，默认 "java"；不是界面语言 */
   language: string
   opacity: number
   /** 界面语言设置，默认 "system"（跟随系统） */
   uiLanguage: UiLanguageSetting
-  /** 迁移标记，当前 2；渲染层写入会被忽略 */
+  /** 迁移标记，当前 3；渲染层写入会被忽略 */
   configVersion: number
-  /** 供应商配置；配置层 v3 之前的旧配置没有该字段，读取方需归一 */
-  provider?: ProviderConfig
-  /** 三用途绑定；配置层 v3 之前的旧配置没有该字段，读取方需归一 */
-  bindings?: ModelBindings
+  /** @deprecated 已迁入 `providers[].apiKey`，v3 运行期恒为 undefined */
+  apiKey?: string
+  /** @deprecated 已由 `providers[].apiFormat` 取代，v3 运行期恒为 undefined */
+  apiProvider?: string
+  /** @deprecated 已迁入 `bindings.extractionModel`，v3 运行期恒为 undefined */
+  extractionModel?: string
+  /** @deprecated 已迁入 `bindings.solutionModel`，v3 运行期恒为 undefined */
+  solutionModel?: string
+  /** @deprecated 已迁入 `bindings.debuggingModel`，v3 运行期恒为 undefined */
+  debuggingModel?: string
+}
+
+/** `update-config` 的返回：保存后的完整配置 + 因引用失效被置空的用途 */
+export interface UpdateConfigOutcome {
+  config: Config
+  clearedBindings: BindingKey[]
 }
 
 /**
@@ -72,6 +89,8 @@ export type ListModelsResponse =
       ok?: boolean
       success?: boolean
       models?: string[]
+      /** 实际参与拉取的 provider（未保存的新卡片会回传它的临时 id） */
+      providerId?: string
       error?: string
       code?: string
     }
@@ -150,12 +169,15 @@ export interface ElectronAPI {
 
   // 配置与界面语言
   getConfig: () => Promise<Config>
-  updateConfig: (config: Partial<Config>) => Promise<Config>
+  updateConfig: (config: Partial<Config>) => Promise<UpdateConfigOutcome>
   /**
    * 拉取模型列表。通道由调用层（JUN-48）提供，在其合并前可能不存在，
    * 调用方必须按可选处理：缺失或失败时仍允许手工填写模型 ID。
    */
-  listModels?: (provider?: {
+  listModels?: (options?: {
+    /** 已保存 provider 的 id；新卡片可带尚未落盘的临时 id */
+    providerId?: string
+    name?: string
     baseUrl: string
     apiFormat: ApiFormat
     apiKey: string

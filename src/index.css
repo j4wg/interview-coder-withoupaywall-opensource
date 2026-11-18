@@ -9,10 +9,11 @@
 }
 
 /* Dialog transition improvements */
+/* 注意：不要在这里加 will-change / backface-visibility，也不要给弹窗挂带动画的
+   opacity/transform —— 它们会让弹窗变成独立合成层，在透明窗口里滚动时内容不重绘
+   （表现为表头下方残留上一屏的残影）。 */
 .settings-dialog {
   transform-origin: center;
-  backface-visibility: hidden;
-  will-change: opacity, transform;
 }
 
 /* Custom styling for dropdowns */
