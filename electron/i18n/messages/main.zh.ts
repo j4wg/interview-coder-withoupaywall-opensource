@@ -66,6 +66,9 @@ export const mainZh = {
   // ── IPC 处理器（ipcHandlers.ts） ─────────────────────────────────────
   "main.ipc.initializing": "正在初始化 IPC 处理器",
   "main.ipc.openingExternalUrl": "正在打开外部链接：{{url}}",
+  "main.ipc.listModelsRequest": "收到拉取模型列表请求",
+  "main.ipc.listModelsResult": "拉取模型列表完成，共 {{count}} 个模型",
+  "main.ipc.listModelsFailed": "拉取模型列表失败：错误码 {{code}}",
 
   // ── 截图（ScreenshotHelper.ts） ──────────────────────────────────────
   "main.shot.dirCreated": "已创建目录：{{path}}",

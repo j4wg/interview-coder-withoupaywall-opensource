@@ -3,14 +3,17 @@ import fs from "node:fs"
 import path from "node:path"
 import { ScreenshotHelper } from "./ScreenshotHelper"
 import { IProcessingHelperDeps } from "./main"
-import * as axios from "axios"
 import { app, BrowserWindow, dialog } from "electron"
-import { OpenAI } from "openai"
 import { configHelper } from "./ConfigHelper"
-import Anthropic from '@anthropic-ai/sdk';
 import { mainT } from "./i18n/mainT"
-import { t } from "./i18n"
 import type { Locale } from "./i18n/types"
+import { completeForPurpose, providerSetupError } from "./llm/client"
+import { resolveProviderConfig } from "./llm/providerConfig"
+import {
+  isApiKeyErrorCode,
+  type ModelBindings,
+  type ProviderConfig,
+} from "./llm/types"
 import {
   buildExtractionPrompt,
   buildSolutionSystemPrompt,
@@ -71,72 +74,16 @@ function problemParseErrorMessage(result: ProblemParseResult): string {
   return pt("processing.error.extract.parseFailed")
 }
 
-/**
- * 判断错误文案是否属于"API Key 未配置/无效"，用于决定界面上弹哪个提示。
- * 文案是双语的，所以中英两版都参与比对，不能只按英文子串匹配。
- */
-const API_KEY_ERROR_KEYS = [
-  "processing.error.openai.notConfigured",
-  "processing.error.openai.invalidKey",
-  "processing.error.gemini.notConfigured",
-  "processing.error.anthropic.notConfigured",
-] as const
-
-const API_KEY_PROVIDER_NAMES = ["OpenAI", "Gemini", "Anthropic", "Claude"]
-
-function isApiKeyError(message?: string): boolean {
-  if (!message) return false
-  const matchesLocalized = (["zh", "en"] as Locale[]).some((locale) =>
-    API_KEY_ERROR_KEYS.some((key) => t("processing", locale, key) === message)
-  )
-  if (matchesLocalized) return true
-  // 兜底：供应商 SDK 透传的错误里仍有英文名，保持与改动前一致的宽松匹配
-  return (
-    /api\s*key/i.test(message) ||
-    API_KEY_PROVIDER_NAMES.some((name) => message.includes(name))
-  )
+/** 用户取消/超时的判定：调用层统一用 AbortController，fetch 会抛 AbortError */
+function isAbortError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false
+  const candidate = error as Record<string, unknown>
+  return candidate.name === "AbortError" || candidate.code === "ABORT_ERR"
 }
 
-// Gemini API 请求体结构
-interface GeminiMessage {
-  role: string;
-  parts: Array<{
-    text?: string;
-    inlineData?: {
-      mimeType: string;
-      data: string;
-    }
-  }>;
-}
-
-interface GeminiResponse {
-  candidates: Array<{
-    content: {
-      parts: Array<{
-        text: string;
-      }>;
-    };
-    finishReason: string;
-  }>;
-}
-interface AnthropicMessage {
-  role: 'user' | 'assistant';
-  content: Array<{
-    type: 'text' | 'image';
-    text?: string;
-    source?: {
-      type: 'base64';
-      media_type: string;
-      data: string;
-    };
-  }>;
-}
 export class ProcessingHelper {
   private deps: IProcessingHelperDeps
   private screenshotHelper: ScreenshotHelper
-  private openaiClient: OpenAI | null = null
-  private geminiApiKey: string | null = null
-  private anthropicClient: Anthropic | null = null
 
   // 三类请求的 AbortController，用于用户取消当前请求
   private currentProcessingAbortController: AbortController | null = null
@@ -145,86 +92,36 @@ export class ProcessingHelper {
   constructor(deps: IProcessingHelperDeps) {
     this.deps = deps
     this.screenshotHelper = deps.getScreenshotHelper()
-    
-    // 按当前配置初始化 AI 客户端
-    this.initializeAIClient();
-    
-    // 配置变更后重新初始化 AI 客户端（例如换供应商、换 Key、换模型）
-    configHelper.on('config-updated', () => {
-      this.initializeAIClient();
-    });
   }
 
   /**
    * 取当前生效的界面语言。与 mainT 同源（configHelper.getUiLocale()），不缓存，
-   * 因此用户切换界面语言后，下一次请求的 prompt 立刻跟随。
+   * 因此用户切换界面语言后，下一次请求的 prompt 与报错文案立刻跟随。
    */
   private getLocale(): Locale {
     return configHelper.getUiLocale().locale;
   }
-  
+
   /**
-   * 按当前配置初始化（或重建）AI 客户端
+   * 读一次当前配置并归一成调用层需要的结构（多套 provider 并存）。
+   * 配置脏/缺字段不会抛错：归一过程中发现的问题只记日志，真正的阻塞由调用层的
+   * `providerSetupError` 给出当前语言的可见提示。
    */
-  private initializeAIClient(): void {
-    try {
-      const config = configHelper.loadConfig();
-      
-      if (config.apiProvider === "openai") {
-        if (config.apiKey) {
-          this.openaiClient = new OpenAI({ 
-            apiKey: config.apiKey,
-            timeout: 60000, // 60 秒超时
-            maxRetries: 2   // 最多重试 2 次
-          });
-          this.geminiApiKey = null;
-          this.anthropicClient = null;
-          console.log(pt("processing.log.client.openai.ready"));
-        } else {
-          this.openaiClient = null;
-          this.geminiApiKey = null;
-          this.anthropicClient = null;
-          console.warn(pt("processing.log.client.openai.noKey"));
-        }
-      } else if (config.apiProvider === "gemini"){
-        // Gemini 客户端初始化
-        this.openaiClient = null;
-        this.anthropicClient = null;
-        if (config.apiKey) {
-          this.geminiApiKey = config.apiKey;
-          console.log(pt("processing.log.client.gemini.ready"));
-        } else {
-          this.openaiClient = null;
-          this.geminiApiKey = null;
-          this.anthropicClient = null;
-          console.warn(pt("processing.log.client.gemini.noKey"));
-        }
-      } else if (config.apiProvider === "anthropic") {
-        // 重置其它供应商的客户端
-        this.openaiClient = null;
-        this.geminiApiKey = null;
-        if (config.apiKey) {
-          this.anthropicClient = new Anthropic({
-            apiKey: config.apiKey,
-            timeout: 60000,
-            maxRetries: 2
-          });
-          console.log(pt("processing.log.client.anthropic.ready"));
-        } else {
-          this.openaiClient = null;
-          this.geminiApiKey = null;
-          this.anthropicClient = null;
-          console.warn(pt("processing.log.client.anthropic.noKey"));
-        }
-      }
-    } catch (error) {
-      console.error(
-        pt("processing.log.client.initFailed", { error: String(error) })
-      );
-      this.openaiClient = null;
-      this.geminiApiKey = null;
-      this.anthropicClient = null;
+  private getProviderContext(): {
+    locale: Locale
+    providers: ProviderConfig[]
+    bindings: ModelBindings
+  } {
+    const locale = this.getLocale()
+    const { providers, bindings, issues } = resolveProviderConfig(
+      configHelper.loadConfig()
+    )
+    if (issues.length > 0) {
+      console.warn(
+        pt("processing.log.llm.configIssues", { issues: issues.join(", ") })
+      )
     }
+    return { locale, providers, bindings }
   }
 
   private async waitForInitialization(
@@ -302,40 +199,25 @@ export class ProcessingHelper {
     const mainWindow = this.deps.getMainWindow()
     if (!mainWindow) return
 
-    const config = configHelper.loadConfig();
-    
-    // 先确认当前供应商的客户端可用
-    if (config.apiProvider === "openai" && !this.openaiClient) {
-      this.initializeAIClient();
-      
-      if (!this.openaiClient) {
-        console.error(pt("processing.log.client.openai.missing"));
+    // 先确认该用途绑定的 Base URL / API Key / 模型已就绪，避免白跑一趟截图队列
+    const { locale, providers, bindings } = this.getProviderContext()
+    const setupError = providerSetupError(
+      providers,
+      bindings,
+      "extraction",
+      locale
+    )
+    if (setupError) {
+      console.error(setupError.message)
+      if (isApiKeyErrorCode(setupError.code)) {
+        mainWindow.webContents.send(this.deps.PROCESSING_EVENTS.API_KEY_INVALID)
+      } else {
         mainWindow.webContents.send(
-          this.deps.PROCESSING_EVENTS.API_KEY_INVALID
-        );
-        return;
+          this.deps.PROCESSING_EVENTS.INITIAL_SOLUTION_ERROR,
+          setupError.message
+        )
       }
-    } else if (config.apiProvider === "gemini" && !this.geminiApiKey) {
-      this.initializeAIClient();
-      
-      if (!this.geminiApiKey) {
-        console.error(pt("processing.log.client.gemini.missing"));
-        mainWindow.webContents.send(
-          this.deps.PROCESSING_EVENTS.API_KEY_INVALID
-        );
-        return;
-      }
-    } else if (config.apiProvider === "anthropic" && !this.anthropicClient) {
-      // Anthropic 也要单独检查
-      this.initializeAIClient();
-      
-      if (!this.anthropicClient) {
-        console.error(pt("processing.log.client.anthropic.missing"));
-        mainWindow.webContents.send(
-          this.deps.PROCESSING_EVENTS.API_KEY_INVALID
-        );
-        return;
-      }
+      return
     }
 
     const view = this.deps.getView()
@@ -396,14 +278,13 @@ export class ProcessingHelper {
         }
 
         const result = await this.processScreenshotsHelper(validScreenshots, signal)
-
         if (!result.success) {
           console.log(
             pt("processing.log.processing.failed", {
               error: result.error ?? "",
             })
           )
-          if (isApiKeyError(result.error)) {
+          if (result.code && isApiKeyErrorCode(result.code)) {
             mainWindow.webContents.send(
               this.deps.PROCESSING_EVENTS.API_KEY_INVALID
             )
@@ -434,7 +315,7 @@ export class ProcessingHelper {
         console.error(
           pt("processing.log.processing.error", { error: String(error) })
         )
-        if (axios.isCancel(error)) {
+        if (isAbortError(error)) {
           mainWindow.webContents.send(
             this.deps.PROCESSING_EVENTS.INITIAL_SOLUTION_ERROR,
             pt("processing.error.cancelled")
@@ -548,7 +429,7 @@ export class ProcessingHelper {
           )
         }
       } catch (error: any) {
-        if (axios.isCancel(error)) {
+        if (isAbortError(error)) {
           mainWindow.webContents.send(
             this.deps.PROCESSING_EVENTS.DEBUG_ERROR,
             pt("processing.error.extraCancelled")
@@ -570,11 +451,10 @@ export class ProcessingHelper {
     signal: AbortSignal
   ) {
     try {
-      const config = configHelper.loadConfig();
       const language = await this.getLanguage();
       const mainWindow = this.deps.getMainWindow();
-      
-      // 第一步：用视觉模型解析题面（OpenAI / Gemini / Anthropic 三选一）
+
+      // 第一步：用该用途绑定的模型解析题面（provider 与 API 格式由 bindings 决定）
       const imageDataList = screenshots.map(screenshot => screenshot.data);
       
       // 告知用户当前进度
@@ -586,197 +466,35 @@ export class ProcessingHelper {
       }
 
       // prompt 与日志语言都取当前界面语言，与编程语言正交
-      const locale = this.getLocale();
+      const { locale, providers, bindings } = this.getProviderContext();
       const extractionPrompt = buildExtractionPrompt(locale, { language });
 
-      let problemInfo: ExtractedProblemInfo;
-      
-      if (config.apiProvider === "openai") {
-        // 确认 OpenAI 客户端可用
-        if (!this.openaiClient) {
-          this.initializeAIClient(); // 尝试重新初始化
-          
-          if (!this.openaiClient) {
-            return {
-              success: false,
-              error: pt("processing.error.openai.notConfigured")
-            };
-          }
-        }
-
-        // 走 OpenAI Vision
-        const messages = [
-          {
-            role: "system" as const, 
-            content: extractionPrompt.system
-          },
-          {
-            role: "user" as const,
-            content: [
-              {
-                type: "text" as const, 
-                text: extractionPrompt.user
-              },
-              ...imageDataList.map(data => ({
-                type: "image_url" as const,
-                image_url: { url: `data:image/png;base64,${data}` }
-              }))
-            ]
-          }
-        ];
-
-        // 发请求给 OpenAI Vision
-        const extractionResponse = await this.openaiClient.chat.completions.create({
-          model: config.extractionModel || "gpt-4o",
-          messages: messages,
-          max_tokens: 4000,
-          temperature: 0.2
-        });
-
-        // 解析并校验四个英文字段
-        const parsed = parseProblemInfo(
-          extractionResponse.choices[0].message.content ?? ""
-        );
-        if (parsed.status !== "ok") {
-          logProblemParseFailure(parsed);
-          return { success: false, error: problemParseErrorMessage(parsed) };
-        }
-        problemInfo = parsed.value;
-      } else if (config.apiProvider === "gemini")  {
-        // 走 Gemini API
-        if (!this.geminiApiKey) {
-          return {
-            success: false,
-            error: pt("processing.error.gemini.notConfigured")
-          };
-        }
-
-        try {
-          // Gemini 没有独立 system 位，把 system 与 user 拼成一条消息
-          const geminiMessages: GeminiMessage[] = [
-            {
-              role: "user",
-              parts: [
-                {
-                  text: `${extractionPrompt.system}\n\n${extractionPrompt.user}`
-                },
-                ...imageDataList.map(data => ({
-                  inlineData: {
-                    mimeType: "image/png",
-                    data: data
-                  }
-                }))
-              ]
-            }
-          ];
-
-          // 发请求给 Gemini
-          const response = await axios.default.post(
-            `https://generativelanguage.googleapis.com/v1beta/models/${config.extractionModel || "gemini-2.0-flash"}:generateContent?key=${this.geminiApiKey}`,
-            {
-              contents: geminiMessages,
-              generationConfig: {
-                temperature: 0.2,
-                maxOutputTokens: 4000
-              }
-            },
-            { signal }
-          );
-
-          const responseData = response.data as GeminiResponse;
-          
-          if (!responseData.candidates || responseData.candidates.length === 0) {
-            throw new Error(pt("processing.log.api.gemini.empty"));
-          }
-          
-          // 解析并校验四个英文字段
-          const parsed = parseProblemInfo(
-            responseData.candidates[0].content.parts[0].text ?? ""
-          );
-          if (parsed.status !== "ok") {
-            logProblemParseFailure(parsed);
-            return { success: false, error: problemParseErrorMessage(parsed) };
-          }
-          problemInfo = parsed.value;
-        } catch (error) {
-          console.error(
-            pt("processing.log.api.gemini.provider", { error: String(error) })
-          );
-          return {
-            success: false,
-            error: pt("processing.error.gemini.failed")
-          };
-        }
-      } else if (config.apiProvider === "anthropic") {
-        if (!this.anthropicClient) {
-          return {
-            success: false,
-            error: pt("processing.error.anthropic.notConfigured")
-          };
-        }
-
-        try {
-          const messages = [
-            {
-              role: "user" as const,
-              content: [
-                {
-                  type: "text" as const,
-                  text: `${extractionPrompt.system}\n\n${extractionPrompt.user}`
-                },
-                ...imageDataList.map(data => ({
-                  type: "image" as const,
-                  source: {
-                    type: "base64" as const,
-                    media_type: "image/png" as const,
-                    data: data
-                  }
-                }))
-              ]
-            }
-          ];
-
-          const response = await this.anthropicClient.messages.create({
-            model: config.extractionModel || "claude-3-7-sonnet-20250219",
-            max_tokens: 4000,
-            messages: messages,
-            temperature: 0.2
-          });
-
-          const responseText = (response.content[0] as { type: 'text', text: string }).text;
-          // 解析并校验四个英文字段
-          const parsed = parseProblemInfo(responseText ?? "");
-          if (parsed.status !== "ok") {
-            logProblemParseFailure(parsed);
-            return { success: false, error: problemParseErrorMessage(parsed) };
-          }
-          problemInfo = parsed.value;
-        } catch (error: any) {
-          console.error(
-            pt("processing.log.api.anthropic.provider", {
-              error: String(error),
-            })
-          );
-
-          // Claude 的输入上限/限流例外单独提示
-          if (error.status === 429) {
-            return {
-              success: false,
-              error: pt("processing.error.anthropic.rateLimit")
-            };
-          } else if (error.status === 413 || (error.message && error.message.includes("token"))) {
-            return {
-              success: false,
-              error: pt("processing.error.anthropic.tooLarge")
-            };
-          }
-
-          return {
-            success: false,
-            error: pt("processing.error.anthropic.failed")
-          };
-        }
+      // provider 与模型 ID 由 bindings.extractionModel 决定；请求构造/响应解析由调用层按 apiFormat 分发
+      const extraction = await completeForPurpose({
+        purpose: "extraction",
+        providers,
+        bindings,
+        system: extractionPrompt.system,
+        user: extractionPrompt.user,
+        images: imageDataList.map((data) => ({ mimeType: "image/png", data })),
+        locale,
+        signal,
+      });
+      if (extraction.kind === "failure") {
+        return {
+          success: false,
+          error: extraction.message,
+          code: extraction.code,
+        };
       }
+
+      // 解析并校验四个英文字段
+      const parsed = parseProblemInfo(extraction.text);
+      if (parsed.status !== "ok") {
+        logProblemParseFailure(parsed);
+        return { success: false, error: problemParseErrorMessage(parsed) };
+      }
+      const problemInfo: ExtractedProblemInfo = parsed.value;
       
       // 告知用户当前进度
       if (mainWindow) {
@@ -814,37 +532,22 @@ export class ProcessingHelper {
           );
           return { success: true, data: solutionsResult.data };
         } else {
-          throw new Error(
-            solutionsResult.error || pt("processing.error.solution.failed")
-          );
+          return {
+            success: false,
+            error: solutionsResult.error || pt("processing.error.solution.failed"),
+            code: solutionsResult.code,
+          };
         }
       }
 
       return { success: false, error: pt("processing.error.process.failed") };
     } catch (error: any) {
       // 用户主动取消的请求不重试
-      if (axios.isCancel(error)) {
+      if (isAbortError(error)) {
         return {
           success: false,
-          error: pt("processing.error.cancelled")
-        };
-      }
-      
-      // OpenAI 的 HTTP 错误单独提示
-      if (error?.response?.status === 401) {
-        return {
-          success: false,
-          error: pt("processing.error.openai.invalidKey")
-        };
-      } else if (error?.response?.status === 429) {
-        return {
-          success: false,
-          error: pt("processing.error.openai.rateLimit")
-        };
-      } else if (error?.response?.status === 500) {
-        return {
-          success: false,
-          error: pt("processing.error.openai.server")
+          error: pt("processing.error.cancelled"),
+          code: "aborted" as const,
         };
       }
 
@@ -862,7 +565,6 @@ export class ProcessingHelper {
     try {
       const problemInfo = this.deps.getProblemInfo();
       const language = await this.getLanguage();
-      const config = configHelper.loadConfig();
       const mainWindow = this.deps.getMainWindow();
 
       if (!problemInfo) {
@@ -878,142 +580,31 @@ export class ProcessingHelper {
       }
 
       // prompt 统一由 electron/i18n/prompts.ts 组装（中英两版，唯一出口）
-      const locale = this.getLocale();
+      const { locale, providers, bindings } = this.getProviderContext();
       const promptText = buildSolutionPrompt(locale, {
         language,
         problem: problemInfo,
       });
       const systemText = buildSolutionSystemPrompt(locale);
 
-      let responseContent;
-      
-      if (config.apiProvider === "openai") {
-        // OpenAI 分支
-        if (!this.openaiClient) {
-          return {
-            success: false,
-            error: pt("processing.error.openai.notConfigured")
-          };
-        }
-        
-        // 发请求给 OpenAI
-        const solutionResponse = await this.openaiClient.chat.completions.create({
-          model: config.solutionModel || "gpt-4o",
-          messages: [
-            { role: "system", content: systemText },
-            { role: "user", content: promptText }
-          ],
-          max_tokens: 4000,
-          temperature: 0.2
-        });
-
-        responseContent = solutionResponse.choices[0].message.content;
-      } else if (config.apiProvider === "gemini")  {
-        // Gemini 分支
-        if (!this.geminiApiKey) {
-          return {
-            success: false,
-            error: pt("processing.error.gemini.notConfigured")
-          };
-        }
-        
-        try {
-          // Gemini 没有独立 system 位，拼成一条消息
-          const geminiMessages = [
-            {
-              role: "user",
-              parts: [
-                {
-                  text: `${systemText}\n\n${promptText}`
-                }
-              ]
-            }
-          ];
-
-          // 发请求给 Gemini
-          const response = await axios.default.post(
-            `https://generativelanguage.googleapis.com/v1beta/models/${config.solutionModel || "gemini-2.0-flash"}:generateContent?key=${this.geminiApiKey}`,
-            {
-              contents: geminiMessages,
-              generationConfig: {
-                temperature: 0.2,
-                maxOutputTokens: 4000
-              }
-            },
-            { signal }
-          );
-
-          const responseData = response.data as GeminiResponse;
-          
-          if (!responseData.candidates || responseData.candidates.length === 0) {
-            throw new Error(pt("processing.log.api.gemini.empty"));
-          }
-          
-          responseContent = responseData.candidates[0].content.parts[0].text;
-        } catch (error) {
-          console.error(
-            pt("processing.log.api.gemini.solution", { error: String(error) })
-          );
-          return {
-            success: false,
-            error: pt("processing.error.gemini.solutionFailed")
-          };
-        }
-      } else if (config.apiProvider === "anthropic") {
-        // Anthropic 分支
-        if (!this.anthropicClient) {
-          return {
-            success: false,
-            error: pt("processing.error.anthropic.notConfigured")
-          };
-        }
-        
-        try {
-          const messages = [
-            {
-              role: "user" as const,
-              content: [
-                {
-                  type: "text" as const,
-                  text: `${systemText}\n\n${promptText}`
-                }
-              ]
-            }
-          ];
-
-          // 发请求给 Anthropic
-          const response = await this.anthropicClient.messages.create({
-            model: config.solutionModel || "claude-3-7-sonnet-20250219",
-            max_tokens: 4000,
-            messages: messages,
-            temperature: 0.2
-          });
-
-          responseContent = (response.content[0] as { type: 'text', text: string }).text;
-        } catch (error: any) {
-          console.error(
-            pt("processing.log.api.anthropic.solution", { error: String(error) })
-          );
-
-          // Claude 的输入上限/限流例外单独提示
-          if (error.status === 429) {
-            return {
-              success: false,
-              error: pt("processing.error.anthropic.rateLimit")
-            };
-          } else if (error.status === 413 || (error.message && error.message.includes("token"))) {
-            return {
-              success: false,
-              error: pt("processing.error.anthropic.tooLarge")
-            };
-          }
-
-          return {
-            success: false,
-            error: pt("processing.error.anthropic.solutionFailed")
-          };
-        }
+      // provider 与模型 ID 由 bindings.solutionModel 决定（允许与解析题面不同的 provider）
+      const solution = await completeForPurpose({
+        purpose: "solution",
+        providers,
+        bindings,
+        system: systemText,
+        user: promptText,
+        locale,
+        signal,
+      });
+      if (solution.kind === "failure") {
+        return {
+          success: false,
+          error: solution.message,
+          code: solution.code,
+        };
       }
+      const responseContent = solution.text;
       
       // 解析方案返回：中英两套分节标题（含全角括号）都认，抽不到的项用当前语言的兜底文案
       const formattedResponse = parseSolutionResponse(
@@ -1028,25 +619,14 @@ export class ProcessingHelper {
 
       return { success: true, data: formattedResponse };
     } catch (error: any) {
-      if (axios.isCancel(error)) {
+      if (isAbortError(error)) {
         return {
           success: false,
-          error: pt("processing.error.cancelled")
+          error: pt("processing.error.cancelled"),
+          code: "aborted" as const,
         };
       }
-      
-      if (error?.response?.status === 401) {
-        return {
-          success: false,
-          error: pt("processing.error.openai.invalidKey")
-        };
-      } else if (error?.response?.status === 429) {
-        return {
-          success: false,
-          error: pt("processing.error.openai.rateLimit")
-        };
-      }
-      
+
       console.error(
         pt("processing.log.solution.error", { error: String(error) })
       );
@@ -1064,7 +644,6 @@ export class ProcessingHelper {
     try {
       const problemInfo = this.deps.getProblemInfo();
       const language = await this.getLanguage();
-      const config = configHelper.loadConfig();
       const mainWindow = this.deps.getMainWindow();
 
       if (!problemInfo) {
@@ -1083,194 +662,30 @@ export class ProcessingHelper {
       const imageDataList = screenshots.map(screenshot => screenshot.data);
       
       // prompt 同样走唯一出口，与界面语言一致
-      const locale = this.getLocale();
+      const { locale, providers, bindings } = this.getProviderContext();
       const debugSystem = buildDebugSystemPrompt(locale);
       const debugUser = buildDebugPrompt(locale, { language, problem: problemInfo });
-      
-      let debugContent;
-      
-      if (config.apiProvider === "openai") {
-        if (!this.openaiClient) {
-          return {
-            success: false,
-            error: pt("processing.error.openai.notConfigured")
-          };
-        }
-        
-        const messages = [
-          {
-            role: "system" as const, 
-            content: debugSystem
-          },
-          {
-            role: "user" as const,
-            content: [
-              {
-                type: "text" as const, 
-                text: debugUser
-              },
-              ...imageDataList.map(data => ({
-                type: "image_url" as const,
-                image_url: { url: `data:image/png;base64,${data}` }
-              }))
-            ]
-          }
-        ];
 
-        if (mainWindow) {
-          mainWindow.webContents.send("processing-status", {
-            message: pt("processing.status.debug.analyzing"),
-            progress: 60
-          });
-        }
-
-        const debugResponse = await this.openaiClient.chat.completions.create({
-          model: config.debuggingModel || "gpt-4o",
-          messages: messages,
-          max_tokens: 4000,
-          temperature: 0.2
-        });
-        
-        debugContent = debugResponse.choices[0].message.content;
-      } else if (config.apiProvider === "gemini")  {
-        if (!this.geminiApiKey) {
-          return {
-            success: false,
-            error: pt("processing.error.gemini.notConfigured")
-          };
-        }
-        
-        try {
-          // Gemini 没有独立 system 位，拼成一条消息
-          const debugPrompt = `${debugSystem}\n\n${debugUser}`;
-
-          const geminiMessages = [
-            {
-              role: "user",
-              parts: [
-                { text: debugPrompt },
-                ...imageDataList.map(data => ({
-                  inlineData: {
-                    mimeType: "image/png",
-                    data: data
-                  }
-                }))
-              ]
-            }
-          ];
-
-          if (mainWindow) {
-            mainWindow.webContents.send("processing-status", {
-              message: pt("processing.status.debug.analyzing.provider", {
-                provider: "Gemini"
-              }),
-              progress: 60
-            });
-          }
-
-          const response = await axios.default.post(
-            `https://generativelanguage.googleapis.com/v1beta/models/${config.debuggingModel || "gemini-2.0-flash"}:generateContent?key=${this.geminiApiKey}`,
-            {
-              contents: geminiMessages,
-              generationConfig: {
-                temperature: 0.2,
-                maxOutputTokens: 4000
-              }
-            },
-            { signal }
-          );
-
-          const responseData = response.data as GeminiResponse;
-          
-          if (!responseData.candidates || responseData.candidates.length === 0) {
-            throw new Error(pt("processing.log.api.gemini.empty"));
-          }
-          
-          debugContent = responseData.candidates[0].content.parts[0].text;
-        } catch (error) {
-          console.error(
-            pt("processing.log.api.gemini.debug", { error: String(error) })
-          );
-          return {
-            success: false,
-            error: pt("processing.error.gemini.debugFailed")
-          };
-        }
-      } else if (config.apiProvider === "anthropic") {
-        if (!this.anthropicClient) {
-          return {
-            success: false,
-            error: pt("processing.error.anthropic.notConfigured")
-          };
-        }
-        
-        try {
-          // Anthropic 同样没有独立 system 位
-          const debugPrompt = `${debugSystem}\n\n${debugUser}`;
-
-          const messages = [
-            {
-              role: "user" as const,
-              content: [
-                {
-                  type: "text" as const,
-                  text: debugPrompt
-                },
-                ...imageDataList.map(data => ({
-                  type: "image" as const,
-                  source: {
-                    type: "base64" as const,
-                    media_type: "image/png" as const, 
-                    data: data
-                  }
-                }))
-              ]
-            }
-          ];
-
-          if (mainWindow) {
-            mainWindow.webContents.send("processing-status", {
-              message: pt("processing.status.debug.analyzing.provider", {
-                provider: "Claude"
-              }),
-              progress: 60
-            });
-          }
-
-          const response = await this.anthropicClient.messages.create({
-            model: config.debuggingModel || "claude-3-7-sonnet-20250219",
-            max_tokens: 4000,
-            messages: messages,
-            temperature: 0.2
-          });
-          
-          debugContent = (response.content[0] as { type: 'text', text: string }).text;
-        } catch (error: any) {
-          console.error(
-            pt("processing.log.api.anthropic.debug", { error: String(error) })
-          );
-          
-          // Claude 的输入上限/限流例外单独提示
-          if (error.status === 429) {
-            return {
-              success: false,
-              error: pt("processing.error.anthropic.rateLimit")
-            };
-          } else if (error.status === 413 || (error.message && error.message.includes("token"))) {
-            return {
-              success: false,
-              error: pt("processing.error.anthropic.tooLarge")
-            };
-          }
-          
-          return {
-            success: false,
-            error: pt("processing.error.anthropic.debugFailed")
-          };
-        }
+      // provider 与模型 ID 由 bindings.debuggingModel 决定（允许与前面两步不同）
+      const debug = await completeForPurpose({
+        purpose: "debugging",
+        providers,
+        bindings,
+        system: debugSystem,
+        user: debugUser,
+        images: imageDataList.map((data) => ({ mimeType: "image/png", data })),
+        locale,
+        signal,
+      });
+      if (debug.kind === "failure") {
+        return {
+          success: false,
+          error: debug.message,
+          code: debug.code,
+        };
       }
-      
-      
+      const debugContent = debug.text;
+
       if (mainWindow) {
         mainWindow.webContents.send("processing-status", {
           message: pt("processing.status.debug.done"),

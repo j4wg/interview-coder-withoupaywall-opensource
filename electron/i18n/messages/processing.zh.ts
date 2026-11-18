@@ -100,20 +100,9 @@ export const processingZh = {
   "processing.status.solution.generating": "正在生成带详细讲解的最优解…",
   "processing.status.solution.done": "方案生成完成",
   "processing.status.debug.analyzing": "正在分析截图，生成调试建议…",
-  "processing.status.debug.analyzing.provider": "正在使用 {{provider}} 分析代码并生成调试建议…",
   "processing.status.debug.done": "调试分析完成",
 
   // ---------------------------------------------------------------- 日志
-  "processing.log.client.openai.ready": "OpenAI 客户端初始化成功",
-  "processing.log.client.openai.noKey": "没有可用的 API Key，OpenAI 客户端未初始化",
-  "processing.log.client.gemini.ready": "Gemini API Key 设置成功",
-  "processing.log.client.gemini.noKey": "没有可用的 API Key，Gemini 客户端未初始化",
-  "processing.log.client.anthropic.ready": "Anthropic 客户端初始化成功",
-  "processing.log.client.anthropic.noKey": "没有可用的 API Key，Anthropic 客户端未初始化",
-  "processing.log.client.initFailed": "初始化 AI 客户端失败：{{error}}",
-  "processing.log.client.openai.missing": "OpenAI 客户端未初始化",
-  "processing.log.client.gemini.missing": "Gemini API Key 未初始化",
-  "processing.log.client.anthropic.missing": "Anthropic 客户端未初始化",
   "processing.log.credits.failed": "获取额度失败：{{error}}",
   "processing.log.language.windowFailed": "无法从窗口读取编程语言：{{error}}",
   "processing.log.language.failed": "读取编程语言失败：{{error}}",
@@ -142,35 +131,52 @@ export const processingZh = {
   "processing.log.extract.fieldMissing":
     "模型返回的 JSON 缺少必需字段：{{missing}}；实际字段名为：{{keys}}。字段名被翻译成中文即属于此错误。",
   "processing.log.extract.notObject": "模型返回的 JSON 不是对象：{{snippet}}",
-  "processing.log.api.gemini.provider": "调用 Gemini API 出错：{{error}}",
-  "processing.log.api.gemini.solution": "调用 Gemini API 生成方案出错：{{error}}",
-  "processing.log.api.gemini.debug": "调用 Gemini API 调试出错：{{error}}",
-  "processing.log.api.gemini.empty": "Gemini API 返回内容为空",
-  "processing.log.api.anthropic.provider": "调用 Anthropic API 出错：{{error}}",
-  "processing.log.api.anthropic.solution": "调用 Anthropic API 生成方案出错：{{error}}",
-  "processing.log.api.anthropic.debug": "调用 Anthropic API 调试出错：{{error}}",
+
+  // ---------------------------------------------------------------- 调用层日志（三种 API 格式）
+  "processing.log.llm.request": "发出 {{method}} 请求：{{url}}（超时 {{seconds}} 秒）",
+  "processing.log.llm.response": "收到响应（HTTP {{status}}，用时 {{ms}} 毫秒）",
+  "processing.log.llm.call":
+    "调用模型接口：配置 {{provider}}，格式 {{format}}，用途 {{purpose}}，模型 {{model}}",
+  "processing.log.llm.failed": "模型接口调用失败：错误码 {{code}}，HTTP {{status}}，详情：{{detail}}",
+  "processing.log.llm.configIssues": "模型配置存在问题（本次按兜底值继续）：{{issues}}",
+  "processing.log.llm.modelsFetched": "拉取模型列表成功，共 {{count}} 个模型",
+  "processing.log.llm.modelsFailed": "拉取模型列表失败：错误码 {{code}}，HTTP {{status}}，详情：{{detail}}",
+  "processing.log.llm.listModelsHandlerFailed": "拉取模型列表的处理器出现意外异常：{{detail}}",
 
   // ---------------------------------------------------------------- 错误与兜底（会显示给用户）
-  "processing.error.openai.notConfigured": "OpenAI API Key 未配置或无效，请检查设置。",
-  "processing.error.openai.invalidKey": "OpenAI API Key 无效，请检查设置。",
-  "processing.error.openai.rateLimit": "OpenAI API 触发限流或额度不足，请稍后重试。",
-  "processing.error.openai.server": "OpenAI 服务端错误，请稍后重试。",
-  "processing.error.gemini.notConfigured": "Gemini API Key 未配置，请检查设置。",
-  "processing.error.gemini.failed": "使用 Gemini API 处理失败，请检查 API Key 或稍后重试。",
-  "processing.error.gemini.solutionFailed":
-    "使用 Gemini API 生成方案失败，请检查 API Key 或稍后重试。",
-  "processing.error.gemini.debugFailed":
-    "使用 Gemini API 处理调试请求失败，请检查 API Key 或稍后重试。",
-  "processing.error.anthropic.notConfigured": "Anthropic API Key 未配置，请检查设置。",
-  "processing.error.anthropic.rateLimit": "Claude API 触发限流，请等几分钟后重试。",
-  "processing.error.anthropic.tooLarge":
-    "截图信息量超出 Claude 的处理上限，请在设置里切换到能处理更大输入的 OpenAI 或 Gemini。",
-  "processing.error.anthropic.failed":
-    "使用 Anthropic API 处理失败，请检查 API Key 或稍后重试。",
-  "processing.error.anthropic.solutionFailed":
-    "使用 Anthropic API 生成方案失败，请检查 API Key 或稍后重试。",
-  "processing.error.anthropic.debugFailed":
-    "使用 Anthropic API 处理调试请求失败，请检查 API Key 或稍后重试。",
+  "processing.error.llm.baseUrlMissing": "尚未配置 API Base URL，请先在设置里填写。",
+  "processing.error.llm.baseUrlInvalid": "API Base URL 不是合法的 HTTP(S) 地址，请检查设置。",
+  "processing.error.llm.apiKeyMissing": "尚未配置 API Key，请先在设置里填写。",
+  "processing.error.llm.providerMissing":
+    "没有找到所选的配置（可能已被删除），请先在设置里选择或新建一套配置。",
+  "processing.error.llm.bindingMissing":
+    "该用途还没有绑定模型，请在设置里为它选择一套配置和模型。",
+  "processing.error.llm.modelMissing":
+    "尚未选择该用途的模型，请先在设置里添加模型并完成选择。",
+  "processing.error.llm.network": "无法连接到模型接口，请检查网络与 Base URL 是否正确。",
+  "processing.error.llm.timeout":
+    "请求在 {{seconds}} 秒内没有返回，请稍后重试或检查网络。",
+  "processing.error.llm.auth":
+    "API Key 无效或无权访问该接口（HTTP {{status}}），请检查设置。",
+  "processing.error.llm.rateLimit":
+    "请求过于频繁或额度不足（HTTP {{status}}），请稍后重试。",
+  "processing.error.llm.server": "模型接口服务端错误（HTTP {{status}}），请稍后重试。",
+  "processing.error.llm.badRequest":
+    "请求被接口拒绝（HTTP {{status}}），请检查 Base URL、API 格式与模型 ID。",
+  "processing.error.llm.tooLarge":
+    "请求内容过大（HTTP {{status}}），请减少截图数量或改用支持更大上下文的模型。",
+  "processing.error.llm.invalidResponse":
+    "接口返回的不是可解析的 JSON，请检查 Base URL 与 API 格式是否匹配。",
+  "processing.error.llm.emptyResponse":
+    "接口返回里没有可用的文本内容，请检查模型 ID 与 API 格式。",
+  "processing.error.llm.unknown": "调用模型接口时出现未知错误，请稍后重试。",
+
+  // ---------------------------------------------------------------- 多套配置（provider 卡片）
+  "processing.modelPurpose.extraction": "题面解析",
+  "processing.modelPurpose.solution": "方案生成",
+  "processing.modelPurpose.debugging": "调试",
+  "processing.notice.llm.bindingDetached":
+    "已解除「{{provider}}」的{{purpose}}绑定，该用途需要重新选择模型。",
   "processing.error.extract.parseFailed":
     "解析题目信息失败，请重试或改用更清晰的截图。",
   "processing.error.extract.fieldMissing":
