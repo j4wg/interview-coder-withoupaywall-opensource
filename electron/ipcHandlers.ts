@@ -1,14 +1,18 @@
-// ipcHandlers.ts
+// ipcHandlers.ts — 渲染进程与主进程之间的 IPC 处理器
 
 import { ipcMain, shell, dialog } from "electron"
 import { randomBytes } from "crypto"
 import { IIpcHandlerDeps } from "./main"
 import { configHelper } from "./ConfigHelper"
+import { mainT } from "./i18n/mainT"
 
 export function initializeIpcHandlers(deps: IIpcHandlerDeps): void {
-  console.log("Initializing IPC handlers")
+  // 每次调用都按当前界面语言取文案
+  const t = mainT("main")
 
-  // Configuration handlers
+  console.log(t("main.ipc.initializing"))
+
+  // 配置相关处理器
   ipcMain.handle("get-config", () => {
     return configHelper.loadConfig();
   })
@@ -23,7 +27,7 @@ export function initializeIpcHandlers(deps: IIpcHandlerDeps): void {
       const { setting, locale } = configHelper.getUiLocale();
       return { setting, locale, source: setting === "system" ? "system" : "config" };
     } catch (error) {
-      console.error("Error resolving UI locale:", error);
+      console.error(t("main.error.resolveUiLocale"), error);
       return { setting: "system", locale: "en", source: "system" };
     }
   })
@@ -42,34 +46,34 @@ export function initializeIpcHandlers(deps: IIpcHandlerDeps): void {
   ipcMain.handle("check-api-key", () => {
     return configHelper.hasApiKey();
   })
-  
+
   ipcMain.handle("validate-api-key", async (_event, apiKey) => {
-    // First check the format
+    // 先校验格式
     if (!configHelper.isValidApiKeyFormat(apiKey)) {
-      return { 
-        valid: false, 
-        error: "Invalid API key format. OpenAI API keys start with 'sk-'" 
+      return {
+        valid: false,
+        error: t("main.error.apiKeyFormat")
       };
     }
-    
-    // Then test the API key with OpenAI
+
+    // 再用 OpenAI 实测该 Key
     const result = await configHelper.testApiKey(apiKey);
     return result;
   })
 
-  // Credits handlers
+  // 额度相关处理器
   ipcMain.handle("set-initial-credits", async (_event, credits: number) => {
     const mainWindow = deps.getMainWindow()
     if (!mainWindow) return
 
     try {
-      // Set the credits in a way that ensures atomicity
+      // 以原子方式设置额度
       await mainWindow.webContents.executeJavaScript(
         `window.__CREDITS__ = ${credits}`
       )
       mainWindow.webContents.send("credits-updated", credits)
     } catch (error) {
-      console.error("Error setting initial credits:", error)
+      console.error(t("main.error.setInitialCredits"), error)
       throw error
     }
   })
@@ -90,11 +94,11 @@ export function initializeIpcHandlers(deps: IIpcHandlerDeps): void {
         mainWindow.webContents.send("credits-updated", newCredits)
       }
     } catch (error) {
-      console.error("Error decrementing credits:", error)
+      console.error(t("main.error.decrementCredits"), error)
     }
   })
 
-  // Screenshot queue handlers
+  // 截图队列处理器
   ipcMain.handle("get-screenshot-queue", () => {
     return deps.getScreenshotQueue()
   })
@@ -111,9 +115,9 @@ export function initializeIpcHandlers(deps: IIpcHandlerDeps): void {
     return deps.getImagePreview(path)
   })
 
-  // Screenshot processing handlers
+  // 截图处理处理器
   ipcMain.handle("process-screenshots", async () => {
-    // Check for API key before processing
+    // 处理前先检查 API Key
     if (!configHelper.hasApiKey()) {
       const mainWindow = deps.getMainWindow();
       if (mainWindow) {
@@ -121,11 +125,11 @@ export function initializeIpcHandlers(deps: IIpcHandlerDeps): void {
       }
       return;
     }
-    
+
     await deps.processingHelper?.processScreenshots()
   })
 
-  // Window dimension handlers
+  // 窗口尺寸处理器
   ipcMain.handle(
     "update-content-dimensions",
     async (event, { width, height }: { width: number; height: number }) => {
@@ -142,7 +146,7 @@ export function initializeIpcHandlers(deps: IIpcHandlerDeps): void {
     }
   )
 
-  // Screenshot management handlers
+  // 截图管理处理器
   ipcMain.handle("get-screenshots", async () => {
     try {
       let previews = []
@@ -168,12 +172,12 @@ export function initializeIpcHandlers(deps: IIpcHandlerDeps): void {
 
       return previews
     } catch (error) {
-      console.error("Error getting screenshots:", error)
+      console.error(t("main.error.getScreenshots"), error)
       throw error
     }
   })
 
-  // Screenshot trigger handlers
+  // 截图触发处理器
   ipcMain.handle("trigger-screenshot", async () => {
     const mainWindow = deps.getMainWindow()
     if (mainWindow) {
@@ -186,11 +190,11 @@ export function initializeIpcHandlers(deps: IIpcHandlerDeps): void {
         })
         return { success: true }
       } catch (error) {
-        console.error("Error triggering screenshot:", error)
-        return { error: "Failed to trigger screenshot" }
+        console.error(t("main.error.triggerScreenshot"), error)
+        return { error: t("main.error.triggerScreenshotFailed") }
       }
     }
-    return { error: "No main window available" }
+    return { error: t("main.error.noMainWindowAvailable") }
   })
 
   ipcMain.handle("take-screenshot", async () => {
@@ -199,47 +203,47 @@ export function initializeIpcHandlers(deps: IIpcHandlerDeps): void {
       const preview = await deps.getImagePreview(screenshotPath)
       return { path: screenshotPath, preview }
     } catch (error) {
-      console.error("Error taking screenshot:", error)
-      return { error: "Failed to take screenshot" }
+      console.error(t("main.error.takeScreenshot"), error)
+      return { error: t("main.error.takeScreenshotFailed") }
     }
   })
 
-  // Auth-related handlers removed
+  // 鉴权相关处理器已移除
 
   ipcMain.handle("open-external-url", (event, url: string) => {
     shell.openExternal(url)
   })
-  
-  // Open external URL handler
+
+  // 打开外部链接处理器
   ipcMain.handle("openLink", (event, url: string) => {
     try {
-      console.log(`Opening external URL: ${url}`);
+      console.log(t("main.ipc.openingExternalUrl", { url }));
       shell.openExternal(url);
       return { success: true };
     } catch (error) {
-      console.error(`Error opening URL ${url}:`, error);
-      return { success: false, error: `Failed to open URL: ${error}` };
+      console.error(t("main.error.openUrl", { url }), error);
+      return { success: false, error: t("main.error.openUrlFailed", { error: String(error) }) };
     }
   })
 
-  // Settings portal handler
+  // 设置面板处理器
   ipcMain.handle("open-settings-portal", () => {
     const mainWindow = deps.getMainWindow();
     if (mainWindow) {
       mainWindow.webContents.send("show-settings-dialog");
       return { success: true };
     }
-    return { success: false, error: "Main window not available" };
+    return { success: false, error: t("main.error.mainWindowNotAvailable") };
   })
 
-  // Window management handlers
+  // 窗口管理处理器
   ipcMain.handle("toggle-window", () => {
     try {
       deps.toggleMainWindow()
       return { success: true }
     } catch (error) {
-      console.error("Error toggling window:", error)
-      return { error: "Failed to toggle window" }
+      console.error(t("main.error.toggleWindow"), error)
+      return { error: t("main.error.toggleWindowFailed") }
     }
   })
 
@@ -248,66 +252,66 @@ export function initializeIpcHandlers(deps: IIpcHandlerDeps): void {
       deps.clearQueues()
       return { success: true }
     } catch (error) {
-      console.error("Error resetting queues:", error)
-      return { error: "Failed to reset queues" }
+      console.error(t("main.error.resetQueues"), error)
+      return { error: t("main.error.resetQueuesFailed") }
     }
   })
 
-  // Process screenshot handlers
+  // 处理截图处理器
   ipcMain.handle("trigger-process-screenshots", async () => {
     try {
-      // Check for API key before processing
+      // 处理前先检查 API Key
       if (!configHelper.hasApiKey()) {
         const mainWindow = deps.getMainWindow();
         if (mainWindow) {
           mainWindow.webContents.send(deps.PROCESSING_EVENTS.API_KEY_INVALID);
         }
-        return { success: false, error: "API key required" };
+        return { success: false, error: t("main.error.apiKeyRequired") };
       }
-      
+
       await deps.processingHelper?.processScreenshots()
       return { success: true }
     } catch (error) {
-      console.error("Error processing screenshots:", error)
-      return { error: "Failed to process screenshots" }
+      console.error(t("main.error.processScreenshots"), error)
+      return { error: t("main.error.processScreenshotsFailed") }
     }
   })
 
-  // Reset handlers
+  // 重置处理器
   ipcMain.handle("trigger-reset", () => {
     try {
-      // First cancel any ongoing requests
+      // 先取消所有进行中的请求
       deps.processingHelper?.cancelOngoingRequests()
 
-      // Clear all queues immediately
+      // 立即清空所有队列
       deps.clearQueues()
 
-      // Reset view to queue
+      // 把视图重置回队列页
       deps.setView("queue")
 
-      // Get main window and send reset events
+      // 取主窗口并发送重置事件
       const mainWindow = deps.getMainWindow()
       if (mainWindow && !mainWindow.isDestroyed()) {
-        // Send reset events in sequence
+        // 按顺序发送重置事件
         mainWindow.webContents.send("reset-view")
         mainWindow.webContents.send("reset")
       }
 
       return { success: true }
     } catch (error) {
-      console.error("Error triggering reset:", error)
-      return { error: "Failed to trigger reset" }
+      console.error(t("main.error.triggerReset"), error)
+      return { error: t("main.error.triggerResetFailed") }
     }
   })
 
-  // Window movement handlers
+  // 窗口移动处理器
   ipcMain.handle("trigger-move-left", () => {
     try {
       deps.moveWindowLeft()
       return { success: true }
     } catch (error) {
-      console.error("Error moving window left:", error)
-      return { error: "Failed to move window left" }
+      console.error(t("main.error.moveLeft"), error)
+      return { error: t("main.error.moveLeftFailed") }
     }
   })
 
@@ -316,8 +320,8 @@ export function initializeIpcHandlers(deps: IIpcHandlerDeps): void {
       deps.moveWindowRight()
       return { success: true }
     } catch (error) {
-      console.error("Error moving window right:", error)
-      return { error: "Failed to move window right" }
+      console.error(t("main.error.moveRight"), error)
+      return { error: t("main.error.moveRightFailed") }
     }
   })
 
@@ -326,8 +330,8 @@ export function initializeIpcHandlers(deps: IIpcHandlerDeps): void {
       deps.moveWindowUp()
       return { success: true }
     } catch (error) {
-      console.error("Error moving window up:", error)
-      return { error: "Failed to move window up" }
+      console.error(t("main.error.moveUp"), error)
+      return { error: t("main.error.moveUpFailed") }
     }
   })
 
@@ -336,38 +340,38 @@ export function initializeIpcHandlers(deps: IIpcHandlerDeps): void {
       deps.moveWindowDown()
       return { success: true }
     } catch (error) {
-      console.error("Error moving window down:", error)
-      return { error: "Failed to move window down" }
+      console.error(t("main.error.moveDown"), error)
+      return { error: t("main.error.moveDownFailed") }
     }
   })
-  
-  // Delete last screenshot handler
+
+  // 删除最后一张截图的处理器
   ipcMain.handle("delete-last-screenshot", async () => {
     try {
-      const queue = deps.getView() === "queue" 
-        ? deps.getScreenshotQueue() 
+      const queue = deps.getView() === "queue"
+        ? deps.getScreenshotQueue()
         : deps.getExtraScreenshotQueue()
-      
+
       if (queue.length === 0) {
-        return { success: false, error: "No screenshots to delete" }
+        return { success: false, error: t("main.error.noScreenshotsToDelete") }
       }
-      
-      // Get the last screenshot in the queue
+
+      // 取队列里的最后一张截图
       const lastScreenshot = queue[queue.length - 1]
-      
-      // Delete it
+
+      // 删除它
       const result = await deps.deleteScreenshot(lastScreenshot)
-      
-      // Notify the renderer about the change
+
+      // 通知渲染层刷新
       const mainWindow = deps.getMainWindow()
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send("screenshot-deleted", { path: lastScreenshot })
       }
-      
+
       return result
     } catch (error) {
-      console.error("Error deleting last screenshot:", error)
-      return { success: false, error: "Failed to delete last screenshot" }
+      console.error(t("main.error.deleteLastScreenshot"), error)
+      return { success: false, error: t("main.error.deleteLastScreenshotFailed") }
     }
   })
 }

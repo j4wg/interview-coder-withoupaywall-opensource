@@ -1,32 +1,69 @@
-console.log("Preload script starting...")
+// preload.ts — 通过 contextBridge 暴露受控的 electronAPI
 import { contextBridge, ipcRenderer } from "electron"
+import { createTranslator } from "./i18n"
+import { normalizeLocaleTag } from "./i18n/resolveLocale"
+import type { Locale } from "./i18n/types"
+
+// preload 运行在渲染进程的隔离上下文里，不能 import ConfigHelper（会带入 electron app 依赖），
+// 因此先按系统语言（Intl 回落链，与 resolveLocale 一致）取一个初值，
+// 再异步向主进程要真实设置；拿到后 preload 后续日志立即改为跟随设置。
+let preloadLocale: Locale = normalizeLocaleTag(readIntlLocale())
+
+function readIntlLocale(): string | null {
+  try {
+    const resolved = Intl.DateTimeFormat().resolvedOptions().locale
+    return typeof resolved === "string" && resolved.trim() ? resolved : null
+  } catch {
+    return null
+  }
+}
+
+/** preload 内的日志翻译：命名空间与主进程一致（main），按当前缓存的语言取文案 */
+function tp(key: string, vars?: Record<string, string>): string {
+  return createTranslator("main", preloadLocale)(key, vars)
+}
+
+console.log(tp("main.preload.starting"))
+
 const { shell } = require("electron")
 
 export const PROCESSING_EVENTS = {
-  //global states
+  // 全局状态
   UNAUTHORIZED: "procesing-unauthorized",
   NO_SCREENSHOTS: "processing-no-screenshots",
   OUT_OF_CREDITS: "out-of-credits",
   API_KEY_INVALID: "api-key-invalid",
 
-  //states for generating the initial solution
+  // 生成初始解答过程的状态
   INITIAL_START: "initial-start",
   PROBLEM_EXTRACTED: "problem-extracted",
   SOLUTION_SUCCESS: "solution-success",
   INITIAL_SOLUTION_ERROR: "solution-error",
   RESET: "reset",
 
-  //states for processing the debugging
+  // 调试过程的状态
   DEBUG_START: "debug-start",
   DEBUG_SUCCESS: "debug-success",
   DEBUG_ERROR: "debug-error"
 } as const
 
-// At the top of the file
-console.log("Preload script is running")
+// 启动时向主进程取一次当前生效语言，之后 preload 日志跟随该设置
+ipcRenderer
+  .invoke("get-ui-locale")
+  .then((result: { locale?: string } | null) => {
+    if (result && (result.locale === "zh" || result.locale === "en")) {
+      preloadLocale = result.locale
+    }
+  })
+  .catch(() => {
+    // 取不到就沿用 Intl 初值，不抛错
+  })
+
+// 文件开头
+console.log(tp("main.preload.running"))
 
 const electronAPI = {
-  // Original methods
+  // 原有方法
   openSubscriptionPortal: async (authData: { id: string; email: string }) => {
     return ipcRenderer.invoke("open-subscription-portal", authData)
   },
@@ -38,17 +75,17 @@ const electronAPI = {
   deleteScreenshot: (path: string) =>
     ipcRenderer.invoke("delete-screenshot", path),
   toggleMainWindow: async () => {
-    console.log("toggleMainWindow called from preload")
+    console.log(tp("main.preload.toggleCalled"))
     try {
       const result = await ipcRenderer.invoke("toggle-window")
-      console.log("toggle-window result:", result)
+      console.log(tp("main.preload.toggleResult"), result)
       return result
     } catch (error) {
-      console.error("Error in toggleMainWindow:", error)
+      console.error(tp("main.error.preloadToggle"), error)
       throw error
     }
   },
-  // Event listeners
+  // 事件监听
   onScreenshotTaken: (
     callback: (data: { path: string; preview: string }) => void
   ) => {
@@ -146,7 +183,7 @@ const electronAPI = {
       ipcRenderer.removeListener(PROCESSING_EVENTS.UNAUTHORIZED, subscription)
     }
   },
-  // External URL handler
+  // 外部链接处理器
   openLink: (url: string) => shell.openExternal(url),
   triggerScreenshot: () => ipcRenderer.invoke("trigger-screenshot"),
   triggerProcessScreenshots: () =>
@@ -202,10 +239,10 @@ const electronAPI = {
     }
   },
   getPlatform: () => process.platform,
-  
-  // New methods for OpenAI API integration
+
+  // OpenAI API 集成新增的方法
   getConfig: () => ipcRenderer.invoke("get-config"),
-  updateConfig: (config: { apiKey?: string; model?: string; language?: string; opacity?: number; uiLanguage?: "system" | "zh" | "en" }) => 
+  updateConfig: (config: { apiKey?: string; model?: string; language?: string; opacity?: number; uiLanguage?: "system" | "zh" | "en" }) =>
     ipcRenderer.invoke("update-config", config),
   getUiLocale: () => ipcRenderer.invoke("get-ui-locale"),
   onUiLocaleChanged: (
@@ -228,9 +265,9 @@ const electronAPI = {
     }
   },
   checkApiKey: () => ipcRenderer.invoke("check-api-key"),
-  validateApiKey: (apiKey: string) => 
+  validateApiKey: (apiKey: string) =>
     ipcRenderer.invoke("validate-api-key", apiKey),
-  openExternal: (url: string) => 
+  openExternal: (url: string) =>
     ipcRenderer.invoke("openExternal", url),
   onApiKeyInvalid: (callback: () => void) => {
     const subscription = () => callback()
@@ -252,24 +289,24 @@ const electronAPI = {
   deleteLastScreenshot: () => ipcRenderer.invoke("delete-last-screenshot")
 }
 
-// Before exposing the API
+// 暴露之前先打印方法列表
 console.log(
-  "About to expose electronAPI with methods:",
+  tp("main.preload.exposingApi"),
   Object.keys(electronAPI)
 )
 
-// Expose the API
+// 暴露 API
 contextBridge.exposeInMainWorld("electronAPI", electronAPI)
 
-console.log("electronAPI exposed to window")
+console.log(tp("main.preload.apiExposed"))
 
-// Add this focus restoration handler
+// 焦点恢复处理器
 ipcRenderer.on("restore-focus", () => {
-  // Try to focus the active element if it exists
+  // 若当前有聚焦元素，尝试让它重新获得焦点
   const activeElement = document.activeElement as HTMLElement
   if (activeElement && typeof activeElement.focus === "function") {
     activeElement.focus()
   }
 })
 
-// Remove auth-callback handling - no longer needed
+// 已移除 auth-callback 处理，不再需要

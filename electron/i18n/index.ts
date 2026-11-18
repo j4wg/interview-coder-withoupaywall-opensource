@@ -6,6 +6,8 @@
  * 在 `electron/i18n/messages/` 下提供，接线时把表填进下面的 `MESSAGE_TABLES` 即可。
  */
 import type { Locale, Namespace } from "./types"
+import { mainZh } from "./messages/main.zh"
+import { mainEn } from "./messages/main.en"
 
 type MessageTable = Record<string, string>
 
@@ -15,7 +17,9 @@ type MessageTable = Record<string, string>
  */
 const MESSAGE_TABLES: Partial<
   Record<Namespace, Partial<Record<Locale, MessageTable>>>
-> = {}
+> = {
+  main: { zh: mainZh, en: mainEn }
+}
 
 /** 已告警过的缺键，保证同一个键只 warn 一次，避免日志刷屏 */
 const warnedMissingKeys = new Set<string>()

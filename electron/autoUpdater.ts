@@ -1,109 +1,114 @@
 import { autoUpdater } from "electron-updater"
 import { BrowserWindow, ipcMain, app } from "electron"
 import log from "electron-log"
+import { mainT } from "./i18n/mainT"
+
+// 主进程翻译器：每次调用都实时解析当前界面语言
+const t = mainT("main")
 
 export function initAutoUpdater() {
-  console.log("Initializing auto-updater...")
+  console.log(t("main.update.initializing"))
 
-  // Skip update checks in development
+  // 开发模式下跳过更新检查
   if (!app.isPackaged) {
-    console.log("Skipping auto-updater in development mode")
+    console.log(t("main.update.skipDev"))
     return
   }
 
   if (!process.env.GH_TOKEN) {
-    console.error("GH_TOKEN environment variable is not set")
+    console.error(t("main.error.ghTokenMissing"))
     return
   }
 
-  // Configure auto updater
+  // 配置自动更新
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = true
   autoUpdater.allowDowngrade = true
   autoUpdater.allowPrerelease = true
 
-  // Enable more verbose logging
+  // 打开更详细的日志
   autoUpdater.logger = log
   log.transports.file.level = "debug"
   console.log(
-    "Auto-updater logger configured with level:",
-    log.transports.file.level
+    t("main.update.loggerConfigured", {
+      level: String(log.transports.file.level)
+    })
   )
 
-  // Log all update events
+  // 记录所有更新事件
   autoUpdater.on("checking-for-update", () => {
-    console.log("Checking for updates...")
+    console.log(t("main.update.checking"))
   })
 
   autoUpdater.on("update-available", (info) => {
-    console.log("Update available:", info)
-    // Notify renderer process about available update
+    console.log(t("main.update.available"), info)
+    // 通知渲染层有新版本可用
     BrowserWindow.getAllWindows().forEach((window) => {
-      console.log("Sending update-available to window")
+      console.log(t("main.update.sendingAvailable"))
       window.webContents.send("update-available", info)
     })
   })
 
   autoUpdater.on("update-not-available", (info) => {
-    console.log("Update not available:", info)
+    console.log(t("main.update.notAvailable"), info)
   })
 
   autoUpdater.on("download-progress", (progressObj) => {
-    console.log("Download progress:", progressObj)
+    console.log(t("main.update.downloadProgress"), progressObj)
   })
 
   autoUpdater.on("update-downloaded", (info) => {
-    console.log("Update downloaded:", info)
-    // Notify renderer process that update is ready to install
+    console.log(t("main.update.downloaded"), info)
+    // 通知渲染层更新已就绪，可安装
     BrowserWindow.getAllWindows().forEach((window) => {
-      console.log("Sending update-downloaded to window")
+      console.log(t("main.update.sendingDownloaded"))
       window.webContents.send("update-downloaded", info)
     })
   })
 
   autoUpdater.on("error", (err) => {
-    console.error("Auto updater error:", err)
+    console.error(t("main.error.updater"), err)
   })
 
-  // Check for updates immediately
-  console.log("Checking for updates...")
+  // 立即检查一次更新
+  console.log(t("main.update.checking"))
   autoUpdater
     .checkForUpdates()
     .then((result) => {
-      console.log("Update check result:", result)
+      console.log(t("main.update.checkResult"), result)
     })
     .catch((err) => {
-      console.error("Error checking for updates:", err)
+      console.error(t("main.error.checkFailed"), err)
     })
 
-  // Set up update checking interval (every 1 hour)
+  // 定时检查更新（每小时一次）
   setInterval(() => {
-    console.log("Checking for updates (interval)...")
+    console.log(t("main.update.checkingInterval"))
     autoUpdater
       .checkForUpdates()
       .then((result) => {
-        console.log("Update check result (interval):", result)
+        console.log(t("main.update.checkResultInterval"), result)
       })
       .catch((err) => {
-        console.error("Error checking for updates (interval):", err)
+        console.error(t("main.error.checkFailedInterval"), err)
       })
   }, 60 * 60 * 1000)
 
-  // Handle IPC messages from renderer
+  // 处理渲染层发来的 IPC 消息
   ipcMain.handle("start-update", async () => {
-    console.log("Start update requested")
+    console.log(t("main.update.startRequested"))
     try {
       await autoUpdater.downloadUpdate()
-      console.log("Update download completed")
+      console.log(t("main.update.downloadCompleted"))
       return { success: true }
     } catch (error) {
-      console.error("Failed to start update:", error)
+      console.error(t("main.error.startUpdate"), error)
       return { success: false, error: error.message }
     }
   })
 
   ipcMain.handle("install-update", () => {
-    console.log("Install update requested")
+    console.log(t("main.update.installRequested"))
     autoUpdater.quitAndInstall()
   })
 }
