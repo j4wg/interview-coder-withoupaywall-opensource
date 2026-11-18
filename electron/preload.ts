@@ -205,8 +205,21 @@ const electronAPI = {
   
   // New methods for OpenAI API integration
   getConfig: () => ipcRenderer.invoke("get-config"),
-  updateConfig: (config: { apiKey?: string; model?: string; language?: string; opacity?: number }) => 
+  updateConfig: (config: { apiKey?: string; model?: string; language?: string; opacity?: number; uiLanguage?: "system" | "zh" | "en" }) => 
     ipcRenderer.invoke("update-config", config),
+  getUiLocale: () => ipcRenderer.invoke("get-ui-locale"),
+  onUiLocaleChanged: (
+    callback: (data: { setting: "system" | "zh" | "en"; locale: "zh" | "en" }) => void
+  ) => {
+    const subscription = (
+      _: unknown,
+      data: { setting: "system" | "zh" | "en"; locale: "zh" | "en" }
+    ) => callback(data)
+    ipcRenderer.on("ui-locale-changed", subscription)
+    return () => {
+      ipcRenderer.removeListener("ui-locale-changed", subscription)
+    }
+  },
   onShowSettings: (callback: () => void) => {
     const subscription = () => callback()
     ipcRenderer.on("show-settings-dialog", subscription)

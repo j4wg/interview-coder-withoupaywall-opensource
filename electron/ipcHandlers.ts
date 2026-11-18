@@ -17,6 +17,28 @@ export function initializeIpcHandlers(deps: IIpcHandlerDeps): void {
     return configHelper.updateConfig(updates);
   })
 
+  // 读当前生效的界面语言：永不抛错，异常时回落到 system + en
+  ipcMain.handle("get-ui-locale", () => {
+    try {
+      const { setting, locale } = configHelper.getUiLocale();
+      return { setting, locale, source: setting === "system" ? "system" : "config" };
+    } catch (error) {
+      console.error("Error resolving UI locale:", error);
+      return { setting: "system", locale: "en", source: "system" };
+    }
+  })
+
+  // 界面语言变更：ConfigHelper 只在 update-config 写盘成功后才发出该事件
+  configHelper.on(
+    "ui-language-changed",
+    (info: { setting: "system" | "zh" | "en"; locale: "zh" | "en" }) => {
+      const mainWindow = deps.getMainWindow();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send("ui-locale-changed", info);
+      }
+    }
+  )
+
   ipcMain.handle("check-api-key", () => {
     return configHelper.hasApiKey();
   })
