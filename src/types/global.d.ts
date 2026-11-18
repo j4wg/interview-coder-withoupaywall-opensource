@@ -1,9 +1,5 @@
-interface Window {
-  __IS_INITIALIZED__: boolean
-  __CREDITS__: number
-  __LANGUAGE__: string
-  __AUTH_TOKEN__: string | null
-  supabase: any // Replace with proper Supabase client type if needed
-  electron: any // Replace with proper Electron type if needed
-  electronAPI: any // Replace with proper Electron API type if needed
-}
+/**
+ * 全局 `Window` / `electronAPI` 的权威声明在 `./electron.d.ts`，
+ * 该文件由 tsconfig 的 include 自动纳入编译。
+ * 本文件不再重复声明，避免同一 API 在三处漂移。
+ */
