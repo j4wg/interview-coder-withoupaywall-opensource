@@ -10,12 +10,43 @@
 import type { Locale, UiLanguageSetting } from "../../electron/i18n/types"
 import type { Screenshot } from "./screenshots"
 
-/** 与 `electron/ConfigHelper.ts` 中 Config 逐字段一致 */
-export interface Config {
+/**
+ * API 格式三选一（JUN-47 / JUN-48 / JUN-49 共用契约，不得改名）。
+ * - `anthropic-messages` → `/v1/messages`
+ * - `chat-completions` → `/chat/completions`
+ * - `responses` → `/responses`
+ */
+export type ApiFormat =
+  | "anthropic-messages"
+  | "chat-completions"
+  | "responses"
+
+/** 供应商配置（配置层 v3 契约）；`models` 里只存模型 ID 字符串 */
+export interface ProviderConfig {
+  baseUrl: string
+  apiFormat: ApiFormat
   apiKey: string
-  apiProvider: "openai" | "gemini" | "anthropic"
+  models: string[]
+}
+
+/** 三个用途各绑定的模型 ID，必须 ∈ `provider.models` */
+export interface ModelBindings {
   extractionModel: string
   solutionModel: string
+  debuggingModel: string
+}
+
+/** 与 `electron/ConfigHelper.ts` 中 Config 逐字段一致 */
+export interface Config {
+  /** @deprecated v3 起由 `provider.apiKey` 取代；JUN-47 落地前仍需兜底读取 */
+  apiKey: string
+  /** @deprecated v3 起由 `provider.apiFormat` 取代（不再区分供应商预设） */
+  apiProvider: "openai" | "gemini" | "anthropic"
+  /** @deprecated v3 起由 `bindings.extractionModel` 取代 */
+  extractionModel: string
+  /** @deprecated v3 起由 `bindings.solutionModel` 取代 */
+  solutionModel: string
+  /** @deprecated v3 起由 `bindings.debuggingModel` 取代 */
   debuggingModel: string
   /** 编程语言，默认 "java"；不是界面语言 */
   language: string
@@ -24,7 +55,26 @@ export interface Config {
   uiLanguage: UiLanguageSetting
   /** 迁移标记，当前 2；渲染层写入会被忽略 */
   configVersion: number
+  /** 供应商配置；配置层 v3 之前的旧配置没有该字段，读取方需归一 */
+  provider?: ProviderConfig
+  /** 三用途绑定；配置层 v3 之前的旧配置没有该字段，读取方需归一 */
+  bindings?: ModelBindings
 }
+
+/**
+ * `list-models` 通道（JUN-48 提供）的返回形状。
+ * 调用层归一前可能是数组，也可能是 `{ ok, models, error?, code? }` 对象（JUN-48 实际实现），
+ * 渲染层两种都接；失败时 `error` 已是当前语言的文案。
+ */
+export type ListModelsResponse =
+  | string[]
+  | {
+      ok?: boolean
+      success?: boolean
+      models?: string[]
+      error?: string
+      code?: string
+    }
 
 /** `get-ui-locale` 的响应体 */
 export interface UiLocaleInfo {
@@ -101,6 +151,15 @@ export interface ElectronAPI {
   // 配置与界面语言
   getConfig: () => Promise<Config>
   updateConfig: (config: Partial<Config>) => Promise<Config>
+  /**
+   * 拉取模型列表。通道由调用层（JUN-48）提供，在其合并前可能不存在，
+   * 调用方必须按可选处理：缺失或失败时仍允许手工填写模型 ID。
+   */
+  listModels?: (provider?: {
+    baseUrl: string
+    apiFormat: ApiFormat
+    apiKey: string
+  }) => Promise<ListModelsResponse>
   getUiLocale: () => Promise<UiLocaleInfo>
   onUiLocaleChanged: (
     callback: (data: { setting: UiLanguageSetting; locale: Locale }) => void

@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react"
+import { Eye, EyeOff, Info, Plus, Trash2 } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -6,31 +7,28 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
-} from "../ui/dialog";
-import { Input } from "../ui/input";
-import { Button } from "../ui/button";
-import { useToast } from "../../contexts/toast";
-import { useI18n } from "../../contexts/i18n";
-import type { Config } from "../../types/electron";
-import type { UiLanguageSetting } from "../../../electron/i18n/types";
-
-type APIProvider = "openai" | "gemini" | "anthropic";
-
-type AIModel = {
-  id: string;
-  name: string;
-  // 模型描述走文案表，模型名（name/id）不翻译
-  descriptionKey: string;
-};
-
-type ModelCategory = {
-  key: 'extractionModel' | 'solutionModel' | 'debuggingModel';
-  titleKey: string;
-  descriptionKey: string;
-  openaiModels: AIModel[];
-  geminiModels: AIModel[];
-  anthropicModels: AIModel[];
-};
+} from "../ui/dialog"
+import { Input } from "../ui/input"
+import { Button } from "../ui/button"
+import { useToast } from "../../contexts/toast"
+import { useI18n } from "../../contexts/i18n"
+import type {
+  ApiFormat,
+  Config,
+  ModelBindings,
+  ProviderConfig
+} from "../../types/electron"
+import type { UiLanguageSetting } from "../../../electron/i18n/types"
+import {
+  API_FORMAT_OPTIONS,
+  BINDING_FIELDS,
+  DEFAULT_API_FORMAT,
+  EMPTY_BINDINGS,
+  addModel,
+  normalizeBindings,
+  normalizeProviderConfig,
+  parseListModels
+} from "./modelConfig"
 
 // 界面语言三档（控件顺序固定：跟随系统 / 中文 / English）
 const UI_LANGUAGE_OPTIONS: Array<{
@@ -42,172 +40,11 @@ const UI_LANGUAGE_OPTIONS: Array<{
   { value: "en", labelKey: "ui.settings.interfaceLanguage.en" }
 ];
 
-// 三类模型各自的候选项：描述文案按"效果/成本"复用同一批 key
-const modelCategories: ModelCategory[] = [
-  {
-    key: 'extractionModel',
-    titleKey: 'ui.settings.models.extraction.title',
-    descriptionKey: 'ui.settings.models.extraction.description',
-    openaiModels: [
-      {
-        id: "gpt-4o",
-        name: "gpt-4o",
-        descriptionKey: "ui.settings.model.bestForExtraction"
-      },
-      {
-        id: "gpt-4o-mini",
-        name: "gpt-4o-mini",
-        descriptionKey: "ui.settings.model.faster"
-      }
-    ],
-    geminiModels: [
-      {
-        id: "gemini-1.5-pro",
-        name: "Gemini 1.5 Pro",
-        descriptionKey: "ui.settings.model.bestForExtraction"
-      },
-      {
-        id: "gemini-2.0-flash",
-        name: "Gemini 2.0 Flash",
-        descriptionKey: "ui.settings.model.faster"
-      }
-    ],
-    anthropicModels: [
-      {
-        id: "claude-3-7-sonnet-20250219",
-        name: "Claude 3.7 Sonnet",
-        descriptionKey: "ui.settings.model.bestForExtraction"
-      },
-      {
-        id: "claude-3-5-sonnet-20241022",
-        name: "Claude 3.5 Sonnet",
-        descriptionKey: "ui.settings.model.balanced"
-      },
-      {
-        id: "claude-3-opus-20240229",
-        name: "Claude 3 Opus",
-        descriptionKey: "ui.settings.model.topTier"
-      }
-    ]
-  },
-  {
-    key: 'solutionModel',
-    titleKey: 'ui.settings.models.solution.title',
-    descriptionKey: 'ui.settings.models.solution.description',
-    openaiModels: [
-      {
-        id: "gpt-4o",
-        name: "gpt-4o",
-        descriptionKey: "ui.settings.model.strongForCoding"
-      },
-      {
-        id: "gpt-4o-mini",
-        name: "gpt-4o-mini",
-        descriptionKey: "ui.settings.model.faster"
-      }
-    ],
-    geminiModels: [
-      {
-        id: "gemini-1.5-pro",
-        name: "Gemini 1.5 Pro",
-        descriptionKey: "ui.settings.model.strongForCoding"
-      },
-      {
-        id: "gemini-2.0-flash",
-        name: "Gemini 2.0 Flash",
-        descriptionKey: "ui.settings.model.faster"
-      }
-    ],
-    anthropicModels: [
-      {
-        id: "claude-3-7-sonnet-20250219",
-        name: "Claude 3.7 Sonnet",
-        descriptionKey: "ui.settings.model.strongForCoding"
-      },
-      {
-        id: "claude-3-5-sonnet-20241022",
-        name: "Claude 3.5 Sonnet",
-        descriptionKey: "ui.settings.model.balanced"
-      },
-      {
-        id: "claude-3-opus-20240229",
-        name: "Claude 3 Opus",
-        descriptionKey: "ui.settings.model.topTier"
-      }
-    ]
-  },
-  {
-    key: 'debuggingModel',
-    titleKey: 'ui.settings.models.debugging.title',
-    descriptionKey: 'ui.settings.models.debugging.description',
-    openaiModels: [
-      {
-        id: "gpt-4o",
-        name: "gpt-4o",
-        descriptionKey: "ui.settings.model.bestForDebugging"
-      },
-      {
-        id: "gpt-4o-mini",
-        name: "gpt-4o-mini",
-        descriptionKey: "ui.settings.model.faster"
-      }
-    ],
-    geminiModels: [
-      {
-        id: "gemini-1.5-pro",
-        name: "Gemini 1.5 Pro",
-        descriptionKey: "ui.settings.model.bestForDebugging"
-      },
-      {
-        id: "gemini-2.0-flash",
-        name: "Gemini 2.0 Flash",
-        descriptionKey: "ui.settings.model.faster"
-      }
-    ],
-    anthropicModels: [
-      {
-        id: "claude-3-7-sonnet-20250219",
-        name: "Claude 3.7 Sonnet",
-        descriptionKey: "ui.settings.model.bestForDebugging"
-      },
-      {
-        id: "claude-3-5-sonnet-20241022",
-        name: "Claude 3.5 Sonnet",
-        descriptionKey: "ui.settings.model.balanced"
-      },
-      {
-        id: "claude-3-opus-20240229",
-        name: "Claude 3 Opus",
-        descriptionKey: "ui.settings.model.topTier"
-      }
-    ]
-  }
-];
-
-// 各供应商的注册页 / 密钥页与文案 key：三家的操作步骤结构一致，只有链接与第三步措辞不同
-const providerHelp: Record<
-  APIProvider,
-  { signupUrl: string; linkKey: string; keysUrl: string; step3Key: string }
-> = {
-  openai: {
-    signupUrl: "https://platform.openai.com/signup",
-    linkKey: "ui.settings.link.openai",
-    keysUrl: "https://platform.openai.com/api-keys",
-    step3Key: "ui.settings.apiKey.step3.secret"
-  },
-  gemini: {
-    signupUrl: "https://aistudio.google.com/",
-    linkKey: "ui.settings.link.gemini",
-    keysUrl: "https://aistudio.google.com/app/apikey",
-    step3Key: "ui.settings.apiKey.step3.apiKey"
-  },
-  anthropic: {
-    signupUrl: "https://console.anthropic.com/signup",
-    linkKey: "ui.settings.link.anthropic",
-    keysUrl: "https://console.anthropic.com/settings/keys",
-    step3Key: "ui.settings.apiKey.step3.apiKey"
-  }
-};
+// 下拉框统一样式：与既有输入框同一套 token，禁用态降低对比度
+const SELECT_CLASS =
+  "w-full h-9 px-3 rounded-md bg-black/50 border border-white/10 text-white text-sm " +
+  "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/40 " +
+  "disabled:cursor-not-allowed disabled:opacity-50"
 
 interface SettingsDialogProps {
   open?: boolean;
@@ -216,14 +53,27 @@ interface SettingsDialogProps {
 
 export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDialogProps) {
   const [open, setOpen] = useState(externalOpen || false);
+  // 供应商表单：Base URL / API 格式 / API Key / 模型列表
+  const [baseUrl, setBaseUrl] = useState("");
+  const [apiFormat, setApiFormat] = useState<ApiFormat>(DEFAULT_API_FORMAT);
   const [apiKey, setApiKey] = useState("");
-  const [apiProvider, setApiProvider] = useState<APIProvider>("openai");
-  const [extractionModel, setExtractionModel] = useState("gpt-4o");
-  const [solutionModel, setSolutionModel] = useState("gpt-4o");
-  const [debuggingModel, setDebuggingModel] = useState("gpt-4o");
+  const [models, setModels] = useState<string[]>([]);
+  const [bindings, setBindings] = useState<ModelBindings>(EMPTY_BINDINGS);
+  const [showApiKey, setShowApiKey] = useState(false);
+  // 手工添加模型
+  const [addModelOpen, setAddModelOpen] = useState(false);
+  const [newModelId, setNewModelId] = useState("");
+  const [addModelError, setAddModelError] = useState<string | null>(null);
+  // 拉取模型列表
+  const [isFetchingModels, setIsFetchingModels] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [fetchedModels, setFetchedModels] = useState<string[] | null>(null);
+  const [fetchedSelection, setFetchedSelection] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const { showToast } = useToast();
   const { t, locale, setting, setSetting } = useI18n();
+  const addModelInputRef = useRef<HTMLInputElement>(null);
 
   // 与外部（App）持有的开关状态保持同步
   useEffect(() => {
@@ -240,19 +90,28 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
     }
   };
 
-  // 打开时读取当前配置（API Key、供应商、三个模型）
+  // 打开时读取当前配置（供应商四项 + 三用途绑定）
   useEffect(() => {
     if (open) {
       setIsLoading(true);
 
+      // 每次打开都重置临时交互态，避免上次的拉取结果与报错残留
+      setAddModelOpen(false);
+      setNewModelId("");
+      setAddModelError(null);
+      setFetchError(null);
+      setFetchedModels(null);
+      setFetchedSelection([]);
+
       window.electronAPI
         .getConfig()
         .then((config: Config) => {
-          setApiKey(config.apiKey || "");
-          setApiProvider(config.apiProvider || "openai");
-          setExtractionModel(config.extractionModel || "gpt-4o");
-          setSolutionModel(config.solutionModel || "gpt-4o");
-          setDebuggingModel(config.debuggingModel || "gpt-4o");
+          const normalized = normalizeProviderConfig(config);
+          setBaseUrl(normalized.provider.baseUrl);
+          setApiFormat(normalized.provider.apiFormat);
+          setApiKey(normalized.provider.apiKey);
+          setModels(normalized.provider.models);
+          setBindings(normalized.bindings);
         })
         .catch((error: unknown) => {
           console.error("加载配置失败：", error);
@@ -267,6 +126,13 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
         });
     }
   }, [open, showToast, t]);
+
+  // 展开"添加模型"后把焦点放进输入框，键盘用户不必再 Tab 一轮
+  useEffect(() => {
+    if (addModelOpen) {
+      addModelInputRef.current?.focus();
+    }
+  }, [addModelOpen]);
 
   // 切换界面语言：写配置后立即生效，不等待"保存设置"
   const handleSelectUiLanguage = async (next: UiLanguageSetting) => {
@@ -283,35 +149,111 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
     }
   };
 
-  // 切换供应商：三个模型重置为该供应商的默认模型
-  const handleProviderChange = (provider: APIProvider) => {
-    setApiProvider(provider);
+  // 模型列表变更后同步归一三用途绑定（删掉正在使用的模型时回落到列表首项）
+  const commitModels = (nextModels: string[]) => {
+    setModels(nextModels);
+    setBindings((prev) => normalizeBindings(prev, nextModels));
+  };
 
-    if (provider === "openai") {
-      setExtractionModel("gpt-4o");
-      setSolutionModel("gpt-4o");
-      setDebuggingModel("gpt-4o");
-    } else if (provider === "gemini") {
-      setExtractionModel("gemini-1.5-pro");
-      setSolutionModel("gemini-1.5-pro");
-      setDebuggingModel("gemini-1.5-pro");
-    } else if (provider === "anthropic") {
-      setExtractionModel("claude-3-7-sonnet-20250219");
-      setSolutionModel("claude-3-7-sonnet-20250219");
-      setDebuggingModel("claude-3-7-sonnet-20250219");
+  // 手工添加：去空白、重复即报错、成功后关闭输入行
+  const handleAddModel = () => {
+    const id = newModelId.trim();
+    if (!id) {
+      setAddModelError(t("ui.settings.models.addEmpty"));
+      return;
     }
+    if (models.includes(id)) {
+      setAddModelError(t("ui.settings.models.addDuplicate", { model: id }));
+      return;
+    }
+    commitModels(addModel(models, id));
+    setNewModelId("");
+    setAddModelError(null);
+    setAddModelOpen(false);
+  };
+
+  const handleRemoveModel = (id: string) => {
+    commitModels(models.filter((model) => model !== id));
+    setFetchedSelection((prev) => prev.filter((model) => model !== id));
+  };
+
+  // 拉取模型列表：只用真实 IPC 通道；通道缺失/失败时只提示，不阻塞手工添加
+  const handleFetchModels = async () => {
+    const trimmedBaseUrl = baseUrl.trim();
+    if (!trimmedBaseUrl) {
+      setFetchedModels(null);
+      setFetchError(t("ui.settings.models.fetchNeedsBaseUrl"));
+      return;
+    }
+
+    setIsFetchingModels(true);
+    setFetchError(null);
+
+    try {
+      const listModels = window.electronAPI.listModels;
+      if (typeof listModels !== "function") {
+        throw new Error(t("ui.settings.models.fetchUnavailable"));
+      }
+
+      const result = await listModels({
+        baseUrl: trimmedBaseUrl,
+        apiFormat,
+        apiKey: apiKey.trim()
+      });
+      setFetchedModels(parseListModels(result));
+      setFetchedSelection([]);
+    } catch (error) {
+      console.error("拉取模型列表失败：", error);
+      setFetchedModels(null);
+      setFetchError(
+        error instanceof Error && error.message
+          ? error.message
+          : t("ui.settings.models.fetchUnknownError")
+      );
+    } finally {
+      setIsFetchingModels(false);
+    }
+  };
+
+  // 勾选加入：只在没加过的模型上保留可选，加入时统一去重
+  const handleToggleFetched = (id: string) => {
+    setFetchedSelection((prev) =>
+      prev.includes(id) ? prev.filter((model) => model !== id) : [...prev, id]
+    );
+  };
+
+  const handleAddSelectedModels = () => {
+    if (fetchedSelection.length === 0) return;
+    const nextModels = fetchedSelection.reduce(
+      (acc, id) => addModel(acc, id),
+      models
+    );
+    commitModels(nextModels);
+    showToast(
+      t("ui.common.success"),
+      t("ui.settings.models.fetchAdded", {
+        count: String(fetchedSelection.length)
+      }),
+      "success"
+    );
+    setFetchedSelection([]);
+    setFetchedModels(null);
   };
 
   // 保存设置：成功后重载应用，让 API Key / 模型立即作用于主进程
   const handleSave = async () => {
-    setIsLoading(true);
+    setIsSaving(true);
     try {
+      const provider: ProviderConfig = {
+        baseUrl: baseUrl.trim(),
+        apiFormat,
+        apiKey: apiKey.trim(),
+        models
+      };
+
       const result = await window.electronAPI.updateConfig({
-        apiKey,
-        apiProvider,
-        extractionModel,
-        solutionModel,
-        debuggingModel,
+        provider,
+        bindings: normalizeBindings(bindings, models)
       });
 
       if (result) {
@@ -334,22 +276,11 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
         "error"
       );
     } finally {
-      setIsLoading(false);
+      setIsSaving(false);
     }
   };
 
-  // 展示用脱敏：保留前 4 位与后 4 位
-  const maskApiKey = (key: string) => {
-    if (!key || key.length < 10) return "";
-    return `${key.substring(0, 4)}...${key.substring(key.length - 4)}`;
-  };
-
-  // 用系统浏览器打开外链
-  const openExternalLink = (url: string) => {
-    window.electronAPI.openLink(url);
-  };
-
-  const help = providerHelp[apiProvider];
+  const hasModels = models.length > 0;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -397,7 +328,7 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
                   role="radio"
                   aria-checked={setting === option.value}
                   onClick={() => handleSelectUiLanguage(option.value)}
-                  className={`flex-1 p-2 rounded-lg cursor-pointer transition-colors text-left ${
+                  className={`flex-1 p-1.5 rounded-lg cursor-pointer transition-colors text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/40 ${
                     setting === option.value
                       ? "bg-white/10 border border-white/20"
                       : "bg-black/30 border border-white/5 hover:bg-white/5"
@@ -405,11 +336,11 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
                 >
                   <div className="flex items-center gap-2">
                     <div
-                      className={`w-3 h-3 rounded-full ${
+                      className={`w-3 h-3 shrink-0 rounded-full ${
                         setting === option.value ? "bg-white" : "bg-white/20"
                       }`}
                     />
-                    <p className="font-medium text-white text-sm">
+                    <p className="font-medium text-white text-[13px] whitespace-nowrap">
                       {t(option.labelKey)}
                     </p>
                   </div>
@@ -426,121 +357,335 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
             </p>
           </div>
 
-          {/* API 供应商 */}
+          {/* Base URL */}
           <div className="space-y-2">
-            <label className="text-sm font-medium text-white">{t("ui.settings.provider")}</label>
-            <div className="flex gap-2">
-              <div
-                className={`flex-1 p-2 rounded-lg cursor-pointer transition-colors ${
-                  apiProvider === "openai"
-                    ? "bg-white/10 border border-white/20"
-                    : "bg-black/30 border border-white/5 hover:bg-white/5"
-                }`}
-                onClick={() => handleProviderChange("openai")}
-              >
-                <div className="flex items-center gap-2">
-                  <div
-                    className={`w-3 h-3 rounded-full ${
-                      apiProvider === "openai" ? "bg-white" : "bg-white/20"
-                    }`}
-                  />
-                  <div className="flex flex-col">
-                    <p className="font-medium text-white text-sm">OpenAI</p>
-                    <p className="text-xs text-white/60">{t("ui.settings.provider.openai.models")}</p>
-                  </div>
-                </div>
-              </div>
-              <div
-                className={`flex-1 p-2 rounded-lg cursor-pointer transition-colors ${
-                  apiProvider === "gemini"
-                    ? "bg-white/10 border border-white/20"
-                    : "bg-black/30 border border-white/5 hover:bg-white/5"
-                }`}
-                onClick={() => handleProviderChange("gemini")}
-              >
-                <div className="flex items-center gap-2">
-                  <div
-                    className={`w-3 h-3 rounded-full ${
-                      apiProvider === "gemini" ? "bg-white" : "bg-white/20"
-                    }`}
-                  />
-                  <div className="flex flex-col">
-                    <p className="font-medium text-white text-sm">Gemini</p>
-                    <p className="text-xs text-white/60">{t("ui.settings.provider.gemini.models")}</p>
-                  </div>
-                </div>
-              </div>
-              <div
-                className={`flex-1 p-2 rounded-lg cursor-pointer transition-colors ${
-                  apiProvider === "anthropic"
-                    ? "bg-white/10 border border-white/20"
-                    : "bg-black/30 border border-white/5 hover:bg-white/5"
-                }`}
-                onClick={() => handleProviderChange("anthropic")}
-              >
-                <div className="flex items-center gap-2">
-                  <div
-                    className={`w-3 h-3 rounded-full ${
-                      apiProvider === "anthropic" ? "bg-white" : "bg-white/20"
-                    }`}
-                  />
-                  <div className="flex flex-col">
-                    <p className="font-medium text-white text-sm">Claude</p>
-                    <p className="text-xs text-white/60">{t("ui.settings.provider.anthropic.models")}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-white" htmlFor="apiKey">
-            {t(`ui.settings.apiKey.label.${apiProvider}`)}
+            <label className="text-sm font-medium text-white" htmlFor="provider-base-url">
+              {t("ui.settings.baseUrl.label")}
             </label>
             <Input
-              id="apiKey"
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder={
-                apiProvider === "openai" ? "sk-..." : 
-                apiProvider === "gemini" ? t("ui.settings.apiKey.placeholder.gemini") :
-                "sk-ant-..."
-              }
-              className="bg-black/50 border-white/10 text-white"
+              id="provider-base-url"
+              type="url"
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+              placeholder={t("ui.settings.baseUrl.placeholder")}
+              spellCheck={false}
+              autoComplete="off"
+              className="bg-black/50 border-white/10 text-white placeholder:text-white/30"
             />
-            {apiKey && (
-              <p className="text-xs text-white/50">
-                {t("ui.settings.apiKey.current", { key: maskApiKey(apiKey) })}
+          </div>
+
+          {/* API 格式三选一 */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-white" htmlFor="provider-api-format">
+              {t("ui.settings.apiFormat.label")}
+            </label>
+            <select
+              id="provider-api-format"
+              value={apiFormat}
+              onChange={(e) => setApiFormat(e.target.value as ApiFormat)}
+              className={SELECT_CLASS}
+            >
+              {API_FORMAT_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {t(option.labelKey)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* API Key：可切换明文/密文 */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-white" htmlFor="provider-api-key">
+              {t("ui.settings.apiKey.label")}
+            </label>
+            <div className="relative">
+              <Input
+                id="provider-api-key"
+                type={showApiKey ? "text" : "password"}
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder={t("ui.settings.apiKey.placeholder")}
+                spellCheck={false}
+                autoComplete="off"
+                className="bg-black/50 border-white/10 text-white pr-10 placeholder:text-white/30"
+              />
+              <button
+                type="button"
+                onClick={() => setShowApiKey((prev) => !prev)}
+                aria-label={
+                  showApiKey
+                    ? t("ui.settings.apiKey.hide")
+                    : t("ui.settings.apiKey.show")
+                }
+                aria-pressed={showApiKey}
+                className="absolute right-1 top-1/2 -translate-y-1/2 p-2 rounded-md text-white/60 hover:text-white hover:bg-white/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/40"
+              >
+                {showApiKey ? (
+                  <EyeOff className="w-4 h-4" aria-hidden="true" />
+                ) : (
+                  <Eye className="w-4 h-4" aria-hidden="true" />
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* 模型列表 */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <label className="text-sm font-medium text-white" id="model-list-label">
+                {t("ui.settings.models.listTitle")}
+              </label>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleFetchModels}
+                  disabled={isFetchingModels}
+                  className="border-white/10 bg-black/40 text-white hover:bg-white/10 hover:text-white"
+                >
+                  {isFetchingModels
+                    ? t("ui.settings.models.fetching")
+                    : t("ui.settings.models.fetch")}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  aria-expanded={addModelOpen}
+                  onClick={() => {
+                    setAddModelOpen((prev) => !prev);
+                    setAddModelError(null);
+                  }}
+                  className="bg-white/10 text-white hover:bg-white/20"
+                >
+                  <Plus className="w-3.5 h-3.5 mr-1" aria-hidden="true" />
+                  {t("ui.settings.models.add")}
+                </Button>
+              </div>
+            </div>
+
+            {/* 手工添加模型 ID */}
+            {addModelOpen && (
+              <form
+                className="space-y-1"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  handleAddModel();
+                }}
+              >
+                <div className="flex items-center gap-2">
+                  <Input
+                    ref={addModelInputRef}
+                    aria-label={t("ui.settings.models.addInputLabel")}
+                    value={newModelId}
+                    onChange={(e) => {
+                      setNewModelId(e.target.value);
+                      setAddModelError(null);
+                    }}
+                    placeholder={t("ui.settings.models.addPlaceholder")}
+                    spellCheck={false}
+                    autoComplete="off"
+                    className="bg-black/50 border-white/10 text-white placeholder:text-white/30"
+                  />
+                  <Button
+                    type="submit"
+                    size="sm"
+                    className="bg-white text-black hover:bg-white/90 shrink-0"
+                  >
+                    {t("ui.settings.models.addConfirm")}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setAddModelOpen(false);
+                      setNewModelId("");
+                      setAddModelError(null);
+                    }}
+                    className="text-white/70 hover:text-white shrink-0"
+                  >
+                    {t("ui.common.cancel")}
+                  </Button>
+                </div>
+                {addModelError && (
+                  <p role="alert" className="text-xs text-red-300">
+                    {addModelError}
+                  </p>
+                )}
+              </form>
+            )}
+
+            {/* 已配置的模型：每条可删除 */}
+            <ul className="space-y-2" aria-labelledby="model-list-label">
+              {models.map((model) => (
+                <li
+                  key={model}
+                  className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg bg-black/30 border border-white/5"
+                >
+                  <span className="text-xs text-white/90 font-mono break-all">
+                    {model}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveModel(model)}
+                    aria-label={t("ui.settings.models.remove", { model })}
+                    className="p-1 rounded-md text-white/50 hover:text-red-300 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/40"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+
+            {/* 空态：与设计稿文案一致 */}
+            {!hasModels && (
+              <div className="flex items-start gap-2 p-3 rounded-lg border border-dashed border-white/15 text-xs text-white/60">
+                <Info className="w-4 h-4 shrink-0" aria-hidden="true" />
+                <p>{t("ui.settings.models.empty")}</p>
+              </div>
+            )}
+
+            {/* 拉取失败：当前语言的错误提示 + 重试，手工添加仍可用 */}
+            {fetchError && (
+              <div
+                role="alert"
+                className="space-y-1 p-2 rounded-lg border border-red-400/30 bg-red-500/10 text-xs text-red-200"
+              >
+                <p>
+                  {t("ui.settings.models.fetchFailed", { message: fetchError })}
+                </p>
+                <p className="text-white/60">
+                  {t("ui.settings.models.fetchManualHint")}
+                </p>
+                <button
+                  type="button"
+                  onClick={handleFetchModels}
+                  disabled={isFetchingModels}
+                  className="text-blue-300 underline-offset-2 hover:underline disabled:opacity-50"
+                >
+                  {t("ui.settings.models.retry")}
+                </button>
+              </div>
+            )}
+
+            {/* 拉取成功：勾选后加入列表 */}
+            {fetchedModels !== null && (
+              <div className="space-y-2 p-2 rounded-lg bg-white/5 border border-white/10">
+                <p className="text-xs text-white/80">
+                  {t("ui.settings.models.fetchResultTitle")}
+                </p>
+                {fetchedModels.length === 0 ? (
+                  <p className="text-xs text-white/60">
+                    {t("ui.settings.models.fetchEmpty")}
+                  </p>
+                ) : (
+                  <>
+                    <ul className="max-h-40 overflow-y-auto space-y-1">
+                      {fetchedModels.map((model) => {
+                        const alreadyAdded = models.includes(model);
+                        return (
+                          <li key={model}>
+                            <label className="flex items-center gap-2 text-xs text-white/80">
+                              <input
+                                type="checkbox"
+                                checked={alreadyAdded || fetchedSelection.includes(model)}
+                                disabled={alreadyAdded}
+                                onChange={() => handleToggleFetched(model)}
+                                className="accent-white"
+                              />
+                              <span className="font-mono break-all">{model}</span>
+                              {alreadyAdded && (
+                                <span className="text-white/40">
+                                  {t("ui.settings.models.alreadyAdded")}
+                                </span>
+                              )}
+                            </label>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                    <div className="flex items-center justify-between gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setFetchedModels(null)}
+                        className="text-xs text-white/60 hover:text-white"
+                      >
+                        {t("ui.common.close")}
+                      </button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={handleAddSelectedModels}
+                        disabled={fetchedSelection.length === 0}
+                        className="bg-white text-black hover:bg-white/90"
+                      >
+                        {t("ui.settings.models.addSelected", {
+                          count: String(fetchedSelection.length)
+                        })}
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* 三个用途各从模型列表里选一个 */}
+          <div className="space-y-3 mt-4">
+            <div>
+              <label className="text-sm font-medium text-white">
+                {t("ui.settings.bindings.title")}
+              </label>
+              <p className="text-xs text-white/60">
+                {t("ui.settings.bindings.description")}
+              </p>
+            </div>
+
+            {BINDING_FIELDS.map((field) => (
+              <div key={field.key} className="space-y-1">
+                <label
+                  className="text-xs font-medium text-white block"
+                  htmlFor={`binding-${field.key}`}
+                >
+                  {t(field.titleKey)}
+                </label>
+                <p className="text-xs text-white/50">{t(field.descriptionKey)}</p>
+                <select
+                  id={`binding-${field.key}`}
+                  value={bindings[field.key]}
+                  onChange={(event) =>
+                    setBindings((prev) => ({
+                      ...prev,
+                      [field.key]: event.target.value
+                    }))
+                  }
+                  disabled={!hasModels}
+                  title={bindings[field.key]}
+                  className={SELECT_CLASS}
+                >
+                  {!hasModels && (
+                    <option value="">{t("ui.settings.bindings.emptyOption")}</option>
+                  )}
+                  {hasModels && bindings[field.key] === "" && (
+                    <option value="">
+                      {t("ui.settings.bindings.selectPlaceholder")}
+                    </option>
+                  )}
+                  {models.map((model) => (
+                    <option key={model} value={model}>
+                      {model}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ))}
+
+            {!hasModels && (
+              <p className="text-xs text-amber-300/80">
+                {t("ui.settings.bindings.addFirst")}
               </p>
             )}
-            <p className="text-xs text-white/50">
-              {t("ui.settings.apiKey.storageNote", {
-                provider: apiProvider === "openai" ? "OpenAI" : "Google"
-              })}
-            </p>
-            <div className="mt-2 p-2 rounded-md bg-white/5 border border-white/10">
-              <p className="text-xs text-white/80 mb-1">{t("ui.settings.apiKey.helpTitle")}</p>
-              <p className="text-xs text-white/60 mb-1">
-                {t("ui.settings.apiKey.step1")}{" "}
-                <button
-                  onClick={() => openExternalLink(help.signupUrl)}
-                  className="text-blue-400 hover:underline cursor-pointer"
-                >
-                  {t(help.linkKey)}
-                </button>
-              </p>
-              <p className="text-xs text-white/60 mb-1">
-                {t("ui.settings.apiKey.step2")}{" "}
-                <button
-                  onClick={() => openExternalLink(help.keysUrl)}
-                  className="text-blue-400 hover:underline cursor-pointer"
-                >
-                  {t("ui.settings.link.apiKeys")}
-                </button>
-              </p>
-              <p className="text-xs text-white/60">{t(help.step3Key)}</p>
-            </div>
           </div>
           
           <div className="space-y-2 mt-4">
@@ -585,69 +730,6 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
               </div>
             </div>
           </div>
-          
-          <div className="space-y-4 mt-4">
-            <label className="text-sm font-medium text-white">{t("ui.settings.models.title")}</label>
-            <p className="text-xs text-white/60 -mt-3 mb-2">
-              {t("ui.settings.models.description")}
-            </p>
-            
-            {modelCategories.map((category) => {
-              // 按当前供应商取候选模型
-              const models = 
-                apiProvider === "openai" ? category.openaiModels : 
-                apiProvider === "gemini" ? category.geminiModels :
-                category.anthropicModels;
-              
-              return (
-                <div key={category.key} className="mb-4">
-                  <label className="text-sm font-medium text-white mb-1 block">
-                    {t(category.titleKey)}
-                  </label>
-                  <p className="text-xs text-white/60 mb-2">{t(category.descriptionKey)}</p>
-                  
-                  <div className="space-y-2">
-                    {models.map((m) => {
-                      // 当前选中值与该类别的 setter
-                      const currentValue = 
-                        category.key === 'extractionModel' ? extractionModel :
-                        category.key === 'solutionModel' ? solutionModel :
-                        debuggingModel;
-                      
-                      const setValue = 
-                        category.key === 'extractionModel' ? setExtractionModel :
-                        category.key === 'solutionModel' ? setSolutionModel :
-                        setDebuggingModel;
-                        
-                      return (
-                        <div
-                          key={m.id}
-                          className={`p-2 rounded-lg cursor-pointer transition-colors ${
-                            currentValue === m.id
-                              ? "bg-white/10 border border-white/20"
-                              : "bg-black/30 border border-white/5 hover:bg-white/5"
-                          }`}
-                          onClick={() => setValue(m.id)}
-                        >
-                          <div className="flex items-center gap-2">
-                            <div
-                              className={`w-3 h-3 rounded-full ${
-                                currentValue === m.id ? "bg-white" : "bg-white/20"
-                              }`}
-                            />
-                            <div>
-                              <p className="font-medium text-white text-xs">{m.name}</p>
-                              <p className="text-xs text-white/60">{t(m.descriptionKey)}</p>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
         </div>
         <DialogFooter className="flex justify-between sm:justify-between">
           <Button
@@ -660,9 +742,9 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
           <Button
             className="px-4 py-3 bg-white text-black rounded-xl font-medium hover:bg-white/90 transition-colors"
             onClick={handleSave}
-            disabled={isLoading || !apiKey}
+            disabled={isLoading || isSaving || !apiKey.trim()}
           >
-            {isLoading ? t("ui.settings.saving") : t("ui.settings.save")}
+            {isSaving ? t("ui.settings.saving") : t("ui.settings.save")}
           </Button>
         </DialogFooter>
       </DialogContent>
