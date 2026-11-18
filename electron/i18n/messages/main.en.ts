@@ -43,6 +43,41 @@ export const mainEn: Record<MainMessageKeys, string> = {
   "main.config.noApiKey":
     "No API key found in configuration. User will need to set up.",
 
+  // Config layer (ConfigHelper.ts / configFile.ts)
+  "main.config.path": "Config file path: {{path}}",
+  "main.config.migrated":
+    "Config upgraded to v{{version}}: provider and model list need to be set up again.",
+  "main.config.legacyModelsDropped":
+    "Discarded the legacy built-in model selection: {{keys}}",
+  "main.config.normalized":
+    "Invalid config values normalized in memory (file left untouched): {{keys}}",
+  "main.config.invalidBackedUp":
+    "Config file is not valid JSON, backed up to: {{path}}",
+  "main.config.invalidReason": "Config parse failure reason: {{message}}",
+  "main.config.readFailed":
+    "Failed to read config file, using defaults for this run: {{message}}",
+  "main.config.writeFailed":
+    "Failed to write config file, continuing with in-memory config: {{message}}",
+  "main.config.invalidUiLanguage":
+    "Invalid UI language value ({{value}}), falling back to follow-system.",
+  "main.config.localeUnavailable":
+    "Failed to read system locale, falling back to process locale:",
+  "main.config.legacyUpdateIgnored":
+    "Ignored legacy config fields (v3 no longer writes them): {{keys}}",
+  "main.config.updateFailed": "Failed to update config: {{message}}",
+  "main.config.keyTest.missingBaseUrl":
+    "Base URL is not set yet. Please fill in the service address first.",
+  "main.config.keyTest.invalidKey":
+    "API key is invalid or rejected by the server (HTTP {{status}}).",
+  "main.config.keyTest.rateLimited":
+    "Too many requests or insufficient quota (HTTP 429). Please retry later.",
+  "main.config.keyTest.serverError":
+    "Server error (HTTP {{status}}). Please retry later.",
+  "main.config.keyTest.httpError":
+    "Server returned HTTP {{status}}. Check the Base URL and API format.",
+  "main.config.keyTest.networkError":
+    "Could not reach the service address: {{message}}",
+
   // IPC handlers (ipcHandlers.ts)
   "main.ipc.initializing": "Initializing IPC handlers",
   "main.ipc.openingExternalUrl": "Opening external URL: {{url}}",
@@ -161,7 +196,7 @@ export const mainEn: Record<MainMessageKeys, string> = {
     "Screenshot helper not initialized",
   "main.error.resolveUiLocale": "Error resolving UI locale:",
   "main.error.apiKeyFormat":
-    "Invalid API key format. OpenAI API keys start with 'sk-'",
+    "Invalid API key format: it must not be empty or contain whitespace",
   "main.error.setInitialCredits": "Error setting initial credits:",
   "main.error.decrementCredits": "Error decrementing credits:",
   "main.error.getScreenshots": "Error getting screenshots:",

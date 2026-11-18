@@ -370,3 +370,63 @@ useI18n(): {
 | R7 | 模型不遵守"代码块不翻译" | 代码块被改写 | prompt 双写约束 + 验收截图逐条核对；不做自动重试 |
 | R8 | `stealth-run.sh` 每次清空 `dist`/`.env` | 若把语言状态放进构建产物会每次丢失 | 语言状态只存 `userData/config.json`；验收前不需要额外恢复步骤 |
 | R9 | 现有 `src/types/electron.d.ts` 的 `getConfig`/`updateConfig` 类型与实际实现已不一致（只声明 `apiKey`/`model`） | 新增字段后类型更偏离 | T1 顺带修正为真实 `Config` 结构；不引入 `any` |
+
+## 15. 配置结构 v3（JUN-47 追加，取代第 3 / 5 章的配置结构部分）
+
+需求方在 JUN-36 拍板：模型配置改为通用表单（Base URL + API 格式 + API Key + 可增删的模型列表），
+内置模型清单与 openai/gemini/anthropic 三选一**彻底删除**。因此 `config.json` 从 v2 升到 **v3**：
+
+```json
+{
+  "provider": {
+    "baseUrl": "",
+    "apiFormat": "anthropic-messages | chat-completions | responses",
+    "apiKey": "",
+    "models": ["<模型 ID>"]
+  },
+  "bindings": {
+    "extractionModel": "<必须 ∈ provider.models>",
+    "solutionModel": "<必须 ∈ provider.models>",
+    "debuggingModel": "<必须 ∈ provider.models>"
+  },
+  "uiLanguage": "system | zh | en",
+  "language": "java",
+  "opacity": 1.0,
+  "configVersion": 3
+}
+```
+
+### 15.1 不变量（读配置时强制归一，纯函数 `normalizeConfigData`）
+
+- `provider.models` 只存模型 ID 字符串：去首尾空白、去空串、**去重**（保持原顺序）。
+- `bindings.*` 必须 ∈ `provider.models`：指向不存在的 ID → 回落**列表首项**；列表为空 → 留空（不抛错），
+  由上层给出"先配置模型"的可见提示。
+- `provider.apiFormat` 非法 → 回落默认值 `responses`（与设置页默认选中项一致）。
+- `provider.baseUrl` 非法/缺失 → 空串（上层据此提示"先配置服务地址"）；非空时去首尾空白与末尾斜杠。
+- `uiLanguage` 非法 → `system`；`language` 非法 → `java`；`opacity` 夹到 `[0, 1]`。
+- 归一化**只影响内存**，不写回文件：避免"重启覆盖用户手改"。
+
+### 15.2 迁移（`configVersion < 3`，一次性）
+
+| 旧键 | 处置 |
+|---|---|
+| `apiKey` | **保留**，迁入 `provider.apiKey` |
+| `apiProvider` | 丢弃 |
+| `extractionModel` / `solutionModel` / `debuggingModel` | 丢弃；`provider.models` 与 `bindings` 置空 |
+| `uiLanguage` / `language` / `opacity` | 合法值原样保留，缺失时取默认（`system` / `java` / `1.0`） |
+| 未知键 | 原样保留（前向兼容） |
+
+- 旧的内置模型名不逐个匹配、整体丢弃即可（配置层不保留任何模型白名单）：迁移后 `models` 恒为空数组。
+- 迁移与 `configVersion: 3` 同批落盘，之后再启动不触发；用户手改任何字段不会被覆盖。
+- 迁移/丢弃旧模型各输出一条**当前语言**的日志（`main.config.migrated` / `main.config.legacyModelsDropped`）。
+- 损坏文件：先备份 `config.invalid-<ISO>.json`，再写默认值，不崩溃（`configFile.ts`）。
+
+### 15.3 代码落点
+
+- `electron/configMigrations.ts`：类型、默认值、`normalizeConfigData` / `normalizeProviderConfig` /
+  `normalizeBindings` / `mergeConfigUpdate` / `migrateConfigData`（纯函数，零 electron 依赖）。
+- `electron/configFile.ts`：读文件、创建默认文件、备份损坏文件、原子写（只依赖 `node:fs`，可直接单测）。
+- `electron/ConfigHelper.ts`：接 electron 的薄壳（路径、日志、事件、内存兜底）。
+- 兼容桥：`Config` 上仍声明旧字段（`apiKey` / `apiProvider` / `*Model`）为 `@deprecated` 可选属性，
+  仅为让尚未迁移的调用层（`ProcessingHelper`）通过 `tsc`；v3 **不读取也不写入**它们，调用层 issue 落地后删除。
+- 这三种结构之外的字段名（如 `provider.models` 改叫 `modelList`）**不得**由其它 issue 自行改名。
