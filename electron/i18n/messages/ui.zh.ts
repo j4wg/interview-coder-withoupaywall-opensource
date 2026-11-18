@@ -202,6 +202,7 @@ export const uiZh = {
   "ui.settings.bindings.modelLabel": "模型",
   "ui.settings.bindings.providerPlaceholder": "选择配置",
   "ui.settings.bindings.modelPlaceholder": "选择模型",
+      "ui.settings.bindings.modelNeedsProvider": "先选择配置",
   "ui.settings.bindings.noModels": "该配置还没有模型",
   "ui.settings.bindings.cleared":
     "部分用途引用的模型已不存在，已清空，请重新选择。",

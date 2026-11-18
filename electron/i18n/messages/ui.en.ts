@@ -216,6 +216,7 @@ export const uiEn: typeof uiZh = {
   "ui.settings.bindings.modelLabel": "Model",
   "ui.settings.bindings.providerPlaceholder": "Select a configuration",
   "ui.settings.bindings.modelPlaceholder": "Select a model",
+      "ui.settings.bindings.modelNeedsProvider": "Choose a configuration first",
   "ui.settings.bindings.noModels": "This configuration has no models yet",
   "ui.settings.bindings.cleared":
     "Some usages referenced models that no longer exist and were cleared. Please select again.",

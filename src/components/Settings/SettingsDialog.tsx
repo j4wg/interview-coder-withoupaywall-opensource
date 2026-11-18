@@ -494,7 +494,9 @@ export function SettingsDialog({
                     >
                       {models.length === 0 ? (
                         <option value="">
-                          {t("ui.settings.bindings.noModels")}
+                          {selectedProvider
+                            ? t("ui.settings.bindings.noModels")
+                            : t("ui.settings.bindings.modelNeedsProvider")}
                         </option>
                       ) : (
                         <>
