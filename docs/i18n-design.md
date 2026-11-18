@@ -345,22 +345,23 @@ useI18n(): {
 | 任务 | 内容 | 依赖 | 建议归属 |
 |---|---|---|---|
 | T0 | 本设计文档 | — | 已完成（JUN-37） |
-| T1 | **配置层**：`ConfigHelper`（`uiLanguage`/`configVersion`/`getUiLocale`）、`configMigrations.ts`、`get-ui-locale` IPC、`preload` 契约、`src/types/*.d.ts`、`tests/*.mjs`、`package.json` test 脚本 | T0 | 需新建子 issue，建议给主进程线负责人（JUN-40/41 同一负责人） |
+| T1 | **配置层**（JUN-44）：`ConfigHelper`（`uiLanguage`/`configVersion`/`getUiLocale`）、`configMigrations.ts`、`electron/i18n/` 内核（`types.ts`/`resolveLocale.ts`/`index.ts`/`mainT.ts`）、`get-ui-locale` IPC、`preload` 契约、`src/types/*.d.ts`、`tests/*.mjs`、`package.json` test 脚本 | T0 | JUN-44（已建，stage 1、todo，主进程线同一 squad）；JUN-42 的范围是本任务真子集，已按重复关闭 |
 | T2 | **文档双语**（JUN-38） | T0（第 7 条结论） | 现有负责人，可立即并行 |
 | T3 | **渲染层**（JUN-39）：`ui.*` 文案、`src/contexts/i18n.tsx`、`App.tsx`、设置对话框三档 | T0 契约 + T1 的 IPC/preload 落地 | 现有负责人（前端线） |
 | T4 | **主进程与脚本**（JUN-40）：`main.*` 文案、脚本输出、注释 | T0 契约 + T1 | 现有负责人（主进程线） |
 | T5 | **prompt 双语**（JUN-41）：`processing.*`、`prompts.ts`、`ProcessingHelper.ts` | T0 契约 + T1 | 现有负责人（主进程线） |
-| T6 | **验收**：`stealth-run.sh` 启动 + 四态截图 + 迁移矩阵复核 | T1–T5 | 需新建验收 issue |
+| T6 | **验收**：`stealth-run.sh` 启动 + 四态截图 + 迁移矩阵复核 | T1–T5 | JUN-43 |
 
 - 可并行：T2 与 T1 同时开工；T3/T4/T5 在 T1 契约合并后**三者同时**开工（文件零重叠：`ui.*` / `main.*` / `processing.*`，业务文件也分属 `src/**` 与 `electron/**`）。
 - 阻塞点：T1 → {T3, T4, T5} → T6；T1 未合并前，T3/T4/T5 只能写文案表，不能接 IPC，否则会各自造一份字段名。
 - 唯一共享写入点：`src/types/*.d.ts`（T1 独占）、`electron/preload.ts`（T1 独占）、`src/App.tsx`（T3 独占）、`electron/ConfigHelper.ts`（T1 独占）；除这些之外不得跨 issue 改同一文件。
+- `electron/i18n/` 内核文件归 T1（JUN-44）：`types.ts`、`resolveLocale.ts`、`index.ts`、`mainT.ts` 由 T1 建好并导出；JUN-39/40/41 只新增各自命名空间的 `messages/<ns>.<locale>.ts`（`prompts.ts` 归 JUN-41），不得再建一份语言判定或翻译器，否则又回到"三套字段名"。
 
 ## 14. 风险清单
 
 | # | 风险 | 影响 | 处置 |
 |---|---|---|---|
-| R1 | **配置层实现 issue 缺失**：JUN-39 只提到"默认跟随系统"，JUN-40/41 都显式把 `ConfigHelper`/`store.ts` 排除在外，当前子 issue 列表里没有任何 issue 实现 `uiLanguage` 字段、`get-ui-locale` 与迁移 | 三个实现 issue 会各自造字段名与默认值，最终无法合并 | 必须先建 T1 子 issue 并先合并；本文件 9.1/9.2 即其验收口径 |
+| R1 | **配置层实现 issue 缺失**：JUN-39 只提到"默认跟随系统"，JUN-40/41 都显式把 `ConfigHelper`/`store.ts` 排除在外，JUN-42 又明确不碰 `ipcHandlers.ts`/`preload.ts`/`src/types`，于是 `uiLanguage` 字段、`get-ui-locale` 与迁移无 issue 认领 | 三个实现 issue 会各自造字段名与默认值，最终无法合并 | 已处置：新建 JUN-44 认领 T1 并独占 `ConfigHelper.ts`/`preload.ts`/`src/types/*`/`electron/i18n` 内核；JUN-42 按重复关闭、其验收项并入 JUN-44；JUN-44 合并前三者不得接 IPC |
 | R2 | 共享模块若被移出 `electron/`，tsc 产出路径变化 | `dist-electron/main.js` 消失，`stealth-run.sh` 与 `package.json main` 直接失效 | 共享模块固定在 `electron/i18n/`，作为硬约束写入实现 issue |
 | R3 | 迁移强制 `language="java"` 会覆盖用户既有编程语言选择（如 `csharp`） | 一次性意外 | 用户已明确"旧配置覆盖即可"；迁移一次性，用户改回后不再覆盖；迁移时输出一条日志说明已覆盖 |
 | R4 | 渲染层跨目录 import `electron/i18n` | 若构建器限制目录会报错；同时把 `main`/`processing` 文案带进渲染包 | 文案表按命名空间分文件、无副作用，Vite 可摇树；需要时在 JUN-39 里只 import `ui` 与 `types` |
