@@ -8,8 +8,96 @@ import { app, BrowserWindow, dialog } from "electron"
 import { OpenAI } from "openai"
 import { configHelper } from "./ConfigHelper"
 import Anthropic from '@anthropic-ai/sdk';
+import { mainT } from "./i18n/mainT"
+import { t } from "./i18n"
+import type { Locale } from "./i18n/types"
+import {
+  buildExtractionPrompt,
+  buildSolutionSystemPrompt,
+  buildSolutionPrompt,
+  buildDebugSystemPrompt,
+  buildDebugPrompt,
+} from "./i18n/prompts"
+import {
+  parseProblemInfo,
+  type ExtractedProblemInfo,
+  type ProblemParseResult,
+} from "./problemInfoParser"
+import { parseSolutionResponse } from "./solutionResponseParser"
 
-// Interface for Gemini API requests
+/**
+ * 本文件内的文案统一走 `processing` 命名空间（见 docs/i18n-design.md 决策 1/5）。
+ * 每次调用即时解析当前界面语言，因此切换语言后无需重启。
+ */
+const pt = (key: string, vars?: Record<string, string>): string =>
+  mainT("processing")(key, vars)
+
+/** 解析失败时打详细日志：字段被翻译成中文时，日志里能直接看到实际字段名 */
+function logProblemParseFailure(result: ProblemParseResult): void {
+  // 只处理失败分支；成功分支不该进来，这里直接返回而不抛错
+  if (result.status === "ok") return
+  if (result.status === "fields") {
+    console.error(
+      pt("processing.log.extract.fieldMissing", {
+        missing: (result.missing ?? []).join(", "),
+        keys: (result.keys ?? []).join(", "),
+      })
+    )
+    return
+  }
+  if (result.status === "notObject") {
+    console.error(pt("processing.log.extract.notObject", { snippet: result.snippet }))
+    return
+  }
+  console.error(
+    pt("processing.log.parse.failed", {
+      error: result.error ?? "",
+      snippet: result.snippet,
+    })
+  )
+}
+
+/** 解析失败时回给界面的错误文案（按失败类型区分，均带当前语言） */
+function problemParseErrorMessage(result: ProblemParseResult): string {
+  if (result.status === "ok") return ""
+  if (result.status === "fields") {
+    return pt("processing.error.extract.fieldMissing", {
+      missing: (result.missing ?? []).join(", "),
+    })
+  }
+  if (result.status === "notObject") {
+    return pt("processing.error.extract.notObject")
+  }
+  return pt("processing.error.extract.parseFailed")
+}
+
+/**
+ * 判断错误文案是否属于"API Key 未配置/无效"，用于决定界面上弹哪个提示。
+ * 文案是双语的，所以中英两版都参与比对，不能只按英文子串匹配。
+ */
+const API_KEY_ERROR_KEYS = [
+  "processing.error.openai.notConfigured",
+  "processing.error.openai.invalidKey",
+  "processing.error.gemini.notConfigured",
+  "processing.error.anthropic.notConfigured",
+] as const
+
+const API_KEY_PROVIDER_NAMES = ["OpenAI", "Gemini", "Anthropic", "Claude"]
+
+function isApiKeyError(message?: string): boolean {
+  if (!message) return false
+  const matchesLocalized = (["zh", "en"] as Locale[]).some((locale) =>
+    API_KEY_ERROR_KEYS.some((key) => t("processing", locale, key) === message)
+  )
+  if (matchesLocalized) return true
+  // 兜底：供应商 SDK 透传的错误里仍有英文名，保持与改动前一致的宽松匹配
+  return (
+    /api\s*key/i.test(message) ||
+    API_KEY_PROVIDER_NAMES.some((name) => message.includes(name))
+  )
+}
+
+// Gemini API 请求体结构
 interface GeminiMessage {
   role: string;
   parts: Array<{
@@ -50,7 +138,7 @@ export class ProcessingHelper {
   private geminiApiKey: string | null = null
   private anthropicClient: Anthropic | null = null
 
-  // AbortControllers for API requests
+  // 三类请求的 AbortController，用于用户取消当前请求
   private currentProcessingAbortController: AbortController | null = null
   private currentExtraProcessingAbortController: AbortController | null = null
 
@@ -58,17 +146,25 @@ export class ProcessingHelper {
     this.deps = deps
     this.screenshotHelper = deps.getScreenshotHelper()
     
-    // Initialize AI client based on config
+    // 按当前配置初始化 AI 客户端
     this.initializeAIClient();
     
-    // Listen for config changes to re-initialize the AI client
+    // 配置变更后重新初始化 AI 客户端（例如换供应商、换 Key、换模型）
     configHelper.on('config-updated', () => {
       this.initializeAIClient();
     });
   }
+
+  /**
+   * 取当前生效的界面语言。与 mainT 同源（configHelper.getUiLocale()），不缓存，
+   * 因此用户切换界面语言后，下一次请求的 prompt 立刻跟随。
+   */
+  private getLocale(): Locale {
+    return configHelper.getUiLocale().locale;
+  }
   
   /**
-   * Initialize or reinitialize the AI client with current config
+   * 按当前配置初始化（或重建）AI 客户端
    */
   private initializeAIClient(): void {
     try {
@@ -78,33 +174,33 @@ export class ProcessingHelper {
         if (config.apiKey) {
           this.openaiClient = new OpenAI({ 
             apiKey: config.apiKey,
-            timeout: 60000, // 60 second timeout
-            maxRetries: 2   // Retry up to 2 times
+            timeout: 60000, // 60 秒超时
+            maxRetries: 2   // 最多重试 2 次
           });
           this.geminiApiKey = null;
           this.anthropicClient = null;
-          console.log("OpenAI client initialized successfully");
+          console.log(pt("processing.log.client.openai.ready"));
         } else {
           this.openaiClient = null;
           this.geminiApiKey = null;
           this.anthropicClient = null;
-          console.warn("No API key available, OpenAI client not initialized");
+          console.warn(pt("processing.log.client.openai.noKey"));
         }
       } else if (config.apiProvider === "gemini"){
-        // Gemini client initialization
+        // Gemini 客户端初始化
         this.openaiClient = null;
         this.anthropicClient = null;
         if (config.apiKey) {
           this.geminiApiKey = config.apiKey;
-          console.log("Gemini API key set successfully");
+          console.log(pt("processing.log.client.gemini.ready"));
         } else {
           this.openaiClient = null;
           this.geminiApiKey = null;
           this.anthropicClient = null;
-          console.warn("No API key available, Gemini client not initialized");
+          console.warn(pt("processing.log.client.gemini.noKey"));
         }
       } else if (config.apiProvider === "anthropic") {
-        // Reset other clients
+        // 重置其它供应商的客户端
         this.openaiClient = null;
         this.geminiApiKey = null;
         if (config.apiKey) {
@@ -113,16 +209,18 @@ export class ProcessingHelper {
             timeout: 60000,
             maxRetries: 2
           });
-          console.log("Anthropic client initialized successfully");
+          console.log(pt("processing.log.client.anthropic.ready"));
         } else {
           this.openaiClient = null;
           this.geminiApiKey = null;
           this.anthropicClient = null;
-          console.warn("No API key available, Anthropic client not initialized");
+          console.warn(pt("processing.log.client.anthropic.noKey"));
         }
       }
     } catch (error) {
-      console.error("Failed to initialize AI client:", error);
+      console.error(
+        pt("processing.log.client.initFailed", { error: String(error) })
+      );
       this.openaiClient = null;
       this.geminiApiKey = null;
       this.anthropicClient = null;
@@ -133,7 +231,7 @@ export class ProcessingHelper {
     mainWindow: BrowserWindow
   ): Promise<void> {
     let attempts = 0
-    const maxAttempts = 50 // 5 seconds total
+    const maxAttempts = 50 // 最多等 5 秒
 
     while (attempts < maxAttempts) {
       const isInitialized = await mainWindow.webContents.executeJavaScript(
@@ -143,7 +241,7 @@ export class ProcessingHelper {
       await new Promise((resolve) => setTimeout(resolve, 100))
       attempts++
     }
-    throw new Error("App failed to initialize after 5 seconds")
+    throw new Error(pt("processing.log.init.timeout"))
   }
 
   private async getCredits(): Promise<number> {
@@ -152,22 +250,22 @@ export class ProcessingHelper {
 
     try {
       await this.waitForInitialization(mainWindow)
-      return 999 // Always return sufficient credits to work
+      return 999 // 本版本不限制额度，永远返回足够值
     } catch (error) {
-      console.error("Error getting credits:", error)
-      return 999 // Unlimited credits as fallback
+      console.error(pt("processing.log.credits.failed", { error: String(error) }))
+      return 999 // 兜底：读取失败也不阻塞流程
     }
   }
 
   private async getLanguage(): Promise<string> {
     try {
-      // Get language from config
+      // 编程语言以配置为准（默认 java，由配置层迁移保证）
       const config = configHelper.loadConfig();
       if (config.language) {
         return config.language;
       }
       
-      // Fallback to window variable if config doesn't have language
+      // 配置里没有时，回退到窗口注入的变量
       const mainWindow = this.deps.getMainWindow()
       if (mainWindow) {
         try {
@@ -184,14 +282,18 @@ export class ProcessingHelper {
             return language;
           }
         } catch (err) {
-          console.warn("Could not get language from window", err);
+          console.warn(
+            pt("processing.log.language.windowFailed", { error: String(err) })
+          );
         }
       }
       
-      // Default fallback
+      // 最终兜底
       return "python";
     } catch (error) {
-      console.error("Error getting language:", error)
+      console.error(
+        pt("processing.log.language.failed", { error: String(error) })
+      );
       return "python"
     }
   }
@@ -202,12 +304,12 @@ export class ProcessingHelper {
 
     const config = configHelper.loadConfig();
     
-    // First verify we have a valid AI client
+    // 先确认当前供应商的客户端可用
     if (config.apiProvider === "openai" && !this.openaiClient) {
       this.initializeAIClient();
       
       if (!this.openaiClient) {
-        console.error("OpenAI client not initialized");
+        console.error(pt("processing.log.client.openai.missing"));
         mainWindow.webContents.send(
           this.deps.PROCESSING_EVENTS.API_KEY_INVALID
         );
@@ -217,18 +319,18 @@ export class ProcessingHelper {
       this.initializeAIClient();
       
       if (!this.geminiApiKey) {
-        console.error("Gemini API key not initialized");
+        console.error(pt("processing.log.client.gemini.missing"));
         mainWindow.webContents.send(
           this.deps.PROCESSING_EVENTS.API_KEY_INVALID
         );
         return;
       }
     } else if (config.apiProvider === "anthropic" && !this.anthropicClient) {
-      // Add check for Anthropic client
+      // Anthropic 也要单独检查
       this.initializeAIClient();
       
       if (!this.anthropicClient) {
-        console.error("Anthropic client not initialized");
+        console.error(pt("processing.log.client.anthropic.missing"));
         mainWindow.webContents.send(
           this.deps.PROCESSING_EVENTS.API_KEY_INVALID
         );
@@ -237,30 +339,32 @@ export class ProcessingHelper {
     }
 
     const view = this.deps.getView()
-    console.log("Processing screenshots in view:", view)
+    console.log(pt("processing.log.view.processing", { view: String(view) }))
 
     if (view === "queue") {
       mainWindow.webContents.send(this.deps.PROCESSING_EVENTS.INITIAL_START)
       const screenshotQueue = this.screenshotHelper.getScreenshotQueue()
-      console.log("Processing main queue screenshots:", screenshotQueue)
+      console.log(
+        pt("processing.log.queue.main", { queue: screenshotQueue.join(", ") })
+      )
       
-      // Check if the queue is empty
+      // 队列为空时直接提示
       if (!screenshotQueue || screenshotQueue.length === 0) {
-        console.log("No screenshots found in queue");
+        console.log(pt("processing.log.queue.empty"));
         mainWindow.webContents.send(this.deps.PROCESSING_EVENTS.NO_SCREENSHOTS);
         return;
       }
 
-      // Check that files actually exist
+      // 确认文件确实存在于磁盘
       const existingScreenshots = screenshotQueue.filter(path => fs.existsSync(path));
       if (existingScreenshots.length === 0) {
-        console.log("Screenshot files don't exist on disk");
+        console.log(pt("processing.log.queue.filesMissing"));
         mainWindow.webContents.send(this.deps.PROCESSING_EVENTS.NO_SCREENSHOTS);
         return;
       }
 
       try {
-        // Initialize AbortController
+        // 初始化 AbortController
         this.currentProcessingAbortController = new AbortController()
         const { signal } = this.currentProcessingAbortController
 
@@ -273,24 +377,33 @@ export class ProcessingHelper {
                 data: fs.readFileSync(path).toString('base64')
               };
             } catch (err) {
-              console.error(`Error reading screenshot ${path}:`, err);
+              console.error(
+                pt("processing.log.queue.readFailed", {
+                  path,
+                  error: String(err),
+                })
+              );
               return null;
             }
           })
         )
 
-        // Filter out any nulls from failed screenshots
+        // 剔除读取失败的截图
         const validScreenshots = screenshots.filter(Boolean);
         
         if (validScreenshots.length === 0) {
-          throw new Error("Failed to load screenshot data");
+          throw new Error(pt("processing.log.queue.loadFailed"));
         }
 
         const result = await this.processScreenshotsHelper(validScreenshots, signal)
 
         if (!result.success) {
-          console.log("Processing failed:", result.error)
-          if (result.error?.includes("API Key") || result.error?.includes("OpenAI") || result.error?.includes("Gemini")) {
+          console.log(
+            pt("processing.log.processing.failed", {
+              error: result.error ?? "",
+            })
+          )
+          if (isApiKeyError(result.error)) {
             mainWindow.webContents.send(
               this.deps.PROCESSING_EVENTS.API_KEY_INVALID
             )
@@ -300,14 +413,14 @@ export class ProcessingHelper {
               result.error
             )
           }
-          // Reset view back to queue on error
-          console.log("Resetting view to queue due to error")
+          // 出错时视图退回队列
+          console.log(pt("processing.log.view.resetToQueue"))
           this.deps.setView("queue")
           return
         }
 
-        // Only set view to solutions if processing succeeded
-        console.log("Setting view to solutions after successful processing")
+        // 仅在处理成功时切换到方案页
+        console.log(pt("processing.log.view.toSolutions"))
         mainWindow.webContents.send(
           this.deps.PROCESSING_EVENTS.SOLUTION_SUCCESS,
           result.data
@@ -318,54 +431,60 @@ export class ProcessingHelper {
           this.deps.PROCESSING_EVENTS.INITIAL_SOLUTION_ERROR,
           error
         )
-        console.error("Processing error:", error)
+        console.error(
+          pt("processing.log.processing.error", { error: String(error) })
+        )
         if (axios.isCancel(error)) {
           mainWindow.webContents.send(
             this.deps.PROCESSING_EVENTS.INITIAL_SOLUTION_ERROR,
-            "Processing was canceled by the user."
+            pt("processing.error.cancelled")
           )
         } else {
           mainWindow.webContents.send(
             this.deps.PROCESSING_EVENTS.INITIAL_SOLUTION_ERROR,
-            error.message || "Server error. Please try again."
+            error.message || pt("processing.error.server")
           )
         }
-        // Reset view back to queue on error
-        console.log("Resetting view to queue due to error")
+        // 出错时视图退回队列
+        console.log(pt("processing.log.view.resetToQueue"))
         this.deps.setView("queue")
       } finally {
         this.currentProcessingAbortController = null
       }
     } else {
-      // view == 'solutions'
+      // view == 'solutions'：处理调试截图
       const extraScreenshotQueue =
         this.screenshotHelper.getExtraScreenshotQueue()
-      console.log("Processing extra queue screenshots:", extraScreenshotQueue)
+      console.log(
+        pt("processing.log.queue.extra", {
+          queue: extraScreenshotQueue.join(", "),
+        })
+      )
       
-      // Check if the extra queue is empty
+      // 调试队列为空时直接提示
       if (!extraScreenshotQueue || extraScreenshotQueue.length === 0) {
-        console.log("No extra screenshots found in queue");
+        console.log(pt("processing.log.queue.extraEmpty"));
         mainWindow.webContents.send(this.deps.PROCESSING_EVENTS.NO_SCREENSHOTS);
         
         return;
       }
 
-      // Check that files actually exist
+      // 确认文件确实存在于磁盘
       const existingExtraScreenshots = extraScreenshotQueue.filter(path => fs.existsSync(path));
       if (existingExtraScreenshots.length === 0) {
-        console.log("Extra screenshot files don't exist on disk");
+        console.log(pt("processing.log.queue.extraFilesMissing"));
         mainWindow.webContents.send(this.deps.PROCESSING_EVENTS.NO_SCREENSHOTS);
         return;
       }
       
       mainWindow.webContents.send(this.deps.PROCESSING_EVENTS.DEBUG_START)
 
-      // Initialize AbortController
+      // 初始化 AbortController
       this.currentExtraProcessingAbortController = new AbortController()
       const { signal } = this.currentExtraProcessingAbortController
 
       try {
-        // Get all screenshots (both main and extra) for processing
+        // 取全部截图（主队列 + 调试队列）一起处理
         const allPaths = [
           ...this.screenshotHelper.getScreenshotQueue(),
           ...existingExtraScreenshots
@@ -375,7 +494,9 @@ export class ProcessingHelper {
           allPaths.map(async (path) => {
             try {
               if (!fs.existsSync(path)) {
-                console.warn(`Screenshot file does not exist: ${path}`);
+                console.warn(
+                  pt("processing.log.queue.fileNotFound", { path })
+                );
                 return null;
               }
               
@@ -385,22 +506,28 @@ export class ProcessingHelper {
                 data: fs.readFileSync(path).toString('base64')
               };
             } catch (err) {
-              console.error(`Error reading screenshot ${path}:`, err);
+              console.error(
+                pt("processing.log.queue.readFailed", {
+                  path,
+                  error: String(err),
+                })
+              );
               return null;
             }
           })
         )
         
-        // Filter out any nulls from failed screenshots
+        // 剔除读取失败的截图
         const validScreenshots = screenshots.filter(Boolean);
         
         if (validScreenshots.length === 0) {
-          throw new Error("Failed to load screenshot data for debugging");
+          throw new Error(pt("processing.log.queue.debugLoadFailed"));
         }
         
         console.log(
-          "Combined screenshots for processing:",
-          validScreenshots.map((s) => s.path)
+          pt("processing.log.queue.combined", {
+            paths: validScreenshots.map((s) => s.path).join(", "),
+          })
         )
 
         const result = await this.processExtraScreenshotsHelper(
@@ -424,7 +551,7 @@ export class ProcessingHelper {
         if (axios.isCancel(error)) {
           mainWindow.webContents.send(
             this.deps.PROCESSING_EVENTS.DEBUG_ERROR,
-            "Extra processing was canceled by the user."
+            pt("processing.error.extraCancelled")
           )
         } else {
           mainWindow.webContents.send(
@@ -447,44 +574,48 @@ export class ProcessingHelper {
       const language = await this.getLanguage();
       const mainWindow = this.deps.getMainWindow();
       
-      // Step 1: Extract problem info using AI Vision API (OpenAI or Gemini)
+      // 第一步：用视觉模型解析题面（OpenAI / Gemini / Anthropic 三选一）
       const imageDataList = screenshots.map(screenshot => screenshot.data);
       
-      // Update the user on progress
+      // 告知用户当前进度
       if (mainWindow) {
         mainWindow.webContents.send("processing-status", {
-          message: "Analyzing problem from screenshots...",
+          message: pt("processing.status.extract.analyzing"),
           progress: 20
         });
       }
 
-      let problemInfo;
+      // prompt 与日志语言都取当前界面语言，与编程语言正交
+      const locale = this.getLocale();
+      const extractionPrompt = buildExtractionPrompt(locale, { language });
+
+      let problemInfo: ExtractedProblemInfo;
       
       if (config.apiProvider === "openai") {
-        // Verify OpenAI client
+        // 确认 OpenAI 客户端可用
         if (!this.openaiClient) {
-          this.initializeAIClient(); // Try to reinitialize
+          this.initializeAIClient(); // 尝试重新初始化
           
           if (!this.openaiClient) {
             return {
               success: false,
-              error: "OpenAI API key not configured or invalid. Please check your settings."
+              error: pt("processing.error.openai.notConfigured")
             };
           }
         }
 
-        // Use OpenAI for processing
+        // 走 OpenAI Vision
         const messages = [
           {
             role: "system" as const, 
-            content: "You are a coding challenge interpreter. Analyze the screenshot of the coding problem and extract all relevant information. Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output. Just return the structured JSON without any other text."
+            content: extractionPrompt.system
           },
           {
             role: "user" as const,
             content: [
               {
                 type: "text" as const, 
-                text: `Extract the coding problem details from these screenshots. Return in JSON format. Preferred coding language we gonna use for this problem is ${language}.`
+                text: extractionPrompt.user
               },
               ...imageDataList.map(data => ({
                 type: "image_url" as const,
@@ -494,7 +625,7 @@ export class ProcessingHelper {
           }
         ];
 
-        // Send to OpenAI Vision API
+        // 发请求给 OpenAI Vision
         const extractionResponse = await this.openaiClient.chat.completions.create({
           model: config.extractionModel || "gpt-4o",
           messages: messages,
@@ -502,36 +633,32 @@ export class ProcessingHelper {
           temperature: 0.2
         });
 
-        // Parse the response
-        try {
-          const responseText = extractionResponse.choices[0].message.content;
-          // Handle when OpenAI might wrap the JSON in markdown code blocks
-          const jsonText = responseText.replace(/```json|```/g, '').trim();
-          problemInfo = JSON.parse(jsonText);
-        } catch (error) {
-          console.error("Error parsing OpenAI response:", error);
-          return {
-            success: false,
-            error: "Failed to parse problem information. Please try again or use clearer screenshots."
-          };
+        // 解析并校验四个英文字段
+        const parsed = parseProblemInfo(
+          extractionResponse.choices[0].message.content ?? ""
+        );
+        if (parsed.status !== "ok") {
+          logProblemParseFailure(parsed);
+          return { success: false, error: problemParseErrorMessage(parsed) };
         }
+        problemInfo = parsed.value;
       } else if (config.apiProvider === "gemini")  {
-        // Use Gemini API
+        // 走 Gemini API
         if (!this.geminiApiKey) {
           return {
             success: false,
-            error: "Gemini API key not configured. Please check your settings."
+            error: pt("processing.error.gemini.notConfigured")
           };
         }
 
         try {
-          // Create Gemini message structure
+          // Gemini 没有独立 system 位，把 system 与 user 拼成一条消息
           const geminiMessages: GeminiMessage[] = [
             {
               role: "user",
               parts: [
                 {
-                  text: `You are a coding challenge interpreter. Analyze the screenshots of the coding problem and extract all relevant information. Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output. Just return the structured JSON without any other text. Preferred coding language we gonna use for this problem is ${language}.`
+                  text: `${extractionPrompt.system}\n\n${extractionPrompt.user}`
                 },
                 ...imageDataList.map(data => ({
                   inlineData: {
@@ -543,7 +670,7 @@ export class ProcessingHelper {
             }
           ];
 
-          // Make API request to Gemini
+          // 发请求给 Gemini
           const response = await axios.default.post(
             `https://generativelanguage.googleapis.com/v1beta/models/${config.extractionModel || "gemini-2.0-flash"}:generateContent?key=${this.geminiApiKey}`,
             {
@@ -559,26 +686,32 @@ export class ProcessingHelper {
           const responseData = response.data as GeminiResponse;
           
           if (!responseData.candidates || responseData.candidates.length === 0) {
-            throw new Error("Empty response from Gemini API");
+            throw new Error(pt("processing.log.api.gemini.empty"));
           }
           
-          const responseText = responseData.candidates[0].content.parts[0].text;
-          
-          // Handle when Gemini might wrap the JSON in markdown code blocks
-          const jsonText = responseText.replace(/```json|```/g, '').trim();
-          problemInfo = JSON.parse(jsonText);
+          // 解析并校验四个英文字段
+          const parsed = parseProblemInfo(
+            responseData.candidates[0].content.parts[0].text ?? ""
+          );
+          if (parsed.status !== "ok") {
+            logProblemParseFailure(parsed);
+            return { success: false, error: problemParseErrorMessage(parsed) };
+          }
+          problemInfo = parsed.value;
         } catch (error) {
-          console.error("Error using Gemini API:", error);
+          console.error(
+            pt("processing.log.api.gemini.provider", { error: String(error) })
+          );
           return {
             success: false,
-            error: "Failed to process with Gemini API. Please check your API key or try again later."
+            error: pt("processing.error.gemini.failed")
           };
         }
       } else if (config.apiProvider === "anthropic") {
         if (!this.anthropicClient) {
           return {
             success: false,
-            error: "Anthropic API key not configured. Please check your settings."
+            error: pt("processing.error.anthropic.notConfigured")
           };
         }
 
@@ -589,7 +722,7 @@ export class ProcessingHelper {
               content: [
                 {
                   type: "text" as const,
-                  text: `Extract the coding problem details from these screenshots. Return in JSON format with these fields: problem_statement, constraints, example_input, example_output. Preferred coding language is ${language}.`
+                  text: `${extractionPrompt.system}\n\n${extractionPrompt.user}`
                 },
                 ...imageDataList.map(data => ({
                   type: "image" as const,
@@ -611,58 +744,67 @@ export class ProcessingHelper {
           });
 
           const responseText = (response.content[0] as { type: 'text', text: string }).text;
-          const jsonText = responseText.replace(/```json|```/g, '').trim();
-          problemInfo = JSON.parse(jsonText);
+          // 解析并校验四个英文字段
+          const parsed = parseProblemInfo(responseText ?? "");
+          if (parsed.status !== "ok") {
+            logProblemParseFailure(parsed);
+            return { success: false, error: problemParseErrorMessage(parsed) };
+          }
+          problemInfo = parsed.value;
         } catch (error: any) {
-          console.error("Error using Anthropic API:", error);
+          console.error(
+            pt("processing.log.api.anthropic.provider", {
+              error: String(error),
+            })
+          );
 
-          // Add specific handling for Claude's limitations
+          // Claude 的输入上限/限流例外单独提示
           if (error.status === 429) {
             return {
               success: false,
-              error: "Claude API rate limit exceeded. Please wait a few minutes before trying again."
+              error: pt("processing.error.anthropic.rateLimit")
             };
           } else if (error.status === 413 || (error.message && error.message.includes("token"))) {
             return {
               success: false,
-              error: "Your screenshots contain too much information for Claude to process. Switch to OpenAI or Gemini in settings which can handle larger inputs."
+              error: pt("processing.error.anthropic.tooLarge")
             };
           }
 
           return {
             success: false,
-            error: "Failed to process with Anthropic API. Please check your API key or try again later."
+            error: pt("processing.error.anthropic.failed")
           };
         }
       }
       
-      // Update the user on progress
+      // 告知用户当前进度
       if (mainWindow) {
         mainWindow.webContents.send("processing-status", {
-          message: "Problem analyzed successfully. Preparing to generate solution...",
+          message: pt("processing.status.extract.done"),
           progress: 40
         });
       }
 
-      // Store problem info in AppState
+      // 把题目信息存进 AppState
       this.deps.setProblemInfo(problemInfo);
 
-      // Send first success event
+      // 先发一次解析成功事件
       if (mainWindow) {
         mainWindow.webContents.send(
           this.deps.PROCESSING_EVENTS.PROBLEM_EXTRACTED,
           problemInfo
         );
 
-        // Generate solutions after successful extraction
+        // 解析成功后继续生成方案
         const solutionsResult = await this.generateSolutionsHelper(signal);
         if (solutionsResult.success) {
-          // Clear any existing extra screenshots before transitioning to solutions view
+          // 切换到方案页前清掉残留的调试截图
           this.screenshotHelper.clearExtraScreenshotQueue();
           
-          // Final progress update
+          // 最终进度
           mainWindow.webContents.send("processing-status", {
-            message: "Solution generated successfully",
+            message: pt("processing.status.solution.done"),
             progress: 100
           });
           
@@ -673,43 +815,45 @@ export class ProcessingHelper {
           return { success: true, data: solutionsResult.data };
         } else {
           throw new Error(
-            solutionsResult.error || "Failed to generate solutions"
+            solutionsResult.error || pt("processing.error.solution.failed")
           );
         }
       }
 
-      return { success: false, error: "Failed to process screenshots" };
+      return { success: false, error: pt("processing.error.process.failed") };
     } catch (error: any) {
-      // If the request was cancelled, don't retry
+      // 用户主动取消的请求不重试
       if (axios.isCancel(error)) {
         return {
           success: false,
-          error: "Processing was canceled by the user."
+          error: pt("processing.error.cancelled")
         };
       }
       
-      // Handle OpenAI API errors specifically
+      // OpenAI 的 HTTP 错误单独提示
       if (error?.response?.status === 401) {
         return {
           success: false,
-          error: "Invalid OpenAI API key. Please check your settings."
+          error: pt("processing.error.openai.invalidKey")
         };
       } else if (error?.response?.status === 429) {
         return {
           success: false,
-          error: "OpenAI API rate limit exceeded or insufficient credits. Please try again later."
+          error: pt("processing.error.openai.rateLimit")
         };
       } else if (error?.response?.status === 500) {
         return {
           success: false,
-          error: "OpenAI server error. Please try again later."
+          error: pt("processing.error.openai.server")
         };
       }
 
-      console.error("API Error Details:", error);
+      console.error(
+        pt("processing.log.api.errorDetails", { error: String(error) })
+      );
       return { 
         success: false, 
-        error: error.message || "Failed to process screenshots. Please try again." 
+        error: error.message || pt("processing.error.process.failed")
       };
     }
   }
@@ -722,62 +866,41 @@ export class ProcessingHelper {
       const mainWindow = this.deps.getMainWindow();
 
       if (!problemInfo) {
-        throw new Error("No problem info available");
+        throw new Error(pt("processing.error.solution.noProblem"));
       }
 
-      // Update progress status
+      // 更新进度状态
       if (mainWindow) {
         mainWindow.webContents.send("processing-status", {
-          message: "Creating optimal solution with detailed explanations...",
+          message: pt("processing.status.solution.generating"),
           progress: 60
         });
       }
 
-      // Create prompt for solution generation
-      const promptText = `
-Generate a detailed solution for the following coding problem:
-
-PROBLEM STATEMENT:
-${problemInfo.problem_statement}
-
-CONSTRAINTS:
-${problemInfo.constraints || "No specific constraints provided."}
-
-EXAMPLE INPUT:
-${problemInfo.example_input || "No example input provided."}
-
-EXAMPLE OUTPUT:
-${problemInfo.example_output || "No example output provided."}
-
-LANGUAGE: ${language}
-
-I need the response in the following format:
-1. Code: A clean, optimized implementation in ${language}
-2. Your Thoughts: A list of key insights and reasoning behind your approach
-3. Time complexity: O(X) with a detailed explanation (at least 2 sentences)
-4. Space complexity: O(X) with a detailed explanation (at least 2 sentences)
-
-For complexity explanations, please be thorough. For example: "Time complexity: O(n) because we iterate through the array only once. This is optimal as we need to examine each element at least once to find the solution." or "Space complexity: O(n) because in the worst case, we store all elements in the hashmap. The additional space scales linearly with the input size."
-
-Your solution should be efficient, well-commented, and handle edge cases.
-`;
+      // prompt 统一由 electron/i18n/prompts.ts 组装（中英两版，唯一出口）
+      const locale = this.getLocale();
+      const promptText = buildSolutionPrompt(locale, {
+        language,
+        problem: problemInfo,
+      });
+      const systemText = buildSolutionSystemPrompt(locale);
 
       let responseContent;
       
       if (config.apiProvider === "openai") {
-        // OpenAI processing
+        // OpenAI 分支
         if (!this.openaiClient) {
           return {
             success: false,
-            error: "OpenAI API key not configured. Please check your settings."
+            error: pt("processing.error.openai.notConfigured")
           };
         }
         
-        // Send to OpenAI API
+        // 发请求给 OpenAI
         const solutionResponse = await this.openaiClient.chat.completions.create({
           model: config.solutionModel || "gpt-4o",
           messages: [
-            { role: "system", content: "You are an expert coding interview assistant. Provide clear, optimal solutions with detailed explanations." },
+            { role: "system", content: systemText },
             { role: "user", content: promptText }
           ],
           max_tokens: 4000,
@@ -786,28 +909,28 @@ Your solution should be efficient, well-commented, and handle edge cases.
 
         responseContent = solutionResponse.choices[0].message.content;
       } else if (config.apiProvider === "gemini")  {
-        // Gemini processing
+        // Gemini 分支
         if (!this.geminiApiKey) {
           return {
             success: false,
-            error: "Gemini API key not configured. Please check your settings."
+            error: pt("processing.error.gemini.notConfigured")
           };
         }
         
         try {
-          // Create Gemini message structure
+          // Gemini 没有独立 system 位，拼成一条消息
           const geminiMessages = [
             {
               role: "user",
               parts: [
                 {
-                  text: `You are an expert coding interview assistant. Provide a clear, optimal solution with detailed explanations for this problem:\n\n${promptText}`
+                  text: `${systemText}\n\n${promptText}`
                 }
               ]
             }
           ];
 
-          // Make API request to Gemini
+          // 发请求给 Gemini
           const response = await axios.default.post(
             `https://generativelanguage.googleapis.com/v1beta/models/${config.solutionModel || "gemini-2.0-flash"}:generateContent?key=${this.geminiApiKey}`,
             {
@@ -823,23 +946,25 @@ Your solution should be efficient, well-commented, and handle edge cases.
           const responseData = response.data as GeminiResponse;
           
           if (!responseData.candidates || responseData.candidates.length === 0) {
-            throw new Error("Empty response from Gemini API");
+            throw new Error(pt("processing.log.api.gemini.empty"));
           }
           
           responseContent = responseData.candidates[0].content.parts[0].text;
         } catch (error) {
-          console.error("Error using Gemini API for solution:", error);
+          console.error(
+            pt("processing.log.api.gemini.solution", { error: String(error) })
+          );
           return {
             success: false,
-            error: "Failed to generate solution with Gemini API. Please check your API key or try again later."
+            error: pt("processing.error.gemini.solutionFailed")
           };
         }
       } else if (config.apiProvider === "anthropic") {
-        // Anthropic processing
+        // Anthropic 分支
         if (!this.anthropicClient) {
           return {
             success: false,
-            error: "Anthropic API key not configured. Please check your settings."
+            error: pt("processing.error.anthropic.notConfigured")
           };
         }
         
@@ -850,13 +975,13 @@ Your solution should be efficient, well-commented, and handle edge cases.
               content: [
                 {
                   type: "text" as const,
-                  text: `You are an expert coding interview assistant. Provide a clear, optimal solution with detailed explanations for this problem:\n\n${promptText}`
+                  text: `${systemText}\n\n${promptText}`
                 }
               ]
             }
           ];
 
-          // Send to Anthropic API
+          // 发请求给 Anthropic
           const response = await this.anthropicClient.messages.create({
             model: config.solutionModel || "claude-3-7-sonnet-20250219",
             max_tokens: 4000,
@@ -866,119 +991,65 @@ Your solution should be efficient, well-commented, and handle edge cases.
 
           responseContent = (response.content[0] as { type: 'text', text: string }).text;
         } catch (error: any) {
-          console.error("Error using Anthropic API for solution:", error);
+          console.error(
+            pt("processing.log.api.anthropic.solution", { error: String(error) })
+          );
 
-          // Add specific handling for Claude's limitations
+          // Claude 的输入上限/限流例外单独提示
           if (error.status === 429) {
             return {
               success: false,
-              error: "Claude API rate limit exceeded. Please wait a few minutes before trying again."
+              error: pt("processing.error.anthropic.rateLimit")
             };
           } else if (error.status === 413 || (error.message && error.message.includes("token"))) {
             return {
               success: false,
-              error: "Your screenshots contain too much information for Claude to process. Switch to OpenAI or Gemini in settings which can handle larger inputs."
+              error: pt("processing.error.anthropic.tooLarge")
             };
           }
 
           return {
             success: false,
-            error: "Failed to generate solution with Anthropic API. Please check your API key or try again later."
+            error: pt("processing.error.anthropic.solutionFailed")
           };
         }
       }
       
-      // Extract parts from the response
-      const codeMatch = responseContent.match(/```(?:\w+)?\s*([\s\S]*?)```/);
-      const code = codeMatch ? codeMatch[1].trim() : responseContent;
-      
-      // Extract thoughts, looking for bullet points or numbered lists
-      const thoughtsRegex = /(?:Thoughts:|Key Insights:|Reasoning:|Approach:)([\s\S]*?)(?:Time complexity:|$)/i;
-      const thoughtsMatch = responseContent.match(thoughtsRegex);
-      let thoughts: string[] = [];
-      
-      if (thoughtsMatch && thoughtsMatch[1]) {
-        // Extract bullet points or numbered items
-        const bulletPoints = thoughtsMatch[1].match(/(?:^|\n)\s*(?:[-*•]|\d+\.)\s*(.*)/g);
-        if (bulletPoints) {
-          thoughts = bulletPoints.map(point => 
-            point.replace(/^\s*(?:[-*•]|\d+\.)\s*/, '').trim()
-          ).filter(Boolean);
-        } else {
-          // If no bullet points found, split by newlines and filter empty lines
-          thoughts = thoughtsMatch[1].split('\n')
-            .map((line) => line.trim())
-            .filter(Boolean);
-        }
-      }
-      
-      // Extract complexity information
-      const timeComplexityPattern = /Time complexity:?\s*([^\n]+(?:\n[^\n]+)*?)(?=\n\s*(?:Space complexity|$))/i;
-      const spaceComplexityPattern = /Space complexity:?\s*([^\n]+(?:\n[^\n]+)*?)(?=\n\s*(?:[A-Z]|$))/i;
-      
-      let timeComplexity = "O(n) - Linear time complexity because we only iterate through the array once. Each element is processed exactly one time, and the hashmap lookups are O(1) operations.";
-      let spaceComplexity = "O(n) - Linear space complexity because we store elements in the hashmap. In the worst case, we might need to store all elements before finding the solution pair.";
-      
-      const timeMatch = responseContent.match(timeComplexityPattern);
-      if (timeMatch && timeMatch[1]) {
-        timeComplexity = timeMatch[1].trim();
-        if (!timeComplexity.match(/O\([^)]+\)/i)) {
-          timeComplexity = `O(n) - ${timeComplexity}`;
-        } else if (!timeComplexity.includes('-') && !timeComplexity.includes('because')) {
-          const notationMatch = timeComplexity.match(/O\([^)]+\)/i);
-          if (notationMatch) {
-            const notation = notationMatch[0];
-            const rest = timeComplexity.replace(notation, '').trim();
-            timeComplexity = `${notation} - ${rest}`;
-          }
-        }
-      }
-      
-      const spaceMatch = responseContent.match(spaceComplexityPattern);
-      if (spaceMatch && spaceMatch[1]) {
-        spaceComplexity = spaceMatch[1].trim();
-        if (!spaceComplexity.match(/O\([^)]+\)/i)) {
-          spaceComplexity = `O(n) - ${spaceComplexity}`;
-        } else if (!spaceComplexity.includes('-') && !spaceComplexity.includes('because')) {
-          const notationMatch = spaceComplexity.match(/O\([^)]+\)/i);
-          if (notationMatch) {
-            const notation = notationMatch[0];
-            const rest = spaceComplexity.replace(notation, '').trim();
-            spaceComplexity = `${notation} - ${rest}`;
-          }
-        }
-      }
-
-      const formattedResponse = {
-        code: code,
-        thoughts: thoughts.length > 0 ? thoughts : ["Solution approach based on efficiency and readability"],
-        time_complexity: timeComplexity,
-        space_complexity: spaceComplexity
-      };
+      // 解析方案返回：中英两套分节标题都认，抽不到的项用当前语言的兜底文案
+      const formattedResponse = parseSolutionResponse(responseContent, {
+        thoughts: pt("processing.fallback.thoughts.solution"),
+        timeComplexity: pt("processing.fallback.timeComplexity"),
+        spaceComplexity: pt("processing.fallback.spaceComplexity"),
+      });
 
       return { success: true, data: formattedResponse };
     } catch (error: any) {
       if (axios.isCancel(error)) {
         return {
           success: false,
-          error: "Processing was canceled by the user."
+          error: pt("processing.error.cancelled")
         };
       }
       
       if (error?.response?.status === 401) {
         return {
           success: false,
-          error: "Invalid OpenAI API key. Please check your settings."
+          error: pt("processing.error.openai.invalidKey")
         };
       } else if (error?.response?.status === 429) {
         return {
           success: false,
-          error: "OpenAI API rate limit exceeded or insufficient credits. Please try again later."
+          error: pt("processing.error.openai.rateLimit")
         };
       }
       
-      console.error("Solution generation error:", error);
-      return { success: false, error: error.message || "Failed to generate solution" };
+      console.error(
+        pt("processing.log.solution.error", { error: String(error) })
+      );
+      return {
+        success: false,
+        error: error.message || pt("processing.error.solution.failed")
+      };
     }
   }
 
@@ -993,19 +1064,24 @@ Your solution should be efficient, well-commented, and handle edge cases.
       const mainWindow = this.deps.getMainWindow();
 
       if (!problemInfo) {
-        throw new Error("No problem info available");
+        throw new Error(pt("processing.error.debug.noProblem"));
       }
 
-      // Update progress status
+      // 更新进度状态
       if (mainWindow) {
         mainWindow.webContents.send("processing-status", {
-          message: "Processing debug screenshots...",
+          message: pt("processing.status.debug.analyzing"),
           progress: 30
         });
       }
 
-      // Prepare the images for the API call
+      // 准备发给模型的图片数据
       const imageDataList = screenshots.map(screenshot => screenshot.data);
+      
+      // prompt 同样走唯一出口，与界面语言一致
+      const locale = this.getLocale();
+      const debugSystem = buildDebugSystemPrompt(locale);
+      const debugUser = buildDebugPrompt(locale, { language, problem: problemInfo });
       
       let debugContent;
       
@@ -1013,43 +1089,21 @@ Your solution should be efficient, well-commented, and handle edge cases.
         if (!this.openaiClient) {
           return {
             success: false,
-            error: "OpenAI API key not configured. Please check your settings."
+            error: pt("processing.error.openai.notConfigured")
           };
         }
         
         const messages = [
           {
             role: "system" as const, 
-            content: `You are a coding interview assistant helping debug and improve solutions. Analyze these screenshots which include either error messages, incorrect outputs, or test cases, and provide detailed debugging help.
-
-Your response MUST follow this exact structure with these section headers (use ### for headers):
-### Issues Identified
-- List each issue as a bullet point with clear explanation
-
-### Specific Improvements and Corrections
-- List specific code changes needed as bullet points
-
-### Optimizations
-- List any performance optimizations if applicable
-
-### Explanation of Changes Needed
-Here provide a clear explanation of why the changes are needed
-
-### Key Points
-- Summary bullet points of the most important takeaways
-
-If you include code examples, use proper markdown code blocks with language specification (e.g. \`\`\`java).`
+            content: debugSystem
           },
           {
             role: "user" as const,
             content: [
               {
                 type: "text" as const, 
-                text: `I'm solving this coding problem: "${problemInfo.problem_statement}" in ${language}. I need help with debugging or improving my solution. Here are screenshots of my code, the errors or test cases. Please provide a detailed analysis with:
-1. What issues you found in my code
-2. Specific improvements and corrections
-3. Any optimizations that would make the solution better
-4. A clear explanation of the changes needed` 
+                text: debugUser
               },
               ...imageDataList.map(data => ({
                 type: "image_url" as const,
@@ -1061,7 +1115,7 @@ If you include code examples, use proper markdown code blocks with language spec
 
         if (mainWindow) {
           mainWindow.webContents.send("processing-status", {
-            message: "Analyzing code and generating debug feedback...",
+            message: pt("processing.status.debug.analyzing"),
             progress: 60
           });
         }
@@ -1078,34 +1132,13 @@ If you include code examples, use proper markdown code blocks with language spec
         if (!this.geminiApiKey) {
           return {
             success: false,
-            error: "Gemini API key not configured. Please check your settings."
+            error: pt("processing.error.gemini.notConfigured")
           };
         }
         
         try {
-          const debugPrompt = `
-You are a coding interview assistant helping debug and improve solutions. Analyze these screenshots which include either error messages, incorrect outputs, or test cases, and provide detailed debugging help.
-
-I'm solving this coding problem: "${problemInfo.problem_statement}" in ${language}. I need help with debugging or improving my solution.
-
-YOUR RESPONSE MUST FOLLOW THIS EXACT STRUCTURE WITH THESE SECTION HEADERS:
-### Issues Identified
-- List each issue as a bullet point with clear explanation
-
-### Specific Improvements and Corrections
-- List specific code changes needed as bullet points
-
-### Optimizations
-- List any performance optimizations if applicable
-
-### Explanation of Changes Needed
-Here provide a clear explanation of why the changes are needed
-
-### Key Points
-- Summary bullet points of the most important takeaways
-
-If you include code examples, use proper markdown code blocks with language specification (e.g. \`\`\`java).
-`;
+          // Gemini 没有独立 system 位，拼成一条消息
+          const debugPrompt = `${debugSystem}\n\n${debugUser}`;
 
           const geminiMessages = [
             {
@@ -1124,7 +1157,9 @@ If you include code examples, use proper markdown code blocks with language spec
 
           if (mainWindow) {
             mainWindow.webContents.send("processing-status", {
-              message: "Analyzing code and generating debug feedback with Gemini...",
+              message: pt("processing.status.debug.analyzing.provider", {
+                provider: "Gemini"
+              }),
               progress: 60
             });
           }
@@ -1144,49 +1179,30 @@ If you include code examples, use proper markdown code blocks with language spec
           const responseData = response.data as GeminiResponse;
           
           if (!responseData.candidates || responseData.candidates.length === 0) {
-            throw new Error("Empty response from Gemini API");
+            throw new Error(pt("processing.log.api.gemini.empty"));
           }
           
           debugContent = responseData.candidates[0].content.parts[0].text;
         } catch (error) {
-          console.error("Error using Gemini API for debugging:", error);
+          console.error(
+            pt("processing.log.api.gemini.debug", { error: String(error) })
+          );
           return {
             success: false,
-            error: "Failed to process debug request with Gemini API. Please check your API key or try again later."
+            error: pt("processing.error.gemini.debugFailed")
           };
         }
       } else if (config.apiProvider === "anthropic") {
         if (!this.anthropicClient) {
           return {
             success: false,
-            error: "Anthropic API key not configured. Please check your settings."
+            error: pt("processing.error.anthropic.notConfigured")
           };
         }
         
         try {
-          const debugPrompt = `
-You are a coding interview assistant helping debug and improve solutions. Analyze these screenshots which include either error messages, incorrect outputs, or test cases, and provide detailed debugging help.
-
-I'm solving this coding problem: "${problemInfo.problem_statement}" in ${language}. I need help with debugging or improving my solution.
-
-YOUR RESPONSE MUST FOLLOW THIS EXACT STRUCTURE WITH THESE SECTION HEADERS:
-### Issues Identified
-- List each issue as a bullet point with clear explanation
-
-### Specific Improvements and Corrections
-- List specific code changes needed as bullet points
-
-### Optimizations
-- List any performance optimizations if applicable
-
-### Explanation of Changes Needed
-Here provide a clear explanation of why the changes are needed
-
-### Key Points
-- Summary bullet points of the most important takeaways
-
-If you include code examples, use proper markdown code blocks with language specification.
-`;
+          // Anthropic 同样没有独立 system 位
+          const debugPrompt = `${debugSystem}\n\n${debugUser}`;
 
           const messages = [
             {
@@ -1210,7 +1226,9 @@ If you include code examples, use proper markdown code blocks with language spec
 
           if (mainWindow) {
             mainWindow.webContents.send("processing-status", {
-              message: "Analyzing code and generating debug feedback with Claude...",
+              message: pt("processing.status.debug.analyzing.provider", {
+                provider: "Claude"
+              }),
               progress: 60
             });
           }
@@ -1224,24 +1242,26 @@ If you include code examples, use proper markdown code blocks with language spec
           
           debugContent = (response.content[0] as { type: 'text', text: string }).text;
         } catch (error: any) {
-          console.error("Error using Anthropic API for debugging:", error);
+          console.error(
+            pt("processing.log.api.anthropic.debug", { error: String(error) })
+          );
           
-          // Add specific handling for Claude's limitations
+          // Claude 的输入上限/限流例外单独提示
           if (error.status === 429) {
             return {
               success: false,
-              error: "Claude API rate limit exceeded. Please wait a few minutes before trying again."
+              error: pt("processing.error.anthropic.rateLimit")
             };
           } else if (error.status === 413 || (error.message && error.message.includes("token"))) {
             return {
               success: false,
-              error: "Your screenshots contain too much information for Claude to process. Switch to OpenAI or Gemini in settings which can handle larger inputs."
+              error: pt("processing.error.anthropic.tooLarge")
             };
           }
           
           return {
             success: false,
-            error: "Failed to process debug request with Anthropic API. Please check your API key or try again later."
+            error: pt("processing.error.anthropic.debugFailed")
           };
         }
       }
@@ -1249,12 +1269,12 @@ If you include code examples, use proper markdown code blocks with language spec
       
       if (mainWindow) {
         mainWindow.webContents.send("processing-status", {
-          message: "Debug analysis complete",
+          message: pt("processing.status.debug.done"),
           progress: 100
         });
       }
 
-      let extractedCode = "// Debug mode - see analysis below";
+      let extractedCode = pt("processing.fallback.debug.code");
       const codeMatch = debugContent.match(/```(?:[a-zA-Z]+)?([\s\S]*?)```/);
       if (codeMatch && codeMatch[1]) {
         extractedCode = codeMatch[1].trim();
@@ -1263,30 +1283,48 @@ If you include code examples, use proper markdown code blocks with language spec
       let formattedDebugContent = debugContent;
       
       if (!debugContent.includes('# ') && !debugContent.includes('## ')) {
+        // 模型没有按结构输出时的兼容处理：把句子里的关键词提升成标题（中英都认）
         formattedDebugContent = debugContent
-          .replace(/issues identified|problems found|bugs found/i, '## Issues Identified')
-          .replace(/code improvements|improvements|suggested changes/i, '## Code Improvements')
-          .replace(/optimizations|performance improvements/i, '## Optimizations')
-          .replace(/explanation|detailed analysis/i, '## Explanation');
+          .replace(
+            /issues identified|problems found|bugs found|发现的问题/gi,
+            pt("processing.debug.heading.issues")
+          )
+          .replace(
+            /code improvements|improvements|suggested changes|具体改进与修正/gi,
+            pt("processing.debug.heading.improvements")
+          )
+          .replace(
+            /optimizations|performance improvements|可做的优化/gi,
+            pt("processing.debug.heading.optimizations")
+          )
+          .replace(
+            /explanation|detailed analysis|改动原因说明/gi,
+            pt("processing.debug.heading.explanation")
+          );
       }
 
       const bulletPoints = formattedDebugContent.match(/(?:^|\n)[ ]*(?:[-*•]|\d+\.)[ ]+([^\n]+)/g);
       const thoughts = bulletPoints 
         ? bulletPoints.map(point => point.replace(/^[ ]*(?:[-*•]|\d+\.)[ ]+/, '').trim()).slice(0, 5)
-        : ["Debug analysis based on your screenshots"];
+        : [pt("processing.fallback.debug.thoughts")];
       
       const response = {
         code: extractedCode,
         debug_analysis: formattedDebugContent,
         thoughts: thoughts,
-        time_complexity: "N/A - Debug mode",
-        space_complexity: "N/A - Debug mode"
+        time_complexity: pt("processing.fallback.debug.complexity"),
+        space_complexity: pt("processing.fallback.debug.complexity")
       };
 
       return { success: true, data: response };
     } catch (error: any) {
-      console.error("Debug processing error:", error);
-      return { success: false, error: error.message || "Failed to process debug request" };
+      console.error(
+        pt("processing.log.debug.error", { error: String(error) })
+      );
+      return {
+        success: false,
+        error: error.message || pt("processing.error.debug.failed")
+      };
     }
   }
 
