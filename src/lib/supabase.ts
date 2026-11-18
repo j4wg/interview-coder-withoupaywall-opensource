@@ -35,6 +35,6 @@ export const supabase = {
 };
 
 export const signInWithGoogle = async () => {
-  console.log("Sign in with Google not available in open-source version");
+  console.log("开源版本不提供 Google 登录");
   return { data: null };
 };

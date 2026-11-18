@@ -1,4 +1,5 @@
 import React from "react"
+// 截图队列：最多展示前 5 张缩略图
 import ScreenshotItem from "./ScreenshotItem"
 
 interface Screenshot {

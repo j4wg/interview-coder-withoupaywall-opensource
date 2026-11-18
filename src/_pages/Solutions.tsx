@@ -10,16 +10,20 @@ import { ProblemStatementData } from "../types/solutions"
 import SolutionCommands from "../components/Solutions/SolutionCommands"
 import Debug from "./Debug"
 import { useToast } from "../contexts/toast"
+import { useI18n } from "../contexts/i18n"
 import { COMMAND_KEY } from "../utils/platform"
 
+// 通用文本区块（题目描述 / 我的思路）：加载中显示脉冲占位文案
 export const ContentSection = ({
   title,
   content,
-  isLoading
+  isLoading,
+  loadingText
 }: {
   title: string
   content: React.ReactNode
   isLoading: boolean
+  loadingText: string
 }) => (
   <div className="space-y-2">
     <h2 className="text-[13px] font-medium text-white tracking-wide">
@@ -28,7 +32,7 @@ export const ContentSection = ({
     {isLoading ? (
       <div className="mt-4 flex">
         <p className="text-xs bg-gradient-to-r from-gray-300 via-gray-100 to-gray-300 bg-clip-text text-transparent animate-pulse">
-          Extracting problem statement...
+          {loadingText}
         </p>
       </div>
     ) : (
@@ -49,8 +53,10 @@ const SolutionSection = ({
   isLoading: boolean
   currentLanguage: string
 }) => {
+  const { t } = useI18n()
   const [copied, setCopied] = useState(false)
 
+  // 复制代码到剪贴板，2 秒后按钮文案复位
   const copyToClipboard = () => {
     if (typeof content === "string") {
       navigator.clipboard.writeText(content).then(() => {
@@ -69,7 +75,7 @@ const SolutionSection = ({
         <div className="space-y-1.5">
           <div className="mt-4 flex">
             <p className="text-xs bg-gradient-to-r from-gray-300 via-gray-100 to-gray-300 bg-clip-text text-transparent animate-pulse">
-              Loading solutions...
+              {t("ui.solutions.loading")}
             </p>
           </div>
         </div>
@@ -79,7 +85,7 @@ const SolutionSection = ({
             onClick={copyToClipboard}
             className="absolute top-2 right-2 text-xs text-white bg-white/10 hover:bg-white/20 rounded px-2 py-1 transition"
           >
-            {copied ? "Copied!" : "Copy"}
+            {copied ? t("ui.solutions.copied") : t("ui.solutions.copy")}
           </button>
           <SyntaxHighlighter
             showLineNumbers
@@ -112,20 +118,21 @@ export const ComplexitySection = ({
   spaceComplexity: string | null
   isLoading: boolean
 }) => {
-  // Helper to ensure we have proper complexity values
+  const { t } = useI18n()
+
+  // 归一化复杂度展示：模型偶尔只给 "n log n"，这里补成大 O 记法
   const formatComplexity = (complexity: string | null): string => {
-    // Default if no complexity returned by LLM
+    // 模型没给复杂度时的兜底文案
     if (!complexity || complexity.trim() === "") {
-      return "Complexity not available";
+      return t("ui.solutions.complexityUnavailable");
     }
 
     const bigORegex = /O\([^)]+\)/i;
-    // Return the complexity as is if it already has Big O notation
+    // 已经是 Big O 记法就原样展示
     if (bigORegex.test(complexity)) {
       return complexity;
     }
-    
-    // Concat Big O notation to the complexity
+
     return `O(${complexity})`;
   };
   
@@ -135,11 +142,11 @@ export const ComplexitySection = ({
   return (
     <div className="space-y-2">
       <h2 className="text-[13px] font-medium text-white tracking-wide">
-        Complexity
+        {t("ui.solutions.complexity")}
       </h2>
       {isLoading ? (
         <p className="text-xs bg-gradient-to-r from-gray-300 via-gray-100 to-gray-300 bg-clip-text text-transparent animate-pulse">
-          Calculating complexity...
+          {t("ui.solutions.calculating")}
         </p>
       ) : (
         <div className="space-y-3">
@@ -147,7 +154,7 @@ export const ComplexitySection = ({
             <div className="flex items-start gap-2">
               <div className="w-1 h-1 rounded-full bg-blue-400/80 mt-2 shrink-0" />
               <div>
-                <strong>Time:</strong> {formattedTimeComplexity}
+                <strong>{t("ui.solutions.time")}</strong> {formattedTimeComplexity}
               </div>
             </div>
           </div>
@@ -155,7 +162,7 @@ export const ComplexitySection = ({
             <div className="flex items-start gap-2">
               <div className="w-1 h-1 rounded-full bg-blue-400/80 mt-2 shrink-0" />
               <div>
-                <strong>Space:</strong> {formattedSpaceComplexity}
+                <strong>{t("ui.solutions.space")}</strong> {formattedSpaceComplexity}
               </div>
             </div>
           </div>
@@ -178,6 +185,7 @@ const Solutions: React.FC<SolutionsProps> = ({
   setLanguage
 }) => {
   const queryClient = useQueryClient()
+  const { t } = useI18n()
   const contentRef = useRef<HTMLDivElement>(null)
 
   const [debugProcessing, setDebugProcessing] = useState(false)
@@ -206,11 +214,12 @@ const Solutions: React.FC<SolutionsProps> = ({
 
   const [extraScreenshots, setExtraScreenshots] = useState<Screenshot[]>([])
 
+  // 解答生成后重新读取截图列表（用于缩略图区）
   useEffect(() => {
     const fetchScreenshots = async () => {
       try {
         const existing = await window.electronAPI.getScreenshots()
-        console.log("Raw screenshot data:", existing)
+        console.log("原始截图数据：", existing)
         const screenshots = (Array.isArray(existing) ? existing : []).map(
           (p) => ({
             id: p.path,
@@ -219,10 +228,10 @@ const Solutions: React.FC<SolutionsProps> = ({
             timestamp: Date.now()
           })
         )
-        console.log("Processed screenshots:", screenshots)
+        console.log("处理后的截图：", screenshots)
         setExtraScreenshots(screenshots)
       } catch (error) {
-        console.error("Error loading extra screenshots:", error)
+        console.error("加载额外截图失败：", error)
         setExtraScreenshots([])
       }
     }
@@ -233,7 +242,7 @@ const Solutions: React.FC<SolutionsProps> = ({
   const { showToast } = useToast()
 
   useEffect(() => {
-    // Height update logic
+    // 内容高度同步给主进程
     const updateDimensions = () => {
       if (contentRef.current) {
         let contentHeight = contentRef.current.scrollHeight
@@ -248,14 +257,14 @@ const Solutions: React.FC<SolutionsProps> = ({
       }
     }
 
-    // Initialize resize observer
+    // 初始化尺寸监听
     const resizeObserver = new ResizeObserver(updateDimensions)
     if (contentRef.current) {
       resizeObserver.observe(contentRef.current)
     }
     updateDimensions()
 
-    // Set up event listeners
+    // 订阅解答/调试相关的主进程事件
     const cleanupFunctions = [
       window.electronAPI.onScreenshotTaken(async () => {
         try {
@@ -270,14 +279,13 @@ const Solutions: React.FC<SolutionsProps> = ({
           )
           setExtraScreenshots(screenshots)
         } catch (error) {
-          console.error("Error loading extra screenshots:", error)
+          console.error("加载额外截图失败：", error)
         }
       }),
       window.electronAPI.onResetView(() => {
-        // Set resetting state first
+        // 先置位"重置中"，避免用旧数据渲染
         setIsResetting(true)
 
-        // Remove queries
         queryClient.removeQueries({
           queryKey: ["solution"]
         })
@@ -285,16 +293,15 @@ const Solutions: React.FC<SolutionsProps> = ({
           queryKey: ["new_solution"]
         })
 
-        // Reset screenshots
         setExtraScreenshots([])
 
-        // After a small delay, clear the resetting state
+        // 下一个事件循环再解除，保证视图已切回队列页
         setTimeout(() => {
           setIsResetting(false)
         }, 0)
       }),
       window.electronAPI.onSolutionStart(() => {
-        // Every time processing starts, reset relevant states
+        // 每次开始处理都清空上一次的解答与复杂度
         setSolutionData(null)
         setThoughtsData(null)
         setTimeComplexityData(null)
@@ -303,10 +310,10 @@ const Solutions: React.FC<SolutionsProps> = ({
       window.electronAPI.onProblemExtracted((data) => {
         queryClient.setQueryData(["problem_statement"], data)
       }),
-      //if there was an error processing the initial solution
+      // 首次生成解答失败：提示并把界面回退到上一次的缓存结果
       window.electronAPI.onSolutionError((error: string) => {
-        showToast("Processing Failed", error, "error")
-        // Reset solutions in the cache (even though this shouldn't ever happen) and complexities to previous states
+        showToast(t("ui.error.processingFailed"), error, "error")
+        // 缓存里若有上一次的解答，就回填它，避免界面空白
         const solution = queryClient.getQueryData(["solution"]) as {
           code: string
           thoughts: string[]
@@ -320,12 +327,12 @@ const Solutions: React.FC<SolutionsProps> = ({
         setThoughtsData(solution?.thoughts || null)
         setTimeComplexityData(solution?.time_complexity || null)
         setSpaceComplexityData(solution?.space_complexity || null)
-        console.error("Processing error:", error)
+        console.error("处理出错：", error)
       }),
-      //when the initial solution is generated, we'll set the solution data to that
+      // 解答生成成功：写入缓存并回填界面状态
       window.electronAPI.onSolutionSuccess((data) => {
         if (!data) {
-          console.warn("Received empty or invalid solution data")
+          console.warn("收到的解答数据为空或格式不正确")
           return
         }
         console.log({ data })
@@ -342,7 +349,7 @@ const Solutions: React.FC<SolutionsProps> = ({
         setTimeComplexityData(solutionData.time_complexity || null)
         setSpaceComplexityData(solutionData.space_complexity || null)
 
-        // Fetch latest screenshots when solution is successful
+        // 成功后拉一次最新截图
         const fetchScreenshots = async () => {
           try {
             const existing = await window.electronAPI.getScreenshots()
@@ -355,7 +362,7 @@ const Solutions: React.FC<SolutionsProps> = ({
               })) || []
             setExtraScreenshots(screenshots)
           } catch (error) {
-            console.error("Error loading extra screenshots:", error)
+            console.error("加载额外截图失败：", error)
             setExtraScreenshots([])
           }
         }
@@ -363,34 +370,34 @@ const Solutions: React.FC<SolutionsProps> = ({
       }),
 
       //########################################################
-      //DEBUG EVENTS
+      // 调试相关事件
       //########################################################
       window.electronAPI.onDebugStart(() => {
-        //we'll set the debug processing state to true and use that to render a little loader
+        // 进入调试中：用这个状态渲染加载态
         setDebugProcessing(true)
       }),
-      //the first time debugging works, we'll set the view to debug and populate the cache with the data
+      // 调试成功：结果写入缓存，视图由下面渲染逻辑切到调试页
       window.electronAPI.onDebugSuccess((data) => {
         queryClient.setQueryData(["new_solution"], data)
         setDebugProcessing(false)
       }),
-      //when there was an error in the initial debugging, we'll show a toast and stop the little generating pulsing thing.
+      // 调试失败：提示并停止加载态
       window.electronAPI.onDebugError(() => {
         showToast(
-          "Processing Failed",
-          "There was an error debugging your code.",
+          t("ui.error.processingFailed"),
+          t("ui.error.debugDescription"),
           "error"
         )
         setDebugProcessing(false)
       }),
       window.electronAPI.onProcessingNoScreenshots(() => {
         showToast(
-          "No Screenshots",
-          "There are no extra screenshots to process.",
+          t("ui.info.noScreenshots"),
+          t("ui.info.noExtraScreenshotsToProcess"),
           "neutral"
         )
       }),
-      // Removed out of credits handler - unlimited credits in this version
+      // 本版本不限额，不再监听"额度用尽"事件
     ]
 
     return () => {
@@ -428,11 +435,13 @@ const Solutions: React.FC<SolutionsProps> = ({
     return () => unsubscribe()
   }, [queryClient])
 
+  // 浮层高度变化时重新计算窗口高度
   const handleTooltipVisibilityChange = (visible: boolean, height: number) => {
     setIsTooltipVisible(visible)
     setTooltipHeight(height)
   }
 
+  // 删除解答页上的额外截图，成功后重取列表
   const handleDeleteExtraScreenshot = async (index: number) => {
     const screenshotToDelete = extraScreenshots[index]
 
@@ -442,7 +451,7 @@ const Solutions: React.FC<SolutionsProps> = ({
       )
 
       if (response.success) {
-        // Fetch and update screenshots after successful deletion
+        // 删除成功后重取截图列表
         const existing = await window.electronAPI.getScreenshots()
         const screenshots = (Array.isArray(existing) ? existing : []).map(
           (p) => ({
@@ -454,12 +463,12 @@ const Solutions: React.FC<SolutionsProps> = ({
         )
         setExtraScreenshots(screenshots)
       } else {
-        console.error("Failed to delete extra screenshot:", response.error)
-        showToast("Error", "Failed to delete the screenshot", "error")
+        console.error("删除额外截图失败：", response.error)
+        showToast(t("ui.common.error"), t("ui.error.failedToDeleteScreenshot"), "error")
       }
     } catch (error) {
-      console.error("Error deleting extra screenshot:", error)
-      showToast("Error", "Failed to delete the screenshot", "error")
+      console.error("删除额外截图时出错：", error)
+      showToast(t("ui.common.error"), t("ui.error.failedToDeleteScreenshot"), "error")
     }
   }
 
@@ -475,7 +484,7 @@ const Solutions: React.FC<SolutionsProps> = ({
       ) : (
         <div ref={contentRef} className="relative">
           <div className="space-y-3 px-4 py-3">
-          {/* Conditionally render the screenshot queue if solutionData is available */}
+          {/* 有解答数据时才展示截图缩略图 */}
           {solutionData && (
             <div className="bg-transparent w-fit">
               <div className="pb-3">
@@ -490,7 +499,7 @@ const Solutions: React.FC<SolutionsProps> = ({
             </div>
           )}
 
-          {/* Navbar of commands with the SolutionsHelper */}
+          {/* 命令栏（含快捷键浮层） */}
           <SolutionCommands
             onTooltipVisibilityChange={handleTooltipVisibilityChange}
             isProcessing={!problemStatementData || !solutionData}
@@ -500,21 +509,22 @@ const Solutions: React.FC<SolutionsProps> = ({
             setLanguage={setLanguage}
           />
 
-          {/* Main Content - Modified width constraints */}
+          {/* 主体内容 */}
           <div className="w-full text-sm text-black bg-black/60 rounded-md">
             <div className="rounded-lg overflow-hidden">
               <div className="px-4 py-3 space-y-4 max-w-full">
                 {!solutionData && (
                   <>
                     <ContentSection
-                      title="Problem Statement"
+                      title={t("ui.solutions.problemStatement")}
                       content={problemStatementData?.problem_statement}
                       isLoading={!problemStatementData}
+                      loadingText={t("ui.solutions.extracting")}
                     />
                     {problemStatementData && (
                       <div className="mt-4 flex">
                         <p className="text-xs bg-gradient-to-r from-gray-300 via-gray-100 to-gray-300 bg-clip-text text-transparent animate-pulse">
-                          Generating solutions...
+                          {t("ui.solutions.generating")}
                         </p>
                       </div>
                     )}
@@ -524,7 +534,7 @@ const Solutions: React.FC<SolutionsProps> = ({
                 {solutionData && (
                   <>
                     <ContentSection
-                      title={`My Thoughts (${COMMAND_KEY} + Arrow keys to scroll)`}
+                      title={t("ui.solutions.thoughts", { key: COMMAND_KEY })}
                       content={
                         thoughtsData && (
                           <div className="space-y-3">
@@ -543,10 +553,11 @@ const Solutions: React.FC<SolutionsProps> = ({
                         )
                       }
                       isLoading={!thoughtsData}
+                      loadingText={t("ui.solutions.loading")}
                     />
 
                     <SolutionSection
-                      title="Solution"
+                      title={t("ui.solutions.solutionTitle")}
                       content={solutionData}
                       isLoading={!solutionData}
                       currentLanguage={currentLanguage}

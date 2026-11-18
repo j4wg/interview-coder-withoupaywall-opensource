@@ -20,6 +20,23 @@ const MESSAGE_TABLES: Partial<
 /** 已告警过的缺键，保证同一个键只 warn 一次，避免日志刷屏 */
 const warnedMissingKeys = new Set<string>()
 
+/**
+ * 注册某个命名空间某个语言的文案表（由各命名空间的 `messages/<ns>.ts` 在 import 期调用）。
+ *
+ * 之所以用注册而不是在上面的 `MESSAGE_TABLES` 里静态 import：三个命名空间分属三个 issue，
+ * 各自只改自己的文件即可完成接线，不必抢同一个文件的同一段代码。
+ */
+export function registerMessages<N extends Namespace>(
+  ns: N,
+  locale: Locale,
+  table: MessageTable
+): void {
+  const registered: Partial<Record<Locale, MessageTable>> =
+    MESSAGE_TABLES[ns] ?? {}
+  registered[locale] = { ...(registered[locale] ?? {}), ...table }
+  MESSAGE_TABLES[ns] = registered
+}
+
 /** 把 `{{name}}` 占位符替换为 vars 中的值；缺失的占位符原样保留（可见、可测、不抛错） */
 function interpolate(
   template: string,
