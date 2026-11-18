@@ -2,55 +2,60 @@ import React, { useEffect, useState } from "react"
 import { Dialog, DialogContent } from "./ui/dialog"
 import { Button } from "./ui/button"
 import { useToast } from "../contexts/toast"
+import { useI18n } from "../contexts/i18n"
 
 export const UpdateNotification: React.FC = () => {
   const [updateAvailable, setUpdateAvailable] = useState(false)
   const [updateDownloaded, setUpdateDownloaded] = useState(false)
   const [isDownloading, setIsDownloading] = useState(false)
   const { showToast } = useToast()
+  const { t } = useI18n()
 
+  // 订阅主进程的更新事件：有新版本 / 新版本已下载完成
   useEffect(() => {
-    console.log("UpdateNotification: Setting up event listeners")
+    console.log("更新提示：注册事件监听")
 
     const unsubscribeAvailable = window.electronAPI.onUpdateAvailable(
       (info) => {
-        console.log("UpdateNotification: Update available received", info)
+        console.log("更新提示：收到有可用版本的广播", info)
         setUpdateAvailable(true)
       }
     )
 
     const unsubscribeDownloaded = window.electronAPI.onUpdateDownloaded(
       (info) => {
-        console.log("UpdateNotification: Update downloaded received", info)
+        console.log("更新提示：收到更新下载完成的广播", info)
         setUpdateDownloaded(true)
         setIsDownloading(false)
       }
     )
 
     return () => {
-      console.log("UpdateNotification: Cleaning up event listeners")
+      console.log("更新提示：清理事件监听")
       unsubscribeAvailable()
       unsubscribeDownloaded()
     }
   }, [])
 
+  // 开始下载更新包
   const handleStartUpdate = async () => {
-    console.log("UpdateNotification: Starting update download")
+    console.log("更新提示：开始下载更新")
     setIsDownloading(true)
     const result = await window.electronAPI.startUpdate()
-    console.log("UpdateNotification: Update download result", result)
+    console.log("更新提示：下载结果", result)
     if (!result.success) {
       setIsDownloading(false)
-      showToast("Error", "Failed to download update", "error")
+      showToast(t("ui.common.error"), t("ui.error.failedToDownloadUpdate"), "error")
     }
   }
 
+  // 重启并安装已下载的更新
   const handleInstallUpdate = () => {
-    console.log("UpdateNotification: Installing update")
+    console.log("更新提示：开始安装更新")
     window.electronAPI.installUpdate()
   }
 
-  console.log("UpdateNotification: Render state", {
+  console.log("更新提示：渲染状态", {
     updateAvailable,
     updateDownloaded,
     isDownloading
@@ -66,13 +71,13 @@ export const UpdateNotification: React.FC = () => {
         <div className="p-4">
           <h2 className="text-lg font-semibold mb-4">
             {updateDownloaded
-              ? "Update Ready to Install"
-              : "A New Version is Available"}
+              ? t("ui.update.readyTitle")
+              : t("ui.update.availableTitle")}
           </h2>
           <p className="text-sm text-white/70 mb-6">
             {updateDownloaded
-              ? "The update has been downloaded and will be installed when you restart the app."
-              : "A new version of Interview Coder is available. Please update to continue using the app."}
+              ? t("ui.update.readyDescription")
+              : t("ui.update.availableDescription")}
           </p>
           <div className="flex justify-end gap-2">
             {updateDownloaded ? (
@@ -81,7 +86,7 @@ export const UpdateNotification: React.FC = () => {
                 onClick={handleInstallUpdate}
                 className="border-white/20 hover:bg-white/10"
               >
-                Restart and Install
+                {t("ui.update.restartAndInstall")}
               </Button>
             ) : (
               <Button
@@ -90,7 +95,7 @@ export const UpdateNotification: React.FC = () => {
                 disabled={isDownloading}
                 className="border-white/20 hover:bg-white/10"
               >
-                {isDownloading ? "Downloading..." : "Download Update"}
+                {isDownloading ? t("ui.update.downloading") : t("ui.update.download")}
               </Button>
             )}
           </div>

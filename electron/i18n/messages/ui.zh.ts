@@ -1,0 +1,206 @@
+/**
+ * 渲染层界面文案（`ui` 命名空间）中文表。
+ *
+ * 本文件是**类型真源**：`ui.en.ts` 的类型由本文件推导，缺键或多键都会在 `tsc` 阶段报错。
+ * 键名规则见 `docs/i18n-design.md` §2.1：`ui.<区域>.<元素>[.<变体>]`，一段一句完整句子，
+ * 不用文案片段拼接（中文语序会碎）；动态值统一用 `{{name}}` 占位符。
+ *
+ * 不翻译：模型名（`gpt-4o`…）、API 供应商名（OpenAI / Gemini / Anthropic）、
+ * 快捷键符号（⌘ / Ctrl / ↑ 等）、代码标识符。
+ */
+export const uiZh = {
+  // 全局通用
+  "ui.common.success": "成功",
+  "ui.common.error": "错误",
+  "ui.common.cancel": "取消",
+  "ui.common.settings": "设置",
+  "ui.common.logOut": "退出登录",
+  "ui.common.programmingLanguage": "编程语言",
+  "ui.common.apiSettings": "OpenAI API 设置",
+
+  // 应用外壳
+  "ui.app.initializing": "正在初始化…",
+  "ui.app.toast.apiKeyInvalid.title": "API Key 无效",
+  "ui.app.toast.apiKeyInvalid.description":
+    "你的 OpenAI API Key 似乎无效，或额度不足",
+  "ui.app.toast.apiKeySaved": "API Key 已保存",
+  "ui.app.toast.apiKeySaveFailed": "API Key 保存失败",
+
+  // 欢迎页（未配置 API Key）
+  "ui.welcome.badge": "已解锁版本",
+  "ui.welcome.title": "欢迎使用 Interview Coder",
+  "ui.welcome.description":
+    "本应用为编程题提供 AI 生成的解答，帮你在技术面试中拿到更好的结果。",
+  "ui.welcome.shortcutsTitle": "全局快捷键",
+  "ui.welcome.gettingStartedTitle": "快速开始",
+  "ui.welcome.gettingStartedDescription":
+    "使用本应用前，需要先配置你的 OpenAI API Key。",
+  "ui.welcome.openSettings": "打开设置",
+  "ui.welcome.footer": "先截一张题目截图开始（Ctrl+H / Cmd+H）",
+
+  // 快捷键名称（欢迎页、设置对话框、工具栏共用）
+  "ui.shortcut.title": "键盘快捷键",
+  "ui.shortcut.toggleVisibility": "显示/隐藏窗口",
+  "ui.shortcut.takeScreenshot": "截图",
+  "ui.shortcut.processScreenshots": "处理截图",
+  "ui.shortcut.deleteLastScreenshot": "删除最后一张截图",
+  "ui.shortcut.resetView": "重置视图",
+  "ui.shortcut.quitApp": "退出应用",
+  "ui.shortcut.moveWindow": "移动窗口",
+  "ui.shortcut.decreaseOpacity": "降低不透明度",
+  "ui.shortcut.increaseOpacity": "提高不透明度",
+  "ui.shortcut.zoomOut": "缩小",
+  "ui.shortcut.resetZoom": "重置缩放",
+  "ui.shortcut.zoomIn": "放大",
+
+  // 顶栏
+  "ui.header.programmingLanguageLabel": "语言：",
+  "ui.header.toast.loggedOut": "已退出登录",
+  "ui.header.toast.logoutFailed": "退出登录失败",
+
+  // 队列页
+  "ui.queue.screenshot.first": "截取第一张截图",
+  "ui.queue.screenshot.second": "截取第二张截图",
+  "ui.queue.screenshot.third": "截取第三张截图",
+  "ui.queue.screenshot.fourth": "截取第四张截图",
+  "ui.queue.screenshot.fifth": "截取第五张截图",
+  "ui.queue.screenshot.replaceFirst": "下一张将替换第一张截图",
+
+  // 工具栏与快捷键浮层
+  "ui.commands.showHide": "显示/隐藏",
+  "ui.commands.toggleWindow": "显示/隐藏窗口",
+  "ui.commands.toggleWindowDescription": "显示或隐藏此窗口。",
+  "ui.commands.takeScreenshot": "截图",
+  "ui.commands.takeScreenshotDescription": "截取题目描述。",
+  "ui.commands.takeScreenshotForCode": "截取代码",
+  "ui.commands.takeScreenshotForSolutionDescription":
+    "截取题目的其余部分或你的解答，用于获取调试帮助。",
+  "ui.commands.solve": "解答",
+  "ui.commands.solveDescription": "基于当前题目生成解答。",
+  "ui.commands.solveNeedsScreenshot": "请先截图，再生成解答。",
+  "ui.commands.deleteLastScreenshot": "删除最后一张截图",
+  "ui.commands.deleteLastScreenshotDescription": "移除最近一次截取的截图。",
+  "ui.commands.deleteLastScreenshotEmpty": "没有可删除的截图。",
+  "ui.commands.debug": "调试",
+  "ui.commands.debugDescription":
+    "基于此前全部截图与新增截图重新生成解答。",
+  "ui.commands.startOver": "重新开始",
+  "ui.commands.startOverDescription": "换一道题从头开始。",
+  "ui.commands.screenshot": "截图",
+
+  // 解答页
+  "ui.solutions.problemStatement": "题目描述",
+  "ui.solutions.extracting": "正在提取题目描述…",
+  "ui.solutions.thoughts": "我的思路（{{key}} + 方向键滚动）",
+  "ui.solutions.generating": "正在生成解答…",
+  "ui.solutions.solutionTitle": "解答",
+  "ui.solutions.loading": "正在加载解答…",
+  "ui.solutions.copy": "复制",
+  "ui.solutions.copied": "已复制！",
+  "ui.solutions.complexity": "复杂度",
+  "ui.solutions.calculating": "正在计算复杂度…",
+  "ui.solutions.time": "时间：",
+  "ui.solutions.space": "空间：",
+  "ui.solutions.complexityUnavailable": "暂无复杂度信息",
+
+  // 调试页
+  "ui.debug.whatIChanged": "我改了什么",
+  "ui.debug.originalCode": "原始代码",
+  "ui.debug.analysis": "分析与改进",
+  "ui.debug.loadingAnalysis": "正在加载调试分析…",
+  "ui.debug.fallbackThoughts": "基于你的截图给出的调试分析",
+  "ui.debug.notAvailable": "不适用（调试模式）",
+  "ui.debug.placeholder.noAnalysis": "// 暂无分析内容",
+  "ui.debug.placeholder.seeAnalysis": "// 调试模式，详见下方分析",
+
+  // Toast：错误与提示
+  "ui.error.failedToTakeScreenshot": "截图失败",
+  "ui.error.failedToProcessScreenshots": "处理截图失败",
+  "ui.error.failedToToggleWindow": "显示/隐藏窗口失败",
+  "ui.error.failedToDeleteScreenshot": "删除截图失败",
+  "ui.error.failedToReset": "重置失败",
+  "ui.error.failedToLoadSettings": "设置加载失败",
+  "ui.error.failedToSaveSettings": "设置保存失败",
+  "ui.error.failedToDownloadUpdate": "更新包下载失败",
+  "ui.error.processingFailed": "处理失败",
+  "ui.error.queueProcessingDescription": "处理你的截图时出错。",
+  "ui.error.debugDescription": "调试你的代码时出错。",
+  "ui.info.noScreenshots": "没有截图",
+  "ui.info.noScreenshotsToDelete": "没有可删除的截图。",
+  "ui.info.noScreenshotsToProcess": "没有可处理的截图。",
+  "ui.info.noExtraScreenshotsToProcess": "没有可处理的额外截图。",
+
+  // 设置对话框
+  "ui.settings.title": "API 设置",
+  "ui.settings.description":
+    "配置你的 API Key 与模型偏好。使用本应用需要你自己的 API Key。",
+  "ui.settings.interfaceLanguage": "界面语言",
+  "ui.settings.interfaceLanguageHint": "切换后立即生效，无需重启应用",
+  "ui.settings.interfaceLanguage.current": "当前界面语言：{{locale}}",
+  "ui.settings.interfaceLanguage.system": "跟随系统",
+  "ui.settings.interfaceLanguage.zh": "中文",
+  "ui.settings.interfaceLanguage.en": "English",
+  "ui.settings.provider": "API 供应商",
+  "ui.settings.provider.openai.models": "GPT-4o 系列模型",
+  "ui.settings.provider.gemini.models": "Gemini 1.5 系列模型",
+  "ui.settings.provider.anthropic.models": "Claude 3 系列模型",
+  "ui.settings.apiKey.label.openai": "OpenAI API Key",
+  "ui.settings.apiKey.label.gemini": "Gemini API Key",
+  "ui.settings.apiKey.label.anthropic": "Anthropic API Key",
+  "ui.settings.apiKey.placeholder.gemini": "输入你的 Gemini API Key",
+  "ui.settings.apiKey.current": "当前：{{key}}",
+  "ui.settings.apiKey.storageNote":
+    "你的 API Key 只保存在本地，除 {{provider}} 外不会发送给任何服务器",
+  "ui.settings.apiKey.helpTitle": "还没有 API Key？",
+  "ui.settings.apiKey.step1": "1. 创建账号：",
+  "ui.settings.apiKey.step2": "2. 打开密钥页面：",
+  "ui.settings.apiKey.step3.secret": "3. 创建新的密钥并粘贴到这里",
+  "ui.settings.apiKey.step3.apiKey": "3. 创建新的 API Key 并粘贴到这里",
+  "ui.settings.link.openai": "OpenAI",
+  "ui.settings.link.gemini": "Google AI Studio",
+  "ui.settings.link.anthropic": "Anthropic",
+  "ui.settings.link.apiKeys": "API Keys",
+  "ui.settings.models.title": "AI 模型选择",
+  "ui.settings.models.description": "选择每个处理环节使用哪个模型",
+  "ui.settings.models.extraction.title": "题目提取",
+  "ui.settings.models.extraction.description": "用于分析截图并提取题目细节的模型",
+  "ui.settings.models.solution.title": "解答生成",
+  "ui.settings.models.solution.description": "用于生成代码解答的模型",
+  "ui.settings.models.debugging.title": "调试",
+  "ui.settings.models.debugging.description": "用于调试并改进解答的模型",
+  "ui.settings.model.bestForExtraction": "题目提取效果最佳",
+  "ui.settings.model.faster": "更快、更省成本的选择",
+  "ui.settings.model.balanced": "性能与速度均衡",
+  "ui.settings.model.topTier": "最强的理解与语言能力",
+  "ui.settings.model.strongForCoding": "编码任务表现强劲",
+  "ui.settings.model.bestForDebugging": "最适合分析代码与报错信息",
+  "ui.settings.saving": "正在保存…",
+  "ui.settings.save": "保存设置",
+  "ui.settings.toast.saved": "设置已保存",
+
+  // 更新提示
+  "ui.update.readyTitle": "更新已就绪",
+  "ui.update.availableTitle": "有新版本可用",
+  "ui.update.readyDescription": "更新已下载完成，重启应用后将自动安装。",
+  "ui.update.availableDescription":
+    "Interview Coder 有新版本可用，请更新后继续使用。",
+  "ui.update.restartAndInstall": "重启并安装",
+  "ui.update.downloading": "正在下载…",
+  "ui.update.download": "下载更新",
+
+  // 订阅页（历史页面，当前路由未引用，但属 src/** 用户可见文案）
+  "ui.subscribe.title": "欢迎使用 Interview Coder",
+  "ui.subscribe.description": "继续使用 Interview Coder 需要订阅（$60/月）",
+  "ui.subscribe.note":
+    "* 部分 macOS 版本可能无法保证不可检测，详情见帮助中心",
+  "ui.subscribe.subscribe": "订阅",
+  "ui.subscribe.error.signOutFailed": "退出登录失败，请重试。",
+  "ui.subscribe.error.portalFailed": "打开订阅页面失败，请重试。",
+
+  // 截图缩略图
+  "ui.screenshotQueue.alt": "截图",
+  "ui.screenshotQueue.delete": "删除这张截图",
+}
+
+/** `ui` 命名空间的全部键（由中文表推导，供英文表与调用方约束键集合） */
+export type UiMessageKey = keyof typeof uiZh

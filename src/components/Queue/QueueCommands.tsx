@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react"
 import { createRoot } from "react-dom/client"
 
 import { useToast } from "../../contexts/toast"
+import { useI18n } from "../../contexts/i18n"
 import { LanguageSelector } from "../shared/LanguageSelector"
 import { COMMAND_KEY } from "../../utils/platform"
 
@@ -23,16 +24,16 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
   const [isTooltipVisible, setIsTooltipVisible] = useState(false)
   const tooltipRef = useRef<HTMLDivElement>(null)
   const { showToast } = useToast()
+  const { t } = useI18n()
 
-  // Extract the repeated language selection logic into a separate function
+  // 轮换编程语言：复用 LanguageSelector 的选项顺序，这里临时挂一个隐藏实例取出可选项
   const extractLanguagesAndUpdate = (direction?: 'next' | 'prev') => {
-    // Create a hidden instance of LanguageSelector to extract languages
     const hiddenRenderContainer = document.createElement('div');
     hiddenRenderContainer.style.position = 'absolute';
     hiddenRenderContainer.style.left = '-9999px';
     document.body.appendChild(hiddenRenderContainer);
     
-    // Create a root and render the LanguageSelector temporarily
+    // 临时渲染一份 LanguageSelector 用于取选项
     const root = createRoot(hiddenRenderContainer);
     root.render(
       <LanguageSelector 
@@ -41,24 +42,23 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
       />
     );
     
-    // Use a small delay to ensure the component has rendered
-    // 50ms is generally enough for React to complete a render cycle
+    // 等一个渲染周期（50ms 足够 React 完成一次提交）
     setTimeout(() => {
-      // Extract options from the rendered select element
+      // 从渲染出来的 select 里取选项
       const selectElement = hiddenRenderContainer.querySelector('select');
       if (selectElement) {
         const options = Array.from(selectElement.options);
         const values = options.map(opt => opt.value);
         
-        // Find current language index
+        // 当前语言在选项里的下标
         const currentIndex = values.indexOf(currentLanguage);
         let newIndex = currentIndex;
         
         if (direction === 'prev') {
-          // Go to previous language
+          // 上一个语言
           newIndex = (currentIndex - 1 + values.length) % values.length;
         } else {
-          // Default to next language
+          // 默认下一个语言
           newIndex = (currentIndex + 1) % values.length;
         }
         
@@ -68,7 +68,7 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
         }
       }
       
-      // Clean up
+      // 清理临时节点
       root.unmount();
       document.body.removeChild(hiddenRenderContainer);
     }, 50);
@@ -82,26 +82,24 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
     onTooltipVisibilityChange(isTooltipVisible, tooltipHeight)
   }, [isTooltipVisible])
 
+  // 退出登录：清本地缓存与配置里的 API Key，然后重载
   const handleSignOut = async () => {
     try {
-      // Clear any local storage or electron-specific data
       localStorage.clear();
       sessionStorage.clear();
-      
-      // Clear the API key in the configuration
+
       await window.electronAPI.updateConfig({
         apiKey: '',
       });
-      
-      showToast('Success', 'Logged out successfully', 'success');
-      
-      // Reload the app after a short delay
+
+      showToast(t("ui.common.success"), t("ui.header.toast.loggedOut"), 'success');
+
       setTimeout(() => {
         window.location.reload();
       }, 1500);
     } catch (err) {
-      console.error("Error logging out:", err);
-      showToast('Error', 'Failed to log out', 'error');
+      console.error("退出登录出错：", err);
+      showToast(t("ui.common.error"), t("ui.header.toast.logoutFailed"), 'error');
     }
   }
 
@@ -117,34 +115,34 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
     <div>
       <div className="pt-2 w-fit">
         <div className="text-xs text-white/90 backdrop-blur-md bg-black/60 rounded-lg py-2 px-4 flex items-center justify-center gap-4">
-          {/* Screenshot */}
+          {/* 截图 */}
           <div
             className="flex items-center gap-2 cursor-pointer rounded px-2 py-1.5 hover:bg-white/10 transition-colors"
             onClick={async () => {
               try {
                 const result = await window.electronAPI.triggerScreenshot()
                 if (!result.success) {
-                  console.error("Failed to take screenshot:", result.error)
-                  showToast("Error", "Failed to take screenshot", "error")
+                  console.error("截图失败：", result.error)
+                  showToast(t("ui.common.error"), t("ui.error.failedToTakeScreenshot"), "error")
                 }
               } catch (error) {
-                console.error("Error taking screenshot:", error)
-                showToast("Error", "Failed to take screenshot", "error")
+                console.error("截图时出错：", error)
+                showToast(t("ui.common.error"), t("ui.error.failedToTakeScreenshot"), "error")
               }
             }}
           >
             <span className="text-[11px] leading-none truncate">
               {screenshotCount === 0
-                ? "Take first screenshot"
+                ? t("ui.queue.screenshot.first")
                 : screenshotCount === 1
-                ? "Take second screenshot"
+                ? t("ui.queue.screenshot.second")
                 : screenshotCount === 2
-                ? "Take third screenshot"
+                ? t("ui.queue.screenshot.third")
                 : screenshotCount === 3
-                ? "Take fourth screenshot"
+                ? t("ui.queue.screenshot.fourth")
                 : screenshotCount === 4
-                ? "Take fifth screenshot"
-                : "Next will replace first screenshot"}
+                ? t("ui.queue.screenshot.fifth")
+                : t("ui.queue.screenshot.replaceFirst")}
             </span>
             <div className="flex gap-1">
               <button className="bg-white/10 rounded-md px-1.5 py-1 text-[11px] leading-none text-white/70">
@@ -156,7 +154,7 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
             </div>
           </div>
 
-          {/* Solve Command */}
+          {/* 解答 */}
           {screenshotCount > 0 && (
             <div
               className={`flex flex-col cursor-pointer rounded px-2 py-1.5 hover:bg-white/10 transition-colors ${
@@ -169,19 +167,19 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
                     await window.electronAPI.triggerProcessScreenshots()
                   if (!result.success) {
                     console.error(
-                      "Failed to process screenshots:",
+                      "处理截图失败：",
                       result.error
                     )
-                    showToast("Error", "Failed to process screenshots", "error")
+                    showToast(t("ui.common.error"), t("ui.error.failedToProcessScreenshots"), "error")
                   }
                 } catch (error) {
-                  console.error("Error processing screenshots:", error)
-                  showToast("Error", "Failed to process screenshots", "error")
+                  console.error("处理截图时出错：", error)
+                  showToast(t("ui.common.error"), t("ui.error.failedToProcessScreenshots"), "error")
                 }
               }}
             >
               <div className="flex items-center justify-between">
-                <span className="text-[11px] leading-none">Solve </span>
+                <span className="text-[11px] leading-none">{t("ui.commands.solve")} </span>
                 <div className="flex gap-1 ml-2">
                   <button className="bg-white/10 rounded-md px-1.5 py-1 text-[11px] leading-none text-white/70">
                     {COMMAND_KEY}
@@ -194,16 +192,16 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
             </div>
           )}
 
-          {/* Separator */}
+          {/* 分隔线 */}
           <div className="mx-2 h-4 w-px bg-white/20" />
 
-          {/* Settings with Tooltip */}
+          {/* 设置齿轮 + 快捷键浮层 */}
           <div
             className="relative inline-block"
             onMouseEnter={handleMouseEnter}
             onMouseLeave={handleMouseLeave}
           >
-            {/* Gear icon */}
+            {/* 齿轮图标 */}
             <div className="w-4 h-4 flex items-center justify-center cursor-pointer text-white/70 hover:text-white/90 transition-colors">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -220,20 +218,20 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
               </svg>
             </div>
 
-            {/* Tooltip Content */}
+            {/* 浮层内容 */}
             {isTooltipVisible && (
               <div
                 ref={tooltipRef}
                 className="absolute top-full left-0 mt-2 w-80 transform -translate-x-[calc(50%-12px)]"
                 style={{ zIndex: 100 }}
               >
-                {/* Add transparent bridge */}
+                {/* 透明桥接层：避免鼠标移入浮层时闪烁 */}
                 <div className="absolute -top-2 right-0 w-full h-2" />
                 <div className="p-3 text-xs bg-black/80 backdrop-blur-md rounded-lg border border-white/10 text-white/90 shadow-lg">
                   <div className="space-y-4">
-                    <h3 className="font-medium truncate">Keyboard Shortcuts</h3>
+                    <h3 className="font-medium truncate">{t("ui.shortcut.title")}</h3>
                     <div className="space-y-3">
-                      {/* Toggle Command */}
+                      {/* 显示/隐藏窗口 */}
                       <div
                         className="cursor-pointer rounded px-2 py-1.5 hover:bg-white/10 transition-colors"
                         onClick={async () => {
@@ -242,27 +240,27 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
                               await window.electronAPI.toggleMainWindow()
                             if (!result.success) {
                               console.error(
-                                "Failed to toggle window:",
+                                "显示/隐藏窗口失败：",
                                 result.error
                               )
                               showToast(
-                                "Error",
-                                "Failed to toggle window",
+                                t("ui.common.error"),
+                                t("ui.error.failedToToggleWindow"),
                                 "error"
                               )
                             }
                           } catch (error) {
-                            console.error("Error toggling window:", error)
+                            console.error("显示/隐藏窗口时出错：", error)
                             showToast(
-                              "Error",
-                              "Failed to toggle window",
+                              t("ui.common.error"),
+                              t("ui.error.failedToToggleWindow"),
                               "error"
                             )
                           }
                         }}
                       >
                         <div className="flex items-center justify-between">
-                          <span className="truncate">Toggle Window</span>
+                          <span className="truncate">{t("ui.commands.toggleWindow")}</span>
                           <div className="flex gap-1 flex-shrink-0">
                             <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] leading-none">
                               {COMMAND_KEY}
@@ -273,11 +271,11 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
                           </div>
                         </div>
                         <p className="text-[10px] leading-relaxed text-white/70 truncate mt-1">
-                          Show or hide this window.
+                          {t("ui.commands.toggleWindowDescription")}
                         </p>
                       </div>
 
-                      {/* Screenshot Command */}
+                      {/* 截图 */}
                       <div
                         className="cursor-pointer rounded px-2 py-1.5 hover:bg-white/10 transition-colors"
                         onClick={async () => {
@@ -286,27 +284,27 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
                               await window.electronAPI.triggerScreenshot()
                             if (!result.success) {
                               console.error(
-                                "Failed to take screenshot:",
+                                "截图失败：",
                                 result.error
                               )
                               showToast(
-                                "Error",
-                                "Failed to take screenshot",
+                                t("ui.common.error"),
+                                t("ui.error.failedToTakeScreenshot"),
                                 "error"
                               )
                             }
                           } catch (error) {
-                            console.error("Error taking screenshot:", error)
+                            console.error("截图时出错：", error)
                             showToast(
-                              "Error",
-                              "Failed to take screenshot",
+                              t("ui.common.error"),
+                              t("ui.error.failedToTakeScreenshot"),
                               "error"
                             )
                           }
                         }}
                       >
                         <div className="flex items-center justify-between">
-                          <span className="truncate">Take Screenshot</span>
+                          <span className="truncate">{t("ui.commands.takeScreenshot")}</span>
                           <div className="flex gap-1 flex-shrink-0">
                             <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] leading-none">
                               {COMMAND_KEY}
@@ -317,11 +315,11 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
                           </div>
                         </div>
                         <p className="text-[10px] leading-relaxed text-white/70 truncate mt-1">
-                          Take a screenshot of the problem description.
+                          {t("ui.commands.takeScreenshotDescription")}
                         </p>
                       </div>
 
-                      {/* Solve Command */}
+                      {/* 解答 */}
                       <div
                         className={`cursor-pointer rounded px-2 py-1.5 hover:bg-white/10 transition-colors ${
                           screenshotCount > 0
@@ -336,30 +334,30 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
                               await window.electronAPI.triggerProcessScreenshots()
                             if (!result.success) {
                               console.error(
-                                "Failed to process screenshots:",
+                                "处理截图失败：",
                                 result.error
                               )
                               showToast(
-                                "Error",
-                                "Failed to process screenshots",
+                                t("ui.common.error"),
+                                t("ui.error.failedToProcessScreenshots"),
                                 "error"
                               )
                             }
                           } catch (error) {
                             console.error(
-                              "Error processing screenshots:",
+                              "处理截图时出错：",
                               error
                             )
                             showToast(
-                              "Error",
-                              "Failed to process screenshots",
+                              t("ui.common.error"),
+                              t("ui.error.failedToProcessScreenshots"),
                               "error"
                             )
                           }
                         }}
                       >
                         <div className="flex items-center justify-between">
-                          <span className="truncate">Solve</span>
+                          <span className="truncate">{t("ui.commands.solve")}</span>
                           <div className="flex gap-1 flex-shrink-0">
                             <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] leading-none">
                               {COMMAND_KEY}
@@ -371,12 +369,12 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
                         </div>
                         <p className="text-[10px] leading-relaxed text-white/70 truncate mt-1">
                           {screenshotCount > 0
-                            ? "Generate a solution based on the current problem."
-                            : "Take a screenshot first to generate a solution."}
+                            ? t("ui.commands.solveDescription")
+                            : t("ui.commands.solveNeedsScreenshot")}
                         </p>
                       </div>
                       
-                      {/* Delete Last Screenshot Command */}
+                      {/* 删除最后一张截图 */}
                       <div
                         className={`cursor-pointer rounded px-2 py-1.5 hover:bg-white/10 transition-colors ${
                           screenshotCount > 0
@@ -394,23 +392,23 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
                                 result.error
                               )
                               showToast(
-                                "Error",
-                                result.error || "Failed to delete screenshot",
+                                t("ui.common.error"),
+                                result.error || t("ui.error.failedToDeleteScreenshot"),
                                 "error"
                               )
                             }
                           } catch (error) {
-                            console.error("Error deleting screenshot:", error)
+                            console.error("删除截图时出错：", error)
                             showToast(
-                              "Error",
-                              "Failed to delete screenshot",
+                              t("ui.common.error"),
+                              t("ui.error.failedToDeleteScreenshot"),
                               "error"
                             )
                           }
                         }}
                       >
                         <div className="flex items-center justify-between">
-                          <span className="truncate">Delete Last Screenshot</span>
+                          <span className="truncate">{t("ui.commands.deleteLastScreenshot")}</span>
                           <div className="flex gap-1 flex-shrink-0">
                             <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] leading-none">
                               {COMMAND_KEY}
@@ -422,15 +420,15 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
                         </div>
                         <p className="text-[10px] leading-relaxed text-white/70 truncate mt-1">
                           {screenshotCount > 0
-                            ? "Remove the most recently taken screenshot."
-                            : "No screenshots to delete."}
+                            ? t("ui.commands.deleteLastScreenshotDescription")
+                            : t("ui.commands.deleteLastScreenshotEmpty")}
                         </p>
                       </div>
                     </div>
 
-                    {/* Separator and Log Out */}
+                    {/* 分隔线 + 语言/设置/退出登录 */}
                     <div className="pt-3 mt-3 border-t border-white/10">
-                      {/* Simplified Language Selector */}
+                      {/* 编程语言轮换（点击或方向键） */}
                       <div className="mb-3 px-2">
                         <div 
                           className="flex items-center justify-between cursor-pointer hover:bg-white/10 rounded px-2 py-1 transition-colors"
@@ -444,7 +442,7 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
                             }
                           }}
                         >
-                          <span className="text-[11px] text-white/70">Language</span>
+                          <span className="text-[11px] text-white/70">{t("ui.common.programmingLanguage")}</span>
                           <div className="flex items-center gap-2">
                             <span className="text-[11px] text-white/90">{currentLanguage}</span>
                             <div className="text-white/40 text-[8px]">
@@ -456,15 +454,15 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
                         </div>
                       </div>
 
-                      {/* API Key Settings */}
+                      {/* API Key 设置入口 */}
                       <div className="mb-3 px-2 space-y-1">
                         <div className="flex items-center justify-between text-[13px] font-medium text-white/90">
-                          <span>OpenAI API Settings</span>
+                          <span>{t("ui.common.apiSettings")}</span>
                           <button
                             className="bg-white/10 hover:bg-white/20 px-2 py-1 rounded text-[11px]"
                             onClick={() => window.electronAPI.openSettingsPortal()}
                           >
-                            Settings
+                            {t("ui.common.settings")}
                           </button>
                         </div>
                       </div>
@@ -489,7 +487,7 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
                             <line x1="21" y1="12" x2="9" y2="12" />
                           </svg>
                         </div>
-                        Log Out
+                        {t("ui.common.logOut")}
                       </button>
                     </div>
                   </div>

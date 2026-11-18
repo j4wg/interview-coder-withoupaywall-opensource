@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react"
 import { useToast } from "../../contexts/toast"
+import { useI18n } from "../../contexts/i18n"
 import { Screenshot } from "../../types/screenshots"
 import { supabase } from "../../lib/supabase"
 import { LanguageSelector } from "../shared/LanguageSelector"
@@ -15,17 +16,16 @@ export interface SolutionCommandsProps {
   setLanguage: (language: string) => void
 }
 
+// 退出登录：清本地缓存并让 supabase 会话失效（开源版为占位实现）
 const handleSignOut = async () => {
   try {
-    // Clear any local storage or electron-specific data first
     localStorage.clear()
     sessionStorage.clear()
 
-    // Then sign out from Supabase
     const { error } = await supabase.auth.signOut()
     if (error) throw error
   } catch (err) {
-    console.error("Error signing out:", err)
+    console.error("退出登录失败：", err)
   }
 }
 
@@ -40,12 +40,13 @@ const SolutionCommands: React.FC<SolutionCommandsProps> = ({
   const [isTooltipVisible, setIsTooltipVisible] = useState(false)
   const tooltipRef = useRef<HTMLDivElement>(null)
   const { showToast } = useToast()
+  const { t } = useI18n()
 
   useEffect(() => {
     if (onTooltipVisibilityChange) {
       let tooltipHeight = 0
       if (tooltipRef.current && isTooltipVisible) {
-        tooltipHeight = tooltipRef.current.offsetHeight + 10 // Adjust if necessary
+        tooltipHeight = tooltipRef.current.offsetHeight + 10 // 浮层高度 + 间距
       }
       onTooltipVisibilityChange(isTooltipVisible, tooltipHeight)
     }
@@ -63,23 +64,23 @@ const SolutionCommands: React.FC<SolutionCommandsProps> = ({
     <div>
       <div className="pt-2 w-fit">
         <div className="text-xs text-white/90 backdrop-blur-md bg-black/60 rounded-lg py-2 px-4 flex items-center justify-center gap-4">
-          {/* Show/Hide - Always visible */}
+          {/* 显示/隐藏窗口（常驻） */}
           <div
             className="flex items-center gap-2 cursor-pointer rounded px-2 py-1.5 hover:bg-white/10 transition-colors"
             onClick={async () => {
               try {
                 const result = await window.electronAPI.toggleMainWindow()
                 if (!result.success) {
-                  console.error("Failed to toggle window:", result.error)
-                  showToast("Error", "Failed to toggle window", "error")
+                  console.error("显示/隐藏窗口失败：", result.error)
+                  showToast(t("ui.common.error"), t("ui.error.failedToToggleWindow"), "error")
                 }
               } catch (error) {
-                console.error("Error toggling window:", error)
-                showToast("Error", "Failed to toggle window", "error")
+                console.error("显示/隐藏窗口时出错：", error)
+                showToast(t("ui.common.error"), t("ui.error.failedToToggleWindow"), "error")
               }
             }}
           >
-            <span className="text-[11px] leading-none">Show/Hide</span>
+            <span className="text-[11px] leading-none">{t("ui.commands.showHide")}</span>
             <div className="flex gap-1">
               <button className="bg-white/10 rounded-md px-1.5 py-1 text-[11px] leading-none text-white/70">
                 {COMMAND_KEY}
@@ -90,7 +91,7 @@ const SolutionCommands: React.FC<SolutionCommandsProps> = ({
             </div>
           </div>
 
-          {/* Screenshot and Debug commands - Only show if not processing */}
+          {/* 截图与调试（处理中隐藏） */}
           {!isProcessing && (
             <>
               <div
@@ -99,19 +100,19 @@ const SolutionCommands: React.FC<SolutionCommandsProps> = ({
                   try {
                     const result = await window.electronAPI.triggerScreenshot()
                     if (!result.success) {
-                      console.error("Failed to take screenshot:", result.error)
-                      showToast("Error", "Failed to take screenshot", "error")
+                      console.error("截图失败：", result.error)
+                      showToast(t("ui.common.error"), t("ui.error.failedToTakeScreenshot"), "error")
                     }
                   } catch (error) {
-                    console.error("Error taking screenshot:", error)
-                    showToast("Error", "Failed to take screenshot", "error")
+                    console.error("截图时出错：", error)
+                    showToast(t("ui.common.error"), t("ui.error.failedToTakeScreenshot"), "error")
                   }
                 }}
               >
                 <span className="text-[11px] leading-none truncate">
                   {extraScreenshots.length === 0
-                    ? "Screenshot your code"
-                    : "Screenshot"}
+                    ? t("ui.commands.takeScreenshotForCode")
+                    : t("ui.commands.screenshot")}
                 </span>
                 <div className="flex gap-1">
                   <button className="bg-white/10 rounded-md px-1.5 py-1 text-[11px] leading-none text-white/70">
@@ -132,26 +133,26 @@ const SolutionCommands: React.FC<SolutionCommandsProps> = ({
                         await window.electronAPI.triggerProcessScreenshots()
                       if (!result.success) {
                         console.error(
-                          "Failed to process screenshots:",
+                          "处理截图失败：",
                           result.error
                         )
                         showToast(
-                          "Error",
-                          "Failed to process screenshots",
+                          t("ui.common.error"),
+                          t("ui.error.failedToProcessScreenshots"),
                           "error"
                         )
                       }
                     } catch (error) {
-                      console.error("Error processing screenshots:", error)
+                      console.error("处理截图时出错：", error)
                       showToast(
-                        "Error",
-                        "Failed to process screenshots",
+                        t("ui.common.error"),
+                        t("ui.error.failedToProcessScreenshots"),
                         "error"
                       )
                     }
                   }}
                 >
-                  <span className="text-[11px] leading-none">Debug</span>
+                  <span className="text-[11px] leading-none">{t("ui.commands.debug")}</span>
                   <div className="flex gap-1">
                     <button className="bg-white/10 rounded-md px-1.5 py-1 text-[11px] leading-none text-white/70">
                       {COMMAND_KEY}
@@ -165,23 +166,23 @@ const SolutionCommands: React.FC<SolutionCommandsProps> = ({
             </>
           )}
 
-          {/* Start Over - Always visible */}
+          {/* 重新开始（常驻） */}
           <div
             className="flex items-center gap-2 cursor-pointer rounded px-2 py-1.5 hover:bg-white/10 transition-colors"
             onClick={async () => {
               try {
                 const result = await window.electronAPI.triggerReset()
                 if (!result.success) {
-                  console.error("Failed to reset:", result.error)
-                  showToast("Error", "Failed to reset", "error")
+                  console.error("重置失败：", result.error)
+                  showToast(t("ui.common.error"), t("ui.error.failedToReset"), "error")
                 }
               } catch (error) {
-                console.error("Error resetting:", error)
-                showToast("Error", "Failed to reset", "error")
+                console.error("重置时出错：", error)
+                showToast(t("ui.common.error"), t("ui.error.failedToReset"), "error")
               }
             }}
           >
-            <span className="text-[11px] leading-none">Start Over</span>
+            <span className="text-[11px] leading-none">{t("ui.commands.startOver")}</span>
             <div className="flex gap-1">
               <button className="bg-white/10 rounded-md px-1.5 py-1 text-[11px] leading-none text-white/70">
                 {COMMAND_KEY}
@@ -192,16 +193,16 @@ const SolutionCommands: React.FC<SolutionCommandsProps> = ({
             </div>
           </div>
 
-          {/* Separator */}
+          {/* 分隔线 */}
           <div className="mx-2 h-4 w-px bg-white/20" />
 
-          {/* Settings with Tooltip */}
+          {/* 设置齿轮 + 快捷键浮层 */}
           <div
             className="relative inline-block"
             onMouseEnter={handleMouseEnter}
             onMouseLeave={handleMouseLeave}
           >
-            {/* Gear icon */}
+            {/* 齿轮图标 */}
             <div className="w-4 h-4 flex items-center justify-center cursor-pointer text-white/70 hover:text-white/90 transition-colors">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -218,22 +219,22 @@ const SolutionCommands: React.FC<SolutionCommandsProps> = ({
               </svg>
             </div>
 
-            {/* Tooltip Content */}
+            {/* 浮层内容 */}
             {isTooltipVisible && (
               <div
                 ref={tooltipRef}
                 className="absolute top-full right-0 mt-2 w-80"
                 style={{ zIndex: 100 }}
               >
-                {/* Add transparent bridge */}
+                {/* 透明桥接层：避免鼠标移入浮层时闪烁 */}
                 <div className="absolute -top-2 right-0 w-full h-2" />
                 <div className="p-3 text-xs bg-black/80 backdrop-blur-md rounded-lg border border-white/10 text-white/90 shadow-lg">
                   <div className="space-y-4">
                     <h3 className="font-medium whitespace-nowrap">
-                      Keyboard Shortcuts
+                      {t("ui.shortcut.title")}
                     </h3>
                     <div className="space-y-3">
-                      {/* Show/Hide - Always visible */}
+                      {/* 显示/隐藏窗口（常驻） */}
                       <div
                         className="cursor-pointer rounded px-2 py-1.5 hover:bg-white/10 transition-colors"
                         onClick={async () => {
@@ -242,27 +243,27 @@ const SolutionCommands: React.FC<SolutionCommandsProps> = ({
                               await window.electronAPI.toggleMainWindow()
                             if (!result.success) {
                               console.error(
-                                "Failed to toggle window:",
+                                "显示/隐藏窗口失败：",
                                 result.error
                               )
                               showToast(
-                                "Error",
-                                "Failed to toggle window",
+                                t("ui.common.error"),
+                                t("ui.error.failedToToggleWindow"),
                                 "error"
                               )
                             }
                           } catch (error) {
-                            console.error("Error toggling window:", error)
+                            console.error("显示/隐藏窗口时出错：", error)
                             showToast(
-                              "Error",
-                              "Failed to toggle window",
+                              t("ui.common.error"),
+                              t("ui.error.failedToToggleWindow"),
                               "error"
                             )
                           }
                         }}
                       >
                         <div className="flex items-center justify-between">
-                          <span className="truncate">Toggle Window</span>
+                          <span className="truncate">{t("ui.commands.toggleWindow")}</span>
                           <div className="flex gap-1 flex-shrink-0">
                             <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] leading-none">
                               {COMMAND_KEY}
@@ -273,11 +274,11 @@ const SolutionCommands: React.FC<SolutionCommandsProps> = ({
                           </div>
                         </div>
                         <p className="text-[10px] leading-relaxed text-white/70 truncate mt-1">
-                          Show or hide this window.
+                          {t("ui.commands.toggleWindowDescription")}
                         </p>
                       </div>
 
-                      {/* Screenshot and Debug commands - Only show if not processing */}
+                      {/* 截图与调试（处理中隐藏） */}
                       {!isProcessing && (
                         <>
                           <div
@@ -288,27 +289,27 @@ const SolutionCommands: React.FC<SolutionCommandsProps> = ({
                                   await window.electronAPI.triggerScreenshot()
                                 if (!result.success) {
                                   console.error(
-                                    "Failed to take screenshot:",
+                                    "截图失败：",
                                     result.error
                                   )
                                   showToast(
-                                    "Error",
-                                    "Failed to take screenshot",
+                                    t("ui.common.error"),
+                                    t("ui.error.failedToTakeScreenshot"),
                                     "error"
                                   )
                                 }
                               } catch (error) {
-                                console.error("Error taking screenshot:", error)
+                                console.error("截图时出错：", error)
                                 showToast(
-                                  "Error",
-                                  "Failed to take screenshot",
+                                  t("ui.common.error"),
+                                  t("ui.error.failedToTakeScreenshot"),
                                   "error"
                                 )
                               }
                             }}
                           >
                             <div className="flex items-center justify-between">
-                              <span className="truncate">Take Screenshot</span>
+                              <span className="truncate">{t("ui.commands.takeScreenshot")}</span>
                               <div className="flex gap-1 flex-shrink-0">
                                 <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] leading-none">
                                   {COMMAND_KEY}
@@ -319,8 +320,7 @@ const SolutionCommands: React.FC<SolutionCommandsProps> = ({
                               </div>
                             </div>
                             <p className="text-[10px] leading-relaxed text-white/70 truncate mt-1">
-                              Capture additional parts of the question or your
-                              solution for debugging help.
+                              {t("ui.commands.takeScreenshotForSolutionDescription")}
                             </p>
                           </div>
 
@@ -333,30 +333,30 @@ const SolutionCommands: React.FC<SolutionCommandsProps> = ({
                                     await window.electronAPI.triggerProcessScreenshots()
                                   if (!result.success) {
                                     console.error(
-                                      "Failed to process screenshots:",
+                                      "处理截图失败：",
                                       result.error
                                     )
                                     showToast(
-                                      "Error",
-                                      "Failed to process screenshots",
+                                      t("ui.common.error"),
+                                      t("ui.error.failedToProcessScreenshots"),
                                       "error"
                                     )
                                   }
                                 } catch (error) {
                                   console.error(
-                                    "Error processing screenshots:",
+                                    "处理截图时出错：",
                                     error
                                   )
                                   showToast(
-                                    "Error",
-                                    "Failed to process screenshots",
+                                    t("ui.common.error"),
+                                    t("ui.error.failedToProcessScreenshots"),
                                     "error"
                                   )
                                 }
                               }}
                             >
                               <div className="flex items-center justify-between">
-                                <span className="truncate">Debug</span>
+                                <span className="truncate">{t("ui.commands.debug")}</span>
                                 <div className="flex gap-1 flex-shrink-0">
                                   <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] leading-none">
                                     {COMMAND_KEY}
@@ -367,15 +367,14 @@ const SolutionCommands: React.FC<SolutionCommandsProps> = ({
                                 </div>
                               </div>
                               <p className="text-[10px] leading-relaxed text-white/70 truncate mt-1">
-                                Generate new solutions based on all previous and
-                                newly added screenshots.
+                                {t("ui.commands.debugDescription")}
                               </p>
                             </div>
                           )}
                         </>
                       )}
 
-                      {/* Start Over - Always visible */}
+                      {/* 重新开始（常驻） */}
                       <div
                         className="cursor-pointer rounded px-2 py-1.5 hover:bg-white/10 transition-colors"
                         onClick={async () => {
@@ -383,17 +382,17 @@ const SolutionCommands: React.FC<SolutionCommandsProps> = ({
                             const result =
                               await window.electronAPI.triggerReset()
                             if (!result.success) {
-                              console.error("Failed to reset:", result.error)
-                              showToast("Error", "Failed to reset", "error")
+                              console.error("重置失败：", result.error)
+                              showToast(t("ui.common.error"), t("ui.error.failedToReset"), "error")
                             }
                           } catch (error) {
-                            console.error("Error resetting:", error)
-                            showToast("Error", "Failed to reset", "error")
+                            console.error("重置时出错：", error)
+                            showToast(t("ui.common.error"), t("ui.error.failedToReset"), "error")
                           }
                         }}
                       >
                         <div className="flex items-center justify-between">
-                          <span className="truncate">Start Over</span>
+                          <span className="truncate">{t("ui.commands.startOver")}</span>
                           <div className="flex gap-1 flex-shrink-0">
                             <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] leading-none">
                               {COMMAND_KEY}
@@ -404,27 +403,27 @@ const SolutionCommands: React.FC<SolutionCommandsProps> = ({
                           </div>
                         </div>
                         <p className="text-[10px] leading-relaxed text-white/70 truncate mt-1">
-                          Start fresh with a new question.
+                          {t("ui.commands.startOverDescription")}
                         </p>
                       </div>
                     </div>
 
-                    {/* Separator and Log Out */}
+                    {/* 分隔线 + 语言/设置/退出登录 */}
                     <div className="pt-3 mt-3 border-t border-white/10">
                       <LanguageSelector
                         currentLanguage={currentLanguage}
                         setLanguage={setLanguage}
                       />
 
-                      {/* API Key Settings */}
+                      {/* API Key 设置入口 */}
                       <div className="mb-3 px-2 space-y-1">
                         <div className="flex items-center justify-between text-[13px] font-medium text-white/90">
-                          <span>OpenAI API Settings</span>
+                          <span>{t("ui.common.apiSettings")}</span>
                           <button
                             className="bg-white/10 hover:bg-white/20 px-2 py-1 rounded text-[11px]"
                             onClick={() => window.electronAPI.openSettingsPortal()}
                           >
-                            Settings
+                            {t("ui.common.settings")}
                           </button>
                         </div>
                       </div>
@@ -449,7 +448,7 @@ const SolutionCommands: React.FC<SolutionCommandsProps> = ({
                             <line x1="21" y1="12" x2="9" y2="12" />
                           </svg>
                         </div>
-                        Log Out
+                        {t("ui.common.logOut")}
                       </button>
                     </div>
                   </div>

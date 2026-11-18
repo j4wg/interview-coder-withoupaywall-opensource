@@ -1,6 +1,7 @@
-// src/components/ScreenshotItem.tsx
+// 单张截图的缩略图：悬停显示删除按钮
 import React from "react"
 import { X } from "lucide-react"
+import { useI18n } from "../../contexts/i18n"
 
 interface Screenshot {
   path: string
@@ -20,6 +21,8 @@ const ScreenshotItem: React.FC<ScreenshotItemProps> = ({
   index,
   isLoading
 }) => {
+  const { t } = useI18n()
+
   const handleDelete = async () => {
     await onDelete(index)
   }
@@ -39,7 +42,7 @@ const ScreenshotItem: React.FC<ScreenshotItemProps> = ({
           )}
           <img
             src={screenshot.preview}
-            alt="Screenshot"
+            alt={t("ui.screenshotQueue.alt")}
             className={`w-full h-full object-cover transition-transform duration-300 ${
               isLoading
                 ? "opacity-50"
@@ -54,7 +57,7 @@ const ScreenshotItem: React.FC<ScreenshotItemProps> = ({
               handleDelete()
             }}
             className="absolute top-2 left-2 p-1 rounded-full bg-black bg-opacity-50 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-            aria-label="Delete screenshot"
+            aria-label={t("ui.screenshotQueue.delete")}
           >
             <X size={16} />
           </button>

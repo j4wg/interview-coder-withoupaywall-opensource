@@ -1,21 +1,26 @@
+// 订阅页：当前版本的路由已不再引用该页面（开源版无付费流程），
+// 但保留文件并接入 i18n，避免后续重新启用时出现英文硬编码。
 import { useState, useRef, useEffect } from "react"
 import { supabase } from "../lib/supabase"
 import { User } from "@supabase/supabase-js"
+import { useI18n } from "../contexts/i18n"
 
 interface SubscribePageProps {
   user: User
 }
 
 export default function SubscribePage({ user }: SubscribePageProps) {
+  const { t } = useI18n()
   const [error, setError] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
+  // 该页面是固定尺寸的小窗口，挂载时把尺寸同步给主进程
   useEffect(() => {
     const updateDimensions = () => {
       if (containerRef.current) {
         window.electronAPI.updateContentDimensions({
-          width: 400, // Fixed width
-          height: 400 // Fixed height
+          width: 400, // 固定宽度
+          height: 400 // 固定高度
         })
       }
     }
@@ -23,17 +28,19 @@ export default function SubscribePage({ user }: SubscribePageProps) {
     updateDimensions()
   }, [])
 
+  // 退出登录：失败时给出 3 秒提示
   const handleSignOut = async () => {
     try {
       const { error: signOutError } = await supabase.auth.signOut()
       if (signOutError) throw signOutError
     } catch (err) {
-      console.error("Error signing out:", err)
-      setError("Failed to sign out. Please try again.")
+      console.error("退出登录失败：", err)
+      setError(t("ui.subscribe.error.signOutFailed"))
       setTimeout(() => setError(null), 3000)
     }
   }
 
+  // 打开订阅页（外部浏览器）
   const handleSubscribe = async () => {
     if (!user) return
 
@@ -44,11 +51,11 @@ export default function SubscribePage({ user }: SubscribePageProps) {
       })
 
       if (!result.success) {
-        throw new Error(result.error || "Failed to open subscription portal")
+        throw new Error(result.error || t("ui.subscribe.error.portalFailed"))
       }
     } catch (err) {
-      console.error("Error opening subscription portal:", err)
-      setError("Failed to open subscription portal. Please try again.")
+      console.error("打开订阅页面失败：", err)
+      setError(t("ui.subscribe.error.portalFailed"))
       setTimeout(() => setError(null), 3000)
     }
   }
@@ -61,22 +68,20 @@ export default function SubscribePage({ user }: SubscribePageProps) {
       <div className="w-full px-6">
         <div className="text-center">
           <h2 className="text-2xl font-bold text-white">
-            Welcome to Interview Coder
+            {t("ui.subscribe.title")}
           </h2>
           <p className="text-gray-400 text-sm mt-2 mb-6">
-            To continue using Interview Coder, you'll need to subscribe
-            ($60/month)
+            {t("ui.subscribe.description")}
           </p>
           <p className="text-gray-500 text-[11px] -mt-4 mb-6 italic">
-            * Undetectability may not work with some versions of MacOS. See our
-            help center for more details
+            {t("ui.subscribe.note")}
           </p>
 
-          {/* Keyboard Shortcuts */}
+          {/* 快捷键提示 */}
           <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-3 mb-6">
             <div className="flex items-center justify-between text-white/70 text-xs">
               <div className="flex items-center gap-2">
-                <span className="text-white/40">Toggle Visibility</span>
+                <span className="text-white/40">{t("ui.shortcut.toggleVisibility")}</span>
                 <div className="flex gap-1">
                   <kbd className="bg-white/[0.07] border border-white/[0.1] rounded-md px-1.5 py-1 text-[10px] leading-none text-white/60">
                     ⌘
@@ -87,7 +92,7 @@ export default function SubscribePage({ user }: SubscribePageProps) {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-white/40">Quit App</span>
+                <span className="text-white/40">{t("ui.shortcut.quitApp")}</span>
                 <div className="flex gap-1">
                   <kbd className="bg-white/[0.07] border border-white/[0.1] rounded-md px-1.5 py-1 text-[10px] leading-none text-white/60">
                     ⌘
@@ -100,12 +105,12 @@ export default function SubscribePage({ user }: SubscribePageProps) {
             </div>
           </div>
 
-          {/* Subscribe Button */}
+          {/* 订阅按钮 */}
           <button
             onClick={handleSubscribe}
             className="w-full px-4 py-3 bg-white text-black rounded-xl font-medium hover:bg-white/90 transition-colors flex items-center justify-center gap-2 mb-6"
           >
-            Subscribe
+            {t("ui.subscribe.subscribe")}
             <svg
               xmlns="http://www.w3.org/2000/svg"
               width="14"
@@ -123,7 +128,7 @@ export default function SubscribePage({ user }: SubscribePageProps) {
             </svg>
           </button>
 
-          {/* Logout Section */}
+          {/* 退出登录 */}
           <div className="border-t border-white/[0.06] pt-4">
             <button
               onClick={handleSignOut}
@@ -145,7 +150,7 @@ export default function SubscribePage({ user }: SubscribePageProps) {
                   <line x1="21" y1="12" x2="9" y2="12" />
                 </svg>
               </div>
-              Log Out
+              {t("ui.common.logOut")}
             </button>
           </div>
 
