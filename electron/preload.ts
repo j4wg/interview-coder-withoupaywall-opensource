@@ -313,6 +313,13 @@ const electronAPI = {
     }
   },
   checkApiKey: () => ipcRenderer.invoke("check-api-key"),
+  // 拉取模型列表：可带未保存的表单值（baseUrl/apiFormat/apiKey）
+  // 返回 { ok, models, error?, code? }；失败时 models 为空且 error 已是当前语言
+  listModels: (overrides?: {
+    baseUrl?: string
+    apiFormat?: string
+    apiKey?: string
+  }) => ipcRenderer.invoke("list-models", overrides),
   validateApiKey: (apiKey: string) =>
     ipcRenderer.invoke("validate-api-key", apiKey),
   openExternal: (url: string) =>

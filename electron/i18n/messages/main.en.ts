@@ -46,6 +46,11 @@ export const mainEn: Record<MainMessageKeys, string> = {
   // IPC handlers (ipcHandlers.ts)
   "main.ipc.initializing": "Initializing IPC handlers",
   "main.ipc.openingExternalUrl": "Opening external URL: {{url}}",
+  "main.ipc.listModelsRequest": "Received a request to fetch the model list",
+  "main.ipc.listModelsResult":
+    "Model list fetched successfully: {{count}} models",
+  "main.ipc.listModelsFailed":
+    "Failed to fetch the model list: error code {{code}}",
 
   // Screenshots (ScreenshotHelper.ts)
   "main.shot.dirCreated": "Created directory: {{path}}",

@@ -98,25 +98,9 @@ export const processingEn: ProcessingMessages = {
   "processing.status.solution.done": "Solution generated successfully",
   "processing.status.debug.analyzing":
     "Analyzing screenshots and generating debug feedback...",
-  "processing.status.debug.analyzing.provider":
-    "Analyzing code and generating debug feedback with {{provider}}...",
   "processing.status.debug.done": "Debug analysis complete",
 
   // ---------------------------------------------------------------- 日志
-  "processing.log.client.openai.ready": "OpenAI client initialized successfully",
-  "processing.log.client.openai.noKey":
-    "No API key available, OpenAI client not initialized",
-  "processing.log.client.gemini.ready": "Gemini API key set successfully",
-  "processing.log.client.gemini.noKey":
-    "No API key available, Gemini client not initialized",
-  "processing.log.client.anthropic.ready":
-    "Anthropic client initialized successfully",
-  "processing.log.client.anthropic.noKey":
-    "No API key available, Anthropic client not initialized",
-  "processing.log.client.initFailed": "Failed to initialize AI client: {{error}}",
-  "processing.log.client.openai.missing": "OpenAI client not initialized",
-  "processing.log.client.gemini.missing": "Gemini API key not initialized",
-  "processing.log.client.anthropic.missing": "Anthropic client not initialized",
   "processing.log.credits.failed": "Error getting credits: {{error}}",
   "processing.log.language.windowFailed":
     "Could not get the programming language from the window: {{error}}",
@@ -152,46 +136,52 @@ export const processingEn: ProcessingMessages = {
     "Model JSON is missing required fields: {{missing}}; fields actually returned: {{keys}}. Translated field names count as this error.",
   "processing.log.extract.notObject":
     "Model JSON is not an object: {{snippet}}",
-  "processing.log.api.gemini.provider": "Error using Gemini API: {{error}}",
-  "processing.log.api.gemini.solution":
-    "Error using Gemini API for the solution: {{error}}",
-  "processing.log.api.gemini.debug":
-    "Error using Gemini API for debugging: {{error}}",
-  "processing.log.api.gemini.empty": "Empty response from Gemini API",
-  "processing.log.api.anthropic.provider": "Error using Anthropic API: {{error}}",
-  "processing.log.api.anthropic.solution":
-    "Error using Anthropic API for the solution: {{error}}",
-  "processing.log.api.anthropic.debug":
-    "Error using Anthropic API for debugging: {{error}}",
+
+  // ---------------------------------------------------------------- 调用层日志（三种 API 格式）
+  "processing.log.llm.request":
+    "Sending {{method}} request to {{url}} (timeout {{seconds}}s)",
+  "processing.log.llm.response":
+    "Received response (HTTP {{status}}, {{ms}} ms)",
+  "processing.log.llm.call":
+    "Calling the model endpoint: format {{format}}, purpose {{purpose}}, model {{model}}",
+  "processing.log.llm.failed":
+    "Model endpoint call failed: code {{code}}, HTTP {{status}}, details: {{detail}}",
+  "processing.log.llm.configIssues":
+    "Model configuration has issues (fallback values used for this run): {{issues}}",
+  "processing.log.llm.modelsFetched":
+    "Fetched the model list successfully: {{count}} models",
+  "processing.log.llm.modelsFailed":
+    "Failed to fetch the model list: code {{code}}, HTTP {{status}}, details: {{detail}}",
 
   // ---------------------------------------------------------------- 错误与兜底（会显示给用户）
-  "processing.error.openai.notConfigured":
-    "OpenAI API key not configured or invalid. Please check your settings.",
-  "processing.error.openai.invalidKey":
-    "Invalid OpenAI API key. Please check your settings.",
-  "processing.error.openai.rateLimit":
-    "OpenAI API rate limit exceeded or insufficient credits. Please try again later.",
-  "processing.error.openai.server": "OpenAI server error. Please try again later.",
-  "processing.error.gemini.notConfigured":
-    "Gemini API key not configured. Please check your settings.",
-  "processing.error.gemini.failed":
-    "Failed to process with Gemini API. Please check your API key or try again later.",
-  "processing.error.gemini.solutionFailed":
-    "Failed to generate the solution with Gemini API. Please check your API key or try again later.",
-  "processing.error.gemini.debugFailed":
-    "Failed to process the debug request with Gemini API. Please check your API key or try again later.",
-  "processing.error.anthropic.notConfigured":
-    "Anthropic API key not configured. Please check your settings.",
-  "processing.error.anthropic.rateLimit":
-    "Claude API rate limit exceeded. Please wait a few minutes before trying again.",
-  "processing.error.anthropic.tooLarge":
-    "Your screenshots contain too much information for Claude to process. Switch to OpenAI or Gemini in settings, which can handle larger inputs.",
-  "processing.error.anthropic.failed":
-    "Failed to process with Anthropic API. Please check your API key or try again later.",
-  "processing.error.anthropic.solutionFailed":
-    "Failed to generate the solution with Anthropic API. Please check your API key or try again later.",
-  "processing.error.anthropic.debugFailed":
-    "Failed to process the debug request with Anthropic API. Please check your API key or try again later.",
+  "processing.error.llm.baseUrlMissing":
+    "No API Base URL configured yet. Please fill it in under Settings.",
+  "processing.error.llm.baseUrlInvalid":
+    "The API Base URL is not a valid HTTP(S) address. Please check your settings.",
+  "processing.error.llm.apiKeyMissing":
+    "No API key configured yet. Please fill it in under Settings.",
+  "processing.error.llm.modelMissing":
+    "No model selected for this purpose yet. Add a model in Settings and select it first.",
+  "processing.error.llm.network":
+    "Could not reach the model endpoint. Check your network connection and the Base URL.",
+  "processing.error.llm.timeout":
+    "The request did not finish within {{seconds}} seconds. Please try again later or check your network.",
+  "processing.error.llm.auth":
+    "The API key is invalid or not allowed to access this endpoint (HTTP {{status}}). Please check your settings.",
+  "processing.error.llm.rateLimit":
+    "Too many requests or insufficient quota (HTTP {{status}}). Please try again later.",
+  "processing.error.llm.server":
+    "The model endpoint failed with a server error (HTTP {{status}}). Please try again later.",
+  "processing.error.llm.badRequest":
+    "The request was rejected by the endpoint (HTTP {{status}}). Check the Base URL, API format and model ID.",
+  "processing.error.llm.tooLarge":
+    "The request payload is too large (HTTP {{status}}). Remove some screenshots or use a model with a larger context window.",
+  "processing.error.llm.invalidResponse":
+    "The endpoint did not return parsable JSON. Check that the Base URL and API format match.",
+  "processing.error.llm.emptyResponse":
+    "The endpoint response contains no usable text. Check the model ID and API format.",
+  "processing.error.llm.unknown":
+    "An unknown error occurred while calling the model endpoint. Please try again later.",
   "processing.error.extract.parseFailed":
     "Failed to parse the problem information. Please try again or use clearer screenshots.",
   "processing.error.extract.fieldMissing":

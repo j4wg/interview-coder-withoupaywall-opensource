@@ -5,6 +5,7 @@ import { randomBytes } from "crypto"
 import { IIpcHandlerDeps } from "./main"
 import { configHelper } from "./ConfigHelper"
 import { mainT } from "./i18n/mainT"
+import { handleListModels } from "./llm/modelListIpc"
 
 export function initializeIpcHandlers(deps: IIpcHandlerDeps): void {
   // 每次调用都按当前界面语言取文案
@@ -45,6 +46,28 @@ export function initializeIpcHandlers(deps: IIpcHandlerDeps): void {
 
   ipcMain.handle("check-api-key", () => {
     return configHelper.hasApiKey();
+  })
+
+  // 拉取模型列表：GET {baseUrl}/models，鉴权头按 provider.apiFormat 走。
+  // 失败时返回 { ok: false, models: [], error }（当前语言），不影响渲染层手工填写模型 ID。
+  ipcMain.handle("list-models", async (_event, overrides?: unknown) => {
+    const locale = configHelper.getUiLocale().locale;
+    console.log(t("main.ipc.listModelsRequest"));
+    const result = await handleListModels({
+      rawConfig: configHelper.loadConfig(),
+      overrides,
+      locale,
+    });
+    if (result.ok) {
+      console.log(
+        t("main.ipc.listModelsResult", { count: String(result.models.length) })
+      );
+    } else {
+      console.warn(
+        t("main.ipc.listModelsFailed", { code: result.code ?? "unknown" })
+      );
+    }
+    return result;
   })
 
   ipcMain.handle("validate-api-key", async (_event, apiKey) => {
