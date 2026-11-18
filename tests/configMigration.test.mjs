@@ -1,8 +1,7 @@
-/**
- * `configMigrations.ts` 单测：覆盖设计文档 5.2 用例矩阵前 5 行 + 幂等 / 不修改入参 / 未知键保留。
- * 零新依赖，直接跑 tsc 产物（`dist-electron/**`）。
- * 运行：npm test（即 `node --test tests/`）
- */
+// `configMigrations.ts` 单测：覆盖设计文档 5.2 用例矩阵前 5 行 + 幂等 / 不修改入参 / 未知键保留。
+// 零新依赖，直接跑 tsc 产物（`dist-electron`）。
+// 运行：npm test —— pretest 先执行 `tsc -p tsconfig.electron.json` 生成产物，
+// 再跑 package.json 里的 `node --test tests/<file>.test.mjs ...`（显式列出测试文件）；单独跑本文件需先编译。
 import test from "node:test"
 import assert from "node:assert/strict"
 import fs from "node:fs"

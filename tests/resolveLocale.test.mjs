@@ -1,7 +1,6 @@
-/**
- * `resolveLocale.ts` 单测：零新依赖，直接跑 tsc 产物（`dist-electron/**`）。
- * 运行：npm test（即 `node --test tests/`）
- */
+// `resolveLocale.ts` 单测：零新依赖，直接跑 tsc 产物（`dist-electron`）。
+// 运行：npm test —— pretest 先执行 `tsc -p tsconfig.electron.json` 生成产物，
+// 再跑 package.json 里的 `node --test tests/<file>.test.mjs ...`（显式列出测试文件）；单独跑本文件需先编译。
 import test from "node:test"
 import assert from "node:assert/strict"
 import fs from "node:fs"
