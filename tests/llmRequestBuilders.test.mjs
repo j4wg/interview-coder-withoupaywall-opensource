@@ -340,6 +340,39 @@ test("引用完整性：指向不存在的 provider / 模型一律置空，不�
   assert.equal(resolveBindingForPurpose(resolved.providers, resolved.bindings, "debugging").modelId, "gpt-5")
 })
 
+test("未绑定空态：JUN-47 的 {providerId:\"\",modelId:\"\"} 视为未绑定，不记 issue", () => {
+  const providers = providersFixture()
+  const empty = { providerId: "", modelId: "" }
+
+  const resolved = resolveProviderConfig({
+    providers,
+    bindings: {
+      extractionModel: empty,
+      solutionModel: { providerId: "  ", modelId: "  " },
+      debuggingModel: null,
+    },
+  })
+
+  assert.equal(resolved.bindings.extractionModel, null)
+  assert.equal(resolved.bindings.solutionModel, null)
+  assert.equal(resolved.bindings.debuggingModel, null)
+  assert.deepEqual(resolved.issues, [], "正常空态不应记 bindings-invalid")
+  assert.equal(resolveTargetForPurpose(resolved, "extraction"), null)
+
+  // 只填一半（一个空一个非空）是真配置错误，仍需记 issue 并置空
+  const half = resolveProviderConfig({
+    providers,
+    bindings: {
+      extractionModel: { providerId: "p_glm", modelId: "" },
+      solutionModel: { providerId: "", modelId: "glm-4.6v" },
+      debuggingModel: null,
+    },
+  })
+  assert.equal(half.bindings.extractionModel, null)
+  assert.equal(half.bindings.solutionModel, null)
+  assert.deepEqual(half.issues, ["bindings-invalid", "bindings-invalid"])
+})
+
 test("删除 provider：先用 detachProviderBindings 解除绑定，其余用途不变", () => {
   const bindings = crossProviderBindings()
   const { bindings: next, detached } = detachProviderBindings(bindings, "p_glm")
@@ -500,6 +533,20 @@ test("响应解析：模型 ID 支持 data/models/纯数组三种形态并去重
   assert.deepEqual(extractModelIds(["m-1", "", 3]), ["m-1"])
   assert.deepEqual(extractModelIds({}), [])
   assert.deepEqual(extractModelIds(null), [])
+})
+
+test("响应解析：条目同时有 id 与 name 时只取 id（不把显示名当模型 ID）", () => {
+  assert.deepEqual(
+    extractModelIds({ data: [{ id: "glm-4.6", name: "GLM 4.6" }] }),
+    ["glm-4.6"]
+  )
+  assert.deepEqual(
+    extractModelIds({ models: [{ id: "m-1", name: "模型一", model: "alias-1" }] }),
+    ["m-1"]
+  )
+  // 没有 id 时才退回 name / model
+  assert.deepEqual(extractModelIds({ models: [{ name: "m-2", model: "alias-2" }] }), ["m-2"])
+  assert.deepEqual(extractModelIds({ models: [{ id: "  ", name: "m-3" }] }), ["m-3"])
 })
 
 test("响应解析：错误摘要从 error.message / message / 原始正文依次提取", () => {

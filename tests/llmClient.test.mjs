@@ -680,6 +680,80 @@ test("模型列表：mock /models 返回 3 个 ID 时返回这 3 个（三种鉴
   }
 })
 
+test("模型列表：200 + {error:{...}} 不当成功，给当前语言提示且 models 为空", async () => {
+  const mock = await startMock((req, res) => {
+    sendJson(res, 200, { error: { message: "quota exceeded" } })
+  })
+  try {
+    const provider = providerOf("p_soft", "chat-completions", mock.baseUrl, [])
+    for (const [locale, pattern] of [
+      ["zh", /不是可解析的 JSON/],
+      ["en", /did not return parsable JSON/],
+    ]) {
+      const { value: result, lines } = await quiet(() => listModels({ provider, locale }))
+      assert.equal(result.kind, "failure")
+      assert.equal(result.code, "invalid-response")
+      assert.deepEqual(result.models, [], "不能静默返回空列表当成功")
+      assert.equal(result.status, 200)
+      assert.match(result.detail, /quota exceeded/)
+      assert.match(result.message, pattern)
+      // 关键：返回体里的 error 内容不进用户文案（只进日志 detail）
+      assert.doesNotMatch(result.message, /quota exceeded/)
+      assert.ok(
+        lines.some((line) => line.includes("invalid-response") && line.includes("quota exceeded")),
+        `应播下拉取失败日志，实际：${lines.join(" | ")}`
+      )
+    }
+
+    // IPC 层同样不能把 200+error 当成功
+    for (const [locale, pattern] of [
+      ["zh", /不是可解析的 JSON/],
+      ["en", /did not return parsable JSON/],
+    ]) {
+      const { value: ipc } = await quiet(() =>
+        handleListModels({
+          rawConfig: { providers: [providerOf("p_soft", "chat-completions", mock.baseUrl, [])] },
+          providerId: "p_soft",
+          locale,
+        })
+      )
+      assert.equal(ipc.ok, false)
+      assert.deepEqual(ipc.models, [])
+      assert.equal(ipc.code, "invalid-response")
+      assert.match(ipc.error, pattern)
+    }
+  } finally {
+    await mock.close()
+  }
+})
+
+test("IPC list-models：配置读取意外抛错时日志与提示都跟随当前语言", async () => {
+  const boom = () => {
+    throw new Error("config exploded")
+  }
+  const rawConfig = Object.defineProperty({}, "providers", {
+    enumerable: true,
+    get: boom,
+  })
+
+  for (const [locale, pattern, logPattern] of [
+    ["zh", /未知错误/, /拉取模型列表的处理器出现意外异常/],
+    ["en", /unknown error/, /model-list handler hit an unexpected error/],
+  ]) {
+    const { value: result, lines } = await quiet(() =>
+      handleListModels({ rawConfig, locale })
+    )
+    assert.equal(result.ok, false)
+    assert.deepEqual(result.models, [])
+    assert.equal(result.code, "unknown")
+    assert.match(result.error, pattern)
+    const logs = lines.join(" | ")
+    assert.match(logs, logPattern, `日志应走 pt()，实际：${logs}`)
+    assert.doesNotMatch(logs, /list-models handler failed:/, "不应再出现硬编码英文日志")
+    assert.match(logs, /config exploded/)
+  }
+})
+
 test("模型列表：401 与超时给出当前语言提示，且不抛异常", async () => {
   const unauthorized = await startMock((req, res) => {
     sendJson(res, 401, { error: { message: "invalid api key" } })

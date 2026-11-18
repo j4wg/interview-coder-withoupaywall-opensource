@@ -452,6 +452,29 @@ export async function listModels(opts: {
     }
   }
 
+  // 有些网关用 200 返回 `{ error: {...} }`；不拦下来会静默返回空列表，
+  // 用户看不到任何提示，违反"拉取失败要给当前语言可见提示"。
+  if (hasErrorPayload(response.payload)) {
+    const detail = extractErrorDetail(response.payload, response.rawText)
+    console.error(
+      pt(locale, "processing.log.llm.modelsFailed", {
+        code: "invalid-response",
+        status: String(response.status),
+        detail,
+      })
+    )
+    return {
+      kind: "failure",
+      ok: false,
+      models: [],
+      code: "invalid-response",
+      message: llmErrorMessage(locale, "invalid-response"),
+      status: response.status,
+      detail,
+      providerId: provider.id,
+    }
+  }
+
   const models = extractModelIds(response.payload)
   console.log(pt(locale, "processing.log.llm.modelsFetched", { count: String(models.length) }))
   return { kind: "success", ok: true, models, providerId: provider.id }

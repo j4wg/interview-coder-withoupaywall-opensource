@@ -98,12 +98,23 @@ export function extractCompletionText(
 export function extractModelIds(payload: unknown): string[] {
   const candidates: unknown[] = []
 
+  // 条目带 `id` 时它就是唯一合法的模型 ID；`name` 只是显示名（如 `{id:"glm-4.6",name:"GLM 4.6"}`），
+  // 一并返回会让用户选到无效 ID，所以只有缺 `id` 时才退回 `name` / `model`。
+  const pushEntry = (entry: Record<string, unknown>): void => {
+    if (typeof entry.id === "string" && entry.id.trim()) {
+      candidates.push(entry.id)
+      return
+    }
+    const fallback = asText(entry.name).trim() ? entry.name : entry.model
+    candidates.push(fallback)
+  }
+
   const pushFromArray = (value: unknown[]): void => {
     for (const entry of value) {
       if (typeof entry === "string") {
         candidates.push(entry)
       } else if (isPlainObject(entry)) {
-        candidates.push(entry.id, entry.name, entry.model)
+        pushEntry(entry)
       }
     }
   }
@@ -114,7 +125,7 @@ export function extractModelIds(payload: unknown): string[] {
       return
     }
     if (!isPlainObject(value)) return
-    candidates.push(value.id, value.name, value.model)
+    pushEntry(value)
   }
 
   if (Array.isArray(payload)) {

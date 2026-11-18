@@ -141,6 +141,7 @@ export const processingZh = {
   "processing.log.llm.configIssues": "模型配置存在问题（本次按兜底值继续）：{{issues}}",
   "processing.log.llm.modelsFetched": "拉取模型列表成功，共 {{count}} 个模型",
   "processing.log.llm.modelsFailed": "拉取模型列表失败：错误码 {{code}}，HTTP {{status}}，详情：{{detail}}",
+  "processing.log.llm.listModelsHandlerFailed": "拉取模型列表的处理器出现意外异常：{{detail}}",
 
   // ---------------------------------------------------------------- 错误与兜底（会显示给用户）
   "processing.error.llm.baseUrlMissing": "尚未配置 API Base URL，请先在设置里填写。",

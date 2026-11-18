@@ -11,6 +11,7 @@
  * 失败时**不抛异常**，渲染层可以继续手工填写模型 ID。
  */
 import type { Locale } from "../i18n/types"
+import { t } from "../i18n"
 import { listModels } from "./client"
 import { llmErrorMessage } from "./messages"
 import {
@@ -37,6 +38,12 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 function asTrimmedString(value: unknown): string {
   return typeof value === "string" ? value.trim() : ""
 }
+
+const pt = (
+  locale: Locale,
+  key: string,
+  vars?: Record<string, string>
+): string => t("processing", locale, key, vars)
 
 /**
  * 选出这次要用的配置：
@@ -116,7 +123,11 @@ export async function handleListModels(opts: {
     }
   } catch (error) {
     // 兜底：配置/网络之外的意外错误也不让 IPC 抛到渲染层
-    console.error("[llm] list-models handler failed:", error)
+    console.error(
+      pt(opts.locale, "processing.log.llm.listModelsHandlerFailed", {
+        detail: error instanceof Error ? error.message : String(error),
+      })
+    )
     return {
       ok: false,
       models: [],

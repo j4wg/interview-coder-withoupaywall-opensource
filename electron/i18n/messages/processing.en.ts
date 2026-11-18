@@ -152,6 +152,8 @@ export const processingEn: ProcessingMessages = {
     "Fetched the model list successfully: {{count}} models",
   "processing.log.llm.modelsFailed":
     "Failed to fetch the model list: code {{code}}, HTTP {{status}}, details: {{detail}}",
+  "processing.log.llm.listModelsHandlerFailed":
+    "The model-list handler hit an unexpected error: {{detail}}",
 
   // ---------------------------------------------------------------- 错误与兜底（会显示给用户）
   "processing.error.llm.baseUrlMissing":

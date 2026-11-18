@@ -167,6 +167,9 @@ function normalizeBinding(
 
   const providerId = asTrimmedString(raw.providerId)
   const modelId = asTrimmedString(raw.modelId)
+  // `{ providerId: "", modelId: "" }` 是 JUN-47 约定的"未绑定"合法表示，按空态处理、不记 issue；
+  // 只填了一半（一个空一个非空）则是真配置错误，仍然记 issue。
+  if (!providerId && !modelId) return { binding: null, issues: [] }
   if (!providerId || !modelId) {
     return { binding: null, issues: ["bindings-invalid"] }
   }
