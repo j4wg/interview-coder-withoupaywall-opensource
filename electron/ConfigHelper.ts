@@ -91,7 +91,10 @@ export interface AddProviderOutcome {
 /** 更新一套 provider 的返回 */
 export interface UpdateProviderOutcome {
   config: Config
+  /** provider 存在且 patch 已被接受；不存在时为 false */
   updated: boolean
+  /** 结果是否真的不同；`updated && !changed` 表示 patch 里没有可应用的字段 */
+  changed: boolean
   /** 因模型列表变化被置空的用途，上层据此提示重新选择模型 */
   clearedBindings: BindingKey[]
 }
@@ -101,6 +104,13 @@ export interface RemoveProviderOutcome {
   config: Config
   removed: boolean
   /** 因删除被置空的用途，上层据此提示重新选择模型 */
+  clearedBindings: BindingKey[]
+}
+
+/** 部分更新的返回（`updateConfig` / `update-config` IPC） */
+export interface UpdateConfigOutcome {
+  config: Config
+  /** 因 `providers` 整体替换（含"删卡片 + 保存"）被置空的用途，上层据此提示重新选择模型 */
   clearedBindings: BindingKey[]
 }
 
@@ -289,9 +299,13 @@ export class ConfigHelper extends EventEmitter {
    *   与 `configVersion` 一律忽略、不落盘，保证 `config.json` 不会回退到旧结构；
    * - 未知键忽略。
    *
+   * 返回 `{ config, clearedBindings }`：整体替换 `providers` 时被删 provider / 被删模型
+   * 会让相关用途失效，`clearedBindings` 列出这些用途，上层必须据此提示
+   * "该用途需要重新选择模型"（不能静默置空）。
+   *
    * 入参来自渲染层（外部 JSON），因此声明为 `unknown`，由纯函数内核统一解析与兜底。
    */
-  public updateConfig(updates: unknown): Config {
+  public updateConfig(updates: unknown): UpdateConfigOutcome {
     try {
       const currentConfig = this.loadConfig();
       const source: Record<string, unknown> =
@@ -318,13 +332,14 @@ export class ConfigHelper extends EventEmitter {
       }
 
       // 合并 + 归一（引用完整性、opacity 夹到 [0,1]、apiFormat 枚举）
-      const normalized = mergeConfigUpdate(currentConfig, sanitized);
-      return this.persist(currentConfig, normalized, {
+      const merged = mergeConfigUpdate(currentConfig, sanitized);
+      const config = this.persist(currentConfig, merged.config, {
         emitUiLanguageChanged: true
       });
+      return { config, clearedBindings: merged.clearedBindings };
     } catch (error) {
       console.error(this.t("main.config.updateFailed", { message: String(error) }));
-      return this.defaultConfig;
+      return { config: this.defaultConfig, clearedBindings: [] };
     }
   }
 
@@ -444,7 +459,7 @@ export class ConfigHelper extends EventEmitter {
    * 上层据此提示"该用途需要重新选择模型"。
    */
   public setBinding(use: BindingKey, binding: unknown): Config {
-    return this.updateConfig({ bindings: { [use]: binding } });
+    return this.updateConfig({ bindings: { [use]: binding } }).config;
   }
 
   /** 新增一套 provider：id 由配置层生成并返回，界面后续只改 `name` 等字段 */
@@ -466,6 +481,7 @@ export class ConfigHelper extends EventEmitter {
   /**
    * 更新一套 provider（`id` 不可变，patch 里的 `id` 会被忽略）。
    * `models` 整体替换；指向被删模型/被清空列表的用途会被置空并出现在 `clearedBindings`。
+   * patch 里的 `undefined` 表示"这次不改"（Electron IPC 会保留这种键），不会清空字段。
    */
   public updateProvider(
     providerId: string,
@@ -475,7 +491,7 @@ export class ConfigHelper extends EventEmitter {
       const current = this.loadConfig();
       const result = updateProviderConfig(current, providerId, patch);
       if (!result.updated) {
-        return { config: current, updated: false, clearedBindings: [] };
+        return { config: current, updated: false, changed: false, clearedBindings: [] };
       }
       const config = this.persist(current, result.config);
       if (result.clearedBindings.length > 0) {
@@ -486,10 +502,15 @@ export class ConfigHelper extends EventEmitter {
           })
         );
       }
-      return { config, updated: true, clearedBindings: result.clearedBindings };
+      return {
+        config,
+        updated: true,
+        changed: result.changed,
+        clearedBindings: result.clearedBindings
+      };
     } catch (error) {
       console.error(this.t("main.config.updateFailed", { message: String(error) }));
-      return { config: this.defaultConfig, updated: false, clearedBindings: [] };
+      return { config: this.defaultConfig, updated: false, changed: false, clearedBindings: [] };
     }
   }
 

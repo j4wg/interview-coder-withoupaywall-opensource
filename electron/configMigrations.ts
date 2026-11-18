@@ -436,6 +436,13 @@ export function diffNormalizedKeys(
   return changed
 }
 
+/** 部分更新（`updateConfig` 内核）的结果 */
+export interface MergeConfigUpdateResult {
+  config: ConfigData
+  /** 因 `providers` 整体替换而失效（置空）的用途，上层据此提示重新选择模型 */
+  clearedBindings: BindingKey[]
+}
+
 /**
  * 把一个"部分更新"合并进现有配置（`updateConfig` 的纯函数内核，便于单测）。
  *
@@ -447,20 +454,25 @@ export function diffNormalizedKeys(
  * - 旧字段（`apiKey` / `apiProvider` / `provider` / `*Model`）、`activeProviderId` 与
  *   `configVersion` 一律忽略，保证配置文件不会回退到旧结构；
  * - 结果再过一次 `normalizeConfigData`，引用完整性不变量恒成立。
+ *
+ * 返回值始终带 `clearedBindings`：整体替换 `providers`（含"删掉一张卡片后保存"）时，
+ * 被删除的 provider / 被删掉的模型会让相关用途失效，上层必须据此提示
+ * "该用途需要重新选择模型"，不能静默置空。
  */
 export function mergeConfigUpdate(
   current: ConfigData,
   updates: unknown
-): ConfigData {
+): MergeConfigUpdateResult {
+  const base = normalizeConfigData(current)
   const source = isPlainObject(updates) ? updates : {}
 
   const providers = Array.isArray(source.providers)
     ? normalizeProviders(source.providers)
-    : normalizeProviders(current.providers)
+    : normalizeProviders(base.providers)
 
   const mergedBindings: Record<string, unknown> = {}
   for (const key of BINDING_KEYS) {
-    mergedBindings[key] = current.bindings[key]
+    mergedBindings[key] = base.bindings[key]
   }
   if (isPlainObject(source.bindings)) {
     for (const key of BINDING_KEYS) {
@@ -470,23 +482,28 @@ export function mergeConfigUpdate(
     }
   }
 
-  return normalizeConfigData({
+  const config = normalizeConfigData({
     providers,
     bindings: mergedBindings,
     uiLanguage:
       source.uiLanguage !== undefined
         ? normalizeUiLanguage(source.uiLanguage)
-        : current.uiLanguage,
+        : base.uiLanguage,
     language:
       source.language !== undefined
         ? normalizeLanguage(source.language)
-        : current.language,
+        : base.language,
     opacity:
       source.opacity !== undefined
         ? normalizeOpacity(source.opacity)
-        : current.opacity,
+        : base.opacity,
     configVersion: CURRENT_CONFIG_VERSION
   })
+
+  return {
+    config,
+    clearedBindings: clearedBindingKeys(base.bindings, config.bindings)
+  }
 }
 
 /** 新增一套 provider 的结果 */
@@ -536,7 +553,13 @@ export function addProviderConfig(
 /** 更新一套 provider 的结果 */
 export interface UpdateProviderResult {
   config: ConfigData
+  /** provider 存在且 patch 已被接受（会落盘）；不存在时为 false */
   updated: boolean
+  /**
+   * 结果与更新前是否真的不同。`updated && !changed` 表示 patch 里没有任何
+   * 可应用的字段（全是 `undefined`、或只带了不可变的 `id`），上层不应提示"已保存"。
+   */
+  changed: boolean
   /** 因模型列表变化而被置空的用途（上层据此提示"该用途需要重新选择模型"） */
   clearedBindings: BindingKey[]
 }
@@ -545,6 +568,9 @@ export interface UpdateProviderResult {
  * 更新一套 provider（纯函数）。
  *
  * - `id` 不可变：patch 里带的 `id` 一律忽略（重命名只改 `name`）；
+ * - `undefined` 表示"这次不改这个字段"，不是"清空"：Electron IPC 走 structured clone，
+ *   会原样保留 `{ apiKey: undefined }` 这类键，若当成清空就会把用户的 Key / 显示名 / 模型列表
+ *   静默抹掉，因此必须跳过；要清空请显式传 `""` / `[]`；
  * - `models` 给出时整体替换（增删模型都走这里），随后重新校验三个绑定，
  *   指向被删模型/被清空列表的用途会被置空并出现在 `clearedBindings` 里。
  */
@@ -557,14 +583,14 @@ export function updateProviderConfig(
   const id = normalizeProviderId(providerId)
   const target = base.providers.find((provider) => provider.id === id)
   if (!target) {
-    return { config: base, updated: false, clearedBindings: [] }
+    return { config: base, updated: false, changed: false, clearedBindings: [] }
   }
 
   const source = isPlainObject(patch) ? patch : {}
   const merged: Record<string, unknown> = { ...target }
   for (const [key, value] of Object.entries(source)) {
-    // id 不可变：忽略 patch 的 id，其余字段按值覆盖
-    if (key === "id") continue
+    // id 不可变；undefined 表示"这次不改"（structured clone 会保留该键）
+    if (key === "id" || value === undefined) continue
     merged[key] = value
   }
 
@@ -579,6 +605,7 @@ export function updateProviderConfig(
   return {
     config,
     updated: true,
+    changed: JSON.stringify(provider) !== JSON.stringify(target),
     clearedBindings: clearedBindingKeys(base.bindings, config.bindings)
   }
 }

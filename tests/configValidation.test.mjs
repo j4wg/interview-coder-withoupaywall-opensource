@@ -27,7 +27,6 @@ if (!fs.existsSync(distFile)) {
 const {
   API_FORMATS,
   DEFAULT_API_FORMAT,
-  DEFAULT_CONFIG_DATA,
   addProviderConfig,
   createProviderId,
   diffNormalizedKeys,
@@ -36,7 +35,6 @@ const {
   findProvider,
   isBindingEmpty,
   mergeConfigUpdate,
-  normalizeBinding,
   normalizeBindings,
   normalizeConfigData,
   normalizeProviderConfig,
@@ -435,7 +433,7 @@ test("diffNormalizedKeys：如实报告被归一的顶层键（供日志与取�
 test("updateConfig 内核：providers 整体替换 + 同一次更新里新加的模型可跨 provider 绑定", () => {
   const current = normalizeConfigData({})
 
-  const updated = mergeConfigUpdate(current, {
+  const { config: updated } = mergeConfigUpdate(current, {
     providers: [
       { ...PROVIDER_A, baseUrl: "https://api.example.com/v1/", name: "  公司 GLM  " },
       PROVIDER_B
@@ -469,7 +467,7 @@ test("updateConfig 内核：bindings 逐键合并；显式空绑定可清空单�
     }
   })
 
-  const updated = mergeConfigUpdate(current, {
+  const { config: updated } = mergeConfigUpdate(current, {
     bindings: { debuggingModel: EMPTY }
   })
   assert.deepEqual(updated.bindings, {
@@ -486,13 +484,13 @@ test("updateConfig 内核：providers 非数组视为未提供（畸形更新不
   })
 
   for (const providers of ["x", 42, null, { id: "p_1" }]) {
-    const updated = mergeConfigUpdate(current, { providers })
+    const { config: updated } = mergeConfigUpdate(current, { providers })
     assert.deepEqual(updated.providers, [PROVIDER_A, PROVIDER_B])
     assert.deepEqual(updated.bindings.extractionModel, bind("p_000001", "glm-4.6v-flash"))
   }
 
   // 显式空数组才是清空
-  const cleared = mergeConfigUpdate(current, { providers: [] })
+  const { config: cleared } = mergeConfigUpdate(current, { providers: [] })
   assert.deepEqual(cleared.providers, [])
   assert.deepEqual(cleared.bindings.extractionModel, EMPTY)
 })
@@ -503,7 +501,7 @@ test("updateConfig 内核：旧字段与 configVersion 一律忽略，v3 结构�
     bindings: { extractionModel: bind("p_000001", "glm-4.6v-flash") }
   })
 
-  const updated = mergeConfigUpdate(current, {
+  const { config: updated } = mergeConfigUpdate(current, {
     apiKey: "legacy-key",
     apiProvider: "openai",
     provider: { baseUrl: "https://legacy/v1", models: ["gpt-4o"] },
@@ -536,9 +534,10 @@ test("updateConfig 内核：旧字段与 configVersion 一律忽略，v3 结构�
 test("updateConfig 内核：非对象 / 非法输入不抛错", () => {
   const current = normalizeConfigData({ providers: [PROVIDER_A] })
   for (const updates of [null, undefined, 42, "x", [], { bindings: "x" }, { providers: "x" }]) {
-    const updated = mergeConfigUpdate(current, updates)
+    const { config: updated, clearedBindings } = mergeConfigUpdate(current, updates)
     assert.equal(updated.configVersion, 3)
     assert.deepEqual(updated.providers, [PROVIDER_A])
+    assert.deepEqual(clearedBindings, [])
   }
 })
 
@@ -656,4 +655,120 @@ test("removeProviderConfig：删除 provider 同时解除其绑定，其他绑�
     assert.deepEqual(missing.clearedBindings, [])
     assert.deepEqual(missing.config.providers, current.providers)
   }
+})
+
+// ── 复核阻断项回归：patch 里的显式 `undefined` 不得当成「清空」 ────────────────
+// Electron IPC 走 structured clone，`{ apiKey: undefined }` 会原样到达主进程；
+// 若把 undefined 当值覆盖，JUN-49 的卡片保存会静默抹掉用户的 Key / 显示名 / 模型列表。
+test("updateProviderConfig：patch 带 undefined 字段时该字段保持原值（不清空 apiKey/name/models）", () => {
+  const current = normalizeConfigData({
+    providers: [PROVIDER_A],
+    bindings: { extractionModel: bind("p_000001", "glm-4.6v-flash") }
+  })
+
+  const result = updateProviderConfig(current, "p_000001", {
+    id: undefined,
+    name: undefined,
+    baseUrl: undefined,
+    apiFormat: undefined,
+    apiKey: undefined,
+    models: undefined
+  })
+
+  // 每个字段都保持原值：没有一处被抹成 "" / []
+  assert.deepEqual(result.config.providers[0], PROVIDER_A)
+  assert.equal(result.config.providers[0].apiKey, "sk-a")
+  assert.equal(result.config.providers[0].name, "公司 GLM")
+  assert.deepEqual(result.config.providers[0].models, ["glm-4.6v-flash", "qwen-vl-max"])
+  // 绑定不受影响，也没有被误报为「被置空」
+  assert.deepEqual(result.config.bindings.extractionModel, bind("p_000001", "glm-4.6v-flash"))
+  assert.deepEqual(result.clearedBindings, [])
+})
+
+test("updateProviderConfig：全是 undefined 的 patch 不误报成功（updated=true 但 changed=false）", () => {
+  const current = normalizeConfigData({ providers: [PROVIDER_A] })
+
+  const onlyUndefined = updateProviderConfig(current, "p_000001", { apiKey: undefined })
+  assert.equal(onlyUndefined.updated, true)
+  assert.equal(onlyUndefined.changed, false)
+  assert.deepEqual(onlyUndefined.config.providers[0], PROVIDER_A)
+
+  const onlyId = updateProviderConfig(current, "p_000001", { id: "p_hacked" })
+  assert.equal(onlyId.updated, true)
+  assert.equal(onlyId.changed, false)
+  assert.deepEqual(onlyId.config.providers[0], PROVIDER_A)
+
+  // 真的改了字段才 changed=true
+  const renamed = updateProviderConfig(current, "p_000001", { name: "个人 GLM" })
+  assert.equal(renamed.updated, true)
+  assert.equal(renamed.changed, true)
+
+  // undefined 与真实值混在一起：undefined 忽略、真实值生效
+  const mixed = updateProviderConfig(current, "p_000001", {
+    apiKey: undefined,
+    name: "个人 GLM",
+    models: undefined
+  })
+  assert.equal(mixed.config.providers[0].apiKey, "sk-a")
+  assert.equal(mixed.config.providers[0].name, "个人 GLM")
+  assert.deepEqual(mixed.config.providers[0].models, PROVIDER_A.models)
+  assert.equal(mixed.changed, true)
+})
+
+test("updateProviderConfig：显式 \"\" / [] 仍然清空（undefined 与显式空值语义分开）", () => {
+  const current = normalizeConfigData({ providers: [PROVIDER_A] })
+
+  const cleared = updateProviderConfig(current, "p_000001", {
+    apiKey: "",
+    name: "   ",
+    models: []
+  })
+  assert.equal(cleared.config.providers[0].apiKey, "")
+  assert.equal(cleared.config.providers[0].name, "")
+  assert.deepEqual(cleared.config.providers[0].models, [])
+  assert.equal(cleared.changed, true)
+})
+
+// ── 复核建议项：updateConfig 整体替换 providers 时也要报告 clearedBindings ──────
+test("mergeConfigUpdate：删除被引用的 provider 时返回 clearedBindings（删卡片 + 保存）", () => {
+  const current = normalizeConfigData({
+    providers: [PROVIDER_A, PROVIDER_B],
+    bindings: {
+      extractionModel: bind("p_000001", "glm-4.6v-flash"),
+      solutionModel: bind("p_000002", "gpt-5"),
+      debuggingModel: bind("p_000002", "gpt-5")
+    }
+  })
+
+  // 删掉 A 家：extractionModel 失效并被告知
+  const removedA = mergeConfigUpdate(current, { providers: [PROVIDER_B] })
+  assert.deepEqual(removedA.clearedBindings, ["extractionModel"])
+  assert.deepEqual(removedA.config.bindings.extractionModel, EMPTY)
+
+  // 删掉 B 家：solutionModel / debuggingModel 都失效
+  const removedB = mergeConfigUpdate(current, { providers: [PROVIDER_A] })
+  assert.deepEqual(removedB.clearedBindings, ["solutionModel", "debuggingModel"])
+  assert.deepEqual(removedB.config.bindings, {
+    extractionModel: bind("p_000001", "glm-4.6v-flash"),
+    solutionModel: EMPTY,
+    debuggingModel: EMPTY
+  })
+
+  // 删卡片 + 同一条更新里把用途改绑到存活 provider → 该用途不算「被置空」
+  const rebind = mergeConfigUpdate(current, {
+    providers: [PROVIDER_A],
+    bindings: { solutionModel: bind("p_000001", "qwen-vl-max") }
+  })
+  assert.deepEqual(rebind.clearedBindings, ["debuggingModel"])
+  assert.deepEqual(rebind.config.bindings.solutionModel, bind("p_000001", "qwen-vl-max"))
+
+  // providers 原样保留 → 没有任何绑定被置空
+  const untouched = mergeConfigUpdate(current, {
+    providers: [PROVIDER_A, PROVIDER_B]
+  })
+  assert.deepEqual(untouched.clearedBindings, [])
+
+  // 显式清空某个用途也算「被置空」，上层同样要提示重新选择
+  const explicitClear = mergeConfigUpdate(current, { bindings: { debuggingModel: EMPTY } })
+  assert.deepEqual(explicitClear.clearedBindings, ["debuggingModel"])
 })
