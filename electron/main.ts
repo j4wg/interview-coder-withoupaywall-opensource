@@ -9,6 +9,13 @@ import { initAutoUpdater } from "./autoUpdater"
 import { configHelper } from "./ConfigHelper"
 import * as dotenv from "dotenv"
 
+// When launched detached from a terminal (stealth-run.sh) the controlling
+// pty can disappear. Without an error listener, the next console.log raises
+// "write EIO" as an uncaught exception and Electron shows an error dialog.
+for (const stream of [process.stdout, process.stderr]) {
+  stream?.on("error", () => {})
+}
+
 // Constants
 const isDev = process.env.NODE_ENV === "development"
 

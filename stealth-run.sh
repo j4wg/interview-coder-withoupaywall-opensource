@@ -38,7 +38,13 @@ echo "=== Step 4: Launching in stealth mode... ==="
 echo "Remember: Cmd+B to make it visible, Cmd+[ and Cmd+] to adjust opacity!"
 echo
 export NODE_ENV=production
-npx electron ./dist-electron/main.js &
+# Detach fully from this terminal. If the app stays attached to the shell's
+# stdout/stderr and the terminal closes, every console.log in the main process
+# throws "write EIO" and Electron shows an uncaught-exception dialog.
+LOG_FILE="$HOME/Library/Application Support/interview-coder-v1/stealth.log"
+nohup npx electron ./dist-electron/main.js >> "$LOG_FILE" 2>&1 < /dev/null &
+disown
+echo "Logs: $LOG_FILE"
 
 echo "App is now running invisibly! Press Cmd+B to make it visible."
 echo
